@@ -1,19 +1,45 @@
 // Lógica da Aplicação - FFXIV Static Raid Planner Premium
 // Suporta: Independência de Elenco por Raid, Seleção de Classes Inline Animada & Agenda Preditiva Avançada
 
+// Ícones nativos do FFXIV: Emperor's New Attire (set translúcido/invisível) via GarlandTools
 const GEAR_SLOTS = [
-    { id: "weapon", name: "Arma Principal", icon: "⚔️" },
-    { id: "head", name: "Cabeça", icon: "🪖" },
-    { id: "body", name: "Peito", icon: "🥋" },
-    { id: "hands", name: "Mãos", icon: "🧤" },
-    { id: "legs", name: "Pernas", icon: "👖" },
-    { id: "feet", name: "Pés", icon: "🥾" },
-    { id: "earrings", name: "Brincos", icon: "✨" },
-    { id: "necklace", name: "Colar", icon: "📿" },
-    { id: "bracelets", name: "Braceletes", icon: "⭕" },
-    { id: "ring1", name: "Anel 1", icon: "💍" },
-    { id: "ring2", name: "Anel 2", icon: "💍" }
+    { id: "weapon",    name: "Arma Principal", icon: "⚔️", iconUrl: "https://garlandtools.org/files/icons/item/30515.png" },
+    { id: "head",      name: "Cabeça",         icon: "🪖", iconUrl: "https://garlandtools.org/files/icons/item/10032.png" },
+    { id: "body",      name: "Peito",          icon: "🥋", iconUrl: "https://garlandtools.org/files/icons/item/10033.png" },
+    { id: "hands",     name: "Mãos",           icon: "🧤", iconUrl: "https://garlandtools.org/files/icons/item/10034.png" },
+    { id: "legs",      name: "Pernas",         icon: "👖", iconUrl: "https://garlandtools.org/files/icons/item/10035.png" },
+    { id: "feet",      name: "Pés",            icon: "🥾", iconUrl: "https://garlandtools.org/files/icons/item/10165.png" },
+    { id: "earrings",  name: "Brincos",        icon: "✨", iconUrl: "https://garlandtools.org/files/icons/item/10593.png" },
+    { id: "necklace",  name: "Colar",          icon: "📿", iconUrl: "https://garlandtools.org/files/icons/item/10591.png" },
+    { id: "bracelets", name: "Braceletes",     icon: "⭕", iconUrl: "https://garlandtools.org/files/icons/item/10592.png" },
+    { id: "ring1",     name: "Anel 1",         icon: "💍", iconUrl: "https://garlandtools.org/files/icons/item/10594.png" },
+    { id: "ring2",     name: "Anel 2",         icon: "💍", iconUrl: "https://garlandtools.org/files/icons/item/10594.png" }
 ];
+
+// Dicionário oficial de slugs do The Balance (Dawntrail)
+const BALANCE_JOB_SLUGS = {
+    PLD: { category: "tanks",   slug: "paladin" },
+    WAR: { category: "tanks",   slug: "warrior" },
+    DRK: { category: "tanks",   slug: "dark-knight" },
+    GNB: { category: "tanks",   slug: "gunbreaker" },
+    WHM: { category: "healers", slug: "white-mage" },
+    SCH: { category: "healers", slug: "scholar" },
+    AST: { category: "healers", slug: "astrologian" },
+    SGE: { category: "healers", slug: "sage" },
+    MNK: { category: "melee",   slug: "monk" },
+    DRG: { category: "melee",   slug: "dragoon" },
+    NIN: { category: "melee",   slug: "ninja" },
+    SAM: { category: "melee",   slug: "samurai" },
+    RPR: { category: "melee",   slug: "reaper" },
+    VPR: { category: "melee",   slug: "viper" },
+    BRD: { category: "ranged",  slug: "bard" },
+    MCH: { category: "ranged",  slug: "machinist" },
+    DNC: { category: "ranged",  slug: "dancer" },
+    BLM: { category: "casters", slug: "black-mage" },
+    SMN: { category: "casters", slug: "summoner" },
+    RDM: { category: "casters", slug: "red-mage" },
+    PCT: { category: "casters", slug: "pictomancer" }
+};
 
 let selectedEquipmentMemberId = null;
 
@@ -35,17 +61,9 @@ function setLootPref(player, progId, slotId, pref) {
 
 function getBisUrlForJob(jobId) {
     if (!jobId) return "https://www.thebalanceffxiv.com/";
-    const jObj = FFXIV_JOBS.find(j => j.id === jobId);
-    if (!jObj) return "https://www.thebalanceffxiv.com/";
-    const roleMap = {
-        tank: "tanks",
-        healer: "healers",
-        melee: "melee",
-        ranged: "ranged",
-        caster: "casters"
-    };
-    const category = roleMap[jObj.role] || "tanks";
-    return `https://www.thebalanceffxiv.com/jobs/${category}/${jobId.toLowerCase()}/best-in-slot/`;
+    const mapping = BALANCE_JOB_SLUGS[jobId];
+    if (!mapping) return "https://www.thebalanceffxiv.com/";
+    return `https://www.thebalanceffxiv.com/jobs/${mapping.category}/${mapping.slug}/`;
 }
 
 const DEFAULT_STATE = {
@@ -58,6 +76,7 @@ const DEFAULT_STATE = {
     inspectedProgId: "arcadion_lh",
     currentMonth: new Date().toISOString().slice(0, 7),
     scheduledProgs: {}, // Mapeia "YYYY-MM-DD" -> "progId" alvo daquele dia
+    lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
     macroText: "/p ⚠️ --- Estratégia de Posições (Clock Positions) ---\n/p [T1] Norte  | [T2] Sul\n/p [H1] Oeste  | [H2] Leste\n/p [M1] NO     | [M2] NE\n/p [R1] SO     | [R2] SE\n/p ⚔️ Bom jogo e foco nas mecânicas!",
     strategyNotes: "https://www.youtube.com/@hectorhectorson"
@@ -143,6 +162,9 @@ function loadState() {
             }
             if (!state.scheduledProgs) {
                 state.scheduledProgs = {};
+            }
+            if (!state.lootPriorities || typeof state.lootPriorities !== "object") {
+                state.lootPriorities = {};
             }
             
             state.roster = state.roster.map(player => {
@@ -1095,6 +1117,7 @@ function renderEquipmentPanel() {
         slotsGridCont.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); text-align:center; padding:30px;">Cadastre membros na aba Roster para definir seus equipamentos.</div>`;
         if (selectedNameEl) selectedNameEl.textContent = "Sem Membros";
         if (selectedJobEl) selectedJobEl.textContent = "";
+        renderFightSummaryAndPriorities();
         return;
     }
     
@@ -1148,12 +1171,16 @@ function renderEquipmentPanel() {
         slotsGridCont.innerHTML = "";
         GEAR_SLOTS.forEach(slot => {
             const currPref = getLootPref(targetMember, activeProgId, slot.id);
-            
+
+            const iconHtml = slot.iconUrl
+                ? `<img class="equip-slot-img-icon" src="${slot.iconUrl}" alt="${slot.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';"><span class="equip-slot-icon-fallback" style="display:none;font-size:1.5rem;">${slot.icon}</span>`
+                : `<span style="font-size:1.5rem">${slot.icon}</span>`;
+
             const card = document.createElement("div");
             card.className = "equip-slot-card";
             card.innerHTML = `
                 <div class="equip-slot-info">
-                    <div class="equip-slot-icon">${slot.icon}</div>
+                    <div class="equip-slot-icon">${iconHtml}</div>
                     <div>
                         <span class="equip-slot-label">${slot.name}</span>
                         <span class="equip-slot-sub">Loot Preferido</span>
@@ -1165,7 +1192,7 @@ function renderEquipmentPanel() {
                     <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass">❌</button>
                 </div>
             `;
-            
+
             card.querySelectorAll(".btn-loot-pref").forEach(btn => {
                 btn.addEventListener("click", (e) => {
                     playSfx('click');
@@ -1174,12 +1201,132 @@ function renderEquipmentPanel() {
                     saveState();
                     card.querySelectorAll(".btn-loot-pref").forEach(b => b.classList.remove("active"));
                     btn.classList.add("active");
+                    renderFightSummaryAndPriorities();
                 });
             });
-            
+
             slotsGridCont.appendChild(card);
         });
     }
+
+    renderFightSummaryAndPriorities();
+}
+
+// ==========================================================================
+// Painel Resumo & Prioridade de Loot por Luta
+// ==========================================================================
+function getLootPriorityForProg(progId) {
+    if (!state.lootPriorities) state.lootPriorities = {};
+    if (!Array.isArray(state.lootPriorities[progId])) {
+        state.lootPriorities[progId] = [];
+    }
+    return state.lootPriorities[progId];
+}
+
+function syncLootPriorityWithActiveRoster(progId) {
+    const currentList = getLootPriorityForProg(progId);
+    const activeMemberIds = state.roster
+        .filter(p => getPlayerStatusForProg(p, progId) === "active")
+        .map(p => p.id);
+
+    // Remove ids que não estão mais ativos
+    const filtered = currentList.filter(id => activeMemberIds.includes(id));
+
+    // Adiciona ao final da fila quem entrou novo no roster ativo
+    activeMemberIds.forEach(id => {
+        if (!filtered.includes(id)) filtered.push(id);
+    });
+
+    state.lootPriorities[progId] = filtered;
+    return filtered;
+}
+
+function moveLootPriority(progId, memberId, direction) {
+    const list = getLootPriorityForProg(progId);
+    const idx = list.indexOf(memberId);
+    if (idx < 0) return;
+    const target = idx + direction;
+    if (target < 0 || target >= list.length) return;
+    [list[idx], list[target]] = [list[target], list[idx]];
+    state.lootPriorities[progId] = list;
+    saveState();
+    renderFightSummaryAndPriorities();
+}
+
+function renderFightSummaryAndPriorities() {
+    const needsCont = document.getElementById("fight-needs-list");
+    const priorityCont = document.getElementById("fight-priority-list");
+    if (!needsCont || !priorityCont) return;
+
+    const activeProgId = state.inspectedProgId || "geral";
+    const activeMembers = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active");
+
+    // ---------- Necessidades & Conflitos ----------
+    needsCont.innerHTML = "";
+    let anyNeeds = false;
+
+    GEAR_SLOTS.forEach(slot => {
+        const needers = activeMembers.filter(p => getLootPref(p, activeProgId, slot.id) === "need");
+        if (needers.length === 0) return;
+        anyNeeds = true;
+
+        const isConflict = needers.length >= 2;
+        const row = document.createElement("div");
+        row.className = `need-row ${isConflict ? 'conflict' : ''}`;
+        row.title = isConflict
+            ? `Conflito: ${needers.length} jogadores precisam de ${slot.name}`
+            : `${needers.length} jogador precisa de ${slot.name}`;
+        row.innerHTML = `
+            <span class="need-slot-label">${slot.name}</span>
+            <span class="need-players">${needers.map(p => p.name || "Sem Nick").join(", ")}</span>
+        `;
+        needsCont.appendChild(row);
+    });
+
+    if (!anyNeeds) {
+        needsCont.innerHTML = `<div class="need-row empty-state">Nenhum titular declarou Need nesta luta ainda.</div>`;
+    }
+
+    // ---------- Fila de Prioridade ----------
+    priorityCont.innerHTML = "";
+    const priorityOrder = syncLootPriorityWithActiveRoster(activeProgId);
+
+    if (priorityOrder.length === 0) {
+        priorityCont.innerHTML = `<div class="priority-empty-state">Aloque titulares na Party Principal para montar a fila de prioridade.</div>`;
+        return;
+    }
+
+    priorityOrder.forEach((memberId, idx) => {
+        const player = state.roster.find(p => p.id === memberId);
+        if (!player) return;
+
+        const assignedJob = getAssignedJobForProg(player, activeProgId);
+        const row = document.createElement("div");
+        row.className = `priority-row rank-${idx + 1}`;
+        row.innerHTML = `
+            <span class="priority-rank">${idx + 1}</span>
+            <span class="priority-name" title="${player.name || 'Sem Nick'}">${player.name || '<em>Sem Nick</em>'}</span>
+            <span class="priority-job-sigla">${assignedJob}</span>
+            <div class="priority-controls">
+                <button type="button" class="btn-priority-move btn-priority-up" data-id="${player.id}" title="Subir na fila" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                <button type="button" class="btn-priority-move btn-priority-down" data-id="${player.id}" title="Descer na fila" ${idx === priorityOrder.length - 1 ? 'disabled' : ''}>▼</button>
+            </div>
+        `;
+        priorityCont.appendChild(row);
+    });
+
+    priorityCont.querySelectorAll(".btn-priority-up").forEach(btn => {
+        btn.addEventListener("click", () => {
+            playSfx('click');
+            moveLootPriority(activeProgId, btn.dataset.id, -1);
+        });
+    });
+    priorityCont.querySelectorAll(".btn-priority-down").forEach(btn => {
+        btn.addEventListener("click", () => {
+            playSfx('click');
+            moveLootPriority(activeProgId, btn.dataset.id, +1);
+        });
+    });
 }
 
 function updateDashboardStats() {

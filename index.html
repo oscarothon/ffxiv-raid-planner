@@ -117,7 +117,7 @@
                         </div>
                     </div>
 
-                    <div class="ff-panel quick-schedule-panel">
+                    <div class="ff-panel quick-schedule-panel full-width">
                         <div class="panel-header">
                             <h2>Próximos Dias de Raid</h2>
                         </div>
@@ -371,7 +371,7 @@
                         </div>
                     </div>
 
-                    <div class="equipment-grid-container" style="display: grid; grid-template-columns: 1fr 3fr; gap: 24px;">
+                    <div class="equipment-grid-container">
                         <!-- Lista Lateral de Membros -->
                         <div class="ff-panel members-side-list">
                             <div class="panel-header" style="padding: 12px 16px;">
@@ -400,13 +400,37 @@
                             <div class="panel-body" style="padding: 20px;">
                                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
                                     Defina a preferência de loot do jogador para cada slot neste conteúdo específico:
-                                    <span style="color:#10b981; font-weight:bold; margin-left:8px;">Need (🎲)</span> | 
-                                    <span style="color:#f59e0b; font-weight:bold; margin-left:4px;">Greed (🪙)</span> | 
+                                    <span style="color:#10b981; font-weight:bold; margin-left:8px;">Need (🎲)</span> |
+                                    <span style="color:#f59e0b; font-weight:bold; margin-left:4px;">Greed (🪙)</span> |
                                     <span style="color:#ef4444; font-weight:bold; margin-left:4px;">Pass (❌)</span>
                                 </p>
 
                                 <div id="equip-slots-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;">
                                     <!-- Preenchido via JS com os 11 slots -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Painel Lateral de Resumo da Luta & Prioridade de Loot -->
+                        <div class="ff-panel fight-summary-panel">
+                            <div class="panel-header" style="padding: 12px 16px;">
+                                <h3 style="font-size: 1.05rem; color: var(--gold-bright);">⚔️ Resumo & Prioridade</h3>
+                            </div>
+                            <div class="panel-body" style="padding: 14px;">
+                                <div class="fight-summary-section">
+                                    <h4 class="fight-summary-subtitle">📊 Necessidades da Party</h4>
+                                    <p class="fight-summary-desc">Slots com <strong>Need</strong> declarado pelos titulares desta luta.</p>
+                                    <div id="fight-needs-list" class="fight-needs-list">
+                                        <!-- Preenchido via JS -->
+                                    </div>
+                                </div>
+
+                                <div class="fight-summary-section">
+                                    <h4 class="fight-summary-subtitle">🏆 Fila de Prioridade de Loot</h4>
+                                    <p class="fight-summary-desc">Ordem oficial de preferência nos drops desta luta.</p>
+                                    <div id="fight-priority-list" class="fight-priority-list">
+                                        <!-- Preenchido via JS -->
+                                    </div>
                                 </div>
                             </div>
                         </div>
