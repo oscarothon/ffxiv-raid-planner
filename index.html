@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FFXIV Static Raid Planner</title>
-    <meta name="description" content="Planejador premium de Grupo de Raid (Static) para Final Fantasy XIV. Gerencie membros, estratégias, cronograma e distribuição de loot com a autêntica interface de FFXIV.">
-    
+    <meta name="description"
+        content="Planejador premium de Grupo de Raid (Static) para Final Fantasy XIV. Gerencie membros, estratégias, cronograma e distribuição de loot com a autêntica interface de FFXIV.">
+
     <!-- Google Fonts: Cinzel para um toque clássico Final Fantasy e Inter para UI limpa -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
     <!-- Estilos Customizados -->
     <link rel="stylesheet" href="css/styles.css">
 </head>
+
 <body>
     <!-- Fundo Imersivo com Efeito de Partículas / Brilho -->
     <div class="bg-fx"></div>
@@ -24,8 +29,9 @@
             <div class="logo-area">
                 <div class="crystal-icon">
                     <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                        <polygon points="50,5 90,50 50,95 10,50" fill="url(#crystal-grad)" stroke="#d4af37" stroke-width="2"/>
-                        <polygon points="50,15 75,50 50,85 25,50" fill="#ffffff" opacity="0.4"/>
+                        <polygon points="50,5 90,50 50,95 10,50" fill="url(#crystal-grad)" stroke="#d4af37"
+                            stroke-width="2" />
+                        <polygon points="50,15 75,50 50,85 25,50" fill="#ffffff" opacity="0.4" />
                         <defs>
                             <linearGradient id="crystal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
                                 <stop offset="0%" stop-color="#8fd3f4" />
@@ -35,17 +41,19 @@
                     </svg>
                 </div>
                 <div class="title-wrapper">
-                    <h1>S T A T I C &nbsp; P L A N N E R</h1>
+                    <h1>L I T T L E &nbsp; A L A &nbsp; M H I G O S</h1>
                     <span class="subtitle">FINAL FANTASY XIV &bull; RAID GROUP MANAGER</span>
                 </div>
             </div>
-            
+
             <!-- Controles do Header (Tema e Som) -->
             <div class="header-controls">
-                <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)" aria-label="Alternar Tema">
+                <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)"
+                    aria-label="Alternar Tema">
                     <span class="icon">🎨</span> <span class="txt">Tema</span>
                 </button>
-                <button id="btn-sound-toggle" class="ff-btn-small active" title="Ativar/Desativar Efeitos Sonoros FFXIV" aria-label="Efeitos Sonoros">
+                <button id="btn-sound-toggle" class="ff-btn-small active" title="Ativar/Desativar Efeitos Sonoros FFXIV"
+                    aria-label="Efeitos Sonoros">
                     <span class="icon">🔊</span> <span class="txt">SFX</span>
                 </button>
                 <button id="btn-export-import" class="ff-btn-action" title="Exportar ou Importar dados da Static">
@@ -62,6 +70,9 @@
             <button class="tab-btn" data-tab="roster" aria-selected="false" aria-controls="roster-tab">
                 <span class="tab-icon">🛡️</span> Membros (Roster)
             </button>
+            <button class="tab-btn" data-tab="equipment" aria-selected="false" aria-controls="equipment-tab">
+                <span class="tab-icon">💎</span> Equipamentos
+            </button>
             <button class="tab-btn" data-tab="schedule" aria-selected="false" aria-controls="schedule-tab">
                 <span class="tab-icon">📅</span> Agenda Semanal
             </button>
@@ -75,59 +86,33 @@
             <!-- ABA 1: VISÃO GERAL (DASHBOARD) -->
             <section id="dashboard-tab" class="tab-pane active" role="tabpanel">
                 <div class="dashboard-grid">
-                    <div class="ff-panel welcome-panel">
+                    <div class="ff-panel active-progs-panel full-width">
                         <div class="panel-header">
-                            <h2>Status do Grupo</h2>
+                            <h2>🎯 Adicionar Conteúdo</h2>
                         </div>
                         <div class="panel-body">
-                            <div class="static-name-container">
-                                <label for="static-name-input">Nome da Static:</label>
-                                <input type="text" id="static-name-input" class="ff-input" value="Static Arcadion Vanguards" placeholder="Digite o nome da estática...">
-                            </div>
-                            <div class="static-stats">
-                                <div class="stat-box" style="padding: 10px 4px;">
-                                    <span class="stat-label">Membros (Foco Atual)</span>
-                                    <div id="count-roster" class="roster-counts-row mt-1">
-                                        <span class="roster-count-item titulares" title="Titulares da Party">T: 0</span>
-                                        <span class="roster-count-item reservas" title="Reservas no Banco">R: 0</span>
-                                        <span class="roster-count-item total" title="Total do Elenco">Tot: 0</span>
-                                    </div>
-                                </div>
-                                <div class="stat-box">
-                                    <span class="stat-label">Média iLvl</span>
-                                    <span class="stat-value" id="avg-ilvl">715</span>
-                                </div>
-                                <div class="stat-box">
-                                    <span class="stat-label">Foco Atual</span>
-                                    <span class="stat-value highlight-gold" id="current-focus-text">AAC Light-heavyweight</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="ff-panel active-progs-panel">
-                        <div class="panel-header">
-                            <h2>🎯 Raids e Ultimates em Andamento</h2>
-                        </div>
-                        <div class="panel-body">
-                            <p class="section-desc mb-2" style="font-size: 0.8rem;">Gerencie os conteúdos em que o grupo está progredindo simultaneamente.</p>
+                            <p class="section-desc mb-2" style="font-size: 0.8rem;">Gerencie os conteúdos em que o grupo
+                                está progredindo simultaneamente.</p>
                             <div id="active-progs-list" class="active-progs-container">
                                 <!-- Chips dinâmicos dos progs ativos -->
                             </div>
                             <div class="add-prog-controls">
                                 <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
-                                    <label for="select-add-savage" style="font-size: 0.75rem;">Adicionar Savage Raid:</label>
+                                    <label for="select-add-savage" style="font-size: 0.75rem;">Adicionar Savage
+                                        Raid:</label>
                                     <select id="select-add-savage" class="ff-select">
                                         <option value="">-- Selecione a Raid --</option>
                                     </select>
                                 </div>
                                 <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
-                                    <label for="select-add-ultimate" style="font-size: 0.75rem;">Adicionar Ultimate:</label>
+                                    <label for="select-add-ultimate" style="font-size: 0.75rem;">Adicionar
+                                        Ultimate:</label>
                                     <select id="select-add-ultimate" class="ff-select">
                                         <option value="">-- Selecione a Ultimate --</option>
                                     </select>
                                 </div>
-                                <button id="btn-add-prog" class="ff-btn" style="align-self: flex-end; height: 38px; padding: 0 12px;">➕ Adicionar</button>
+                                <button id="btn-add-prog" class="ff-btn-content-add"
+                                    style="align-self: flex-end; height: 38px; padding: 0 20px;" title="Adicionar novo conteúdo com paleta Clear Blue">➕ Adicionar</button>
                             </div>
                         </div>
                     </div>
@@ -162,11 +147,18 @@
             <!-- ABA 2: MEMBROS (ROSTER) -->
             <section id="roster-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="panel-header-action">
-                    <h2>Gerenciamento de Elenco (Flex Roster & Reservas)</h2>
+                    <h2>Gerenciamento de Elenco (Little Ala Mhigos)</h2>
                     <button id="btn-reset-roster" class="ff-btn-danger">⚠️ Limpar Todos</button>
                 </div>
-                <p class="section-desc">Cadastre jogadores, defina suas Gamas de Classes (Pool) ou papéis Flex, e monte a Party Principal travando as classes atribuídas.</p>
-                
+                <!-- Barra de Seleção de Luta/Conteúdo na aba de membros -->
+                <div class="roster-prog-tabs-wrapper mb-3" style="background: rgba(0, 136, 204, 0.1); border: 1px solid rgba(51, 181, 229, 0.3); padding: 12px; border-radius: var(--radius-sm);">
+                    <span style="font-size: 0.85rem; color: #33b5e5; font-weight: bold; display: block; margin-bottom: 8px;">⚔️ Conteúdo / Luta Selecionada para Escalação:</span>
+                    <div id="roster-prog-tabs-container" class="prog-tabs-bar" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">
+                        <!-- Preenchido via JS sincronizado -->
+                    </div>
+                </div>
+                <p class="section-desc">Cadastre jogadores, defina suas Gamas de Classes (Pool) clicando diretamente nos ícones para torná-la a principal ativa do conteúdo atual.</p>
+
                 <!-- Formulário de Cadastro Rápido -->
                 <div class="ff-panel add-member-panel mb-4">
                     <div class="panel-header">
@@ -180,13 +172,32 @@
                             </div>
                             <div class="form-group">
                                 <label>Perfis Flex (Marque um ou mais):</label>
-                                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; align-items: center;">
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="tank"> Tank</label>
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="healer"> Healer</label>
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="melee"> Melee</label>
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="ranged"> Ranged</label>
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="caster"> Caster</label>
-                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--gold-bright); font-weight: bold;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="custom" id="chk-flex-custom"> Específico</label>
+                                <div
+                                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; align-items: center;">
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="tank">
+                                        Tank</label>
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="healer">
+                                        Healer</label>
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="melee">
+                                        Melee</label>
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="ranged">
+                                        Ranged</label>
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="caster">
+                                        Caster</label>
+                                    <label
+                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--gold-bright); font-weight: bold;"><input
+                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="custom"
+                                            id="chk-flex-custom"> Específico</label>
                                 </div>
                             </div>
                             <div class="form-group">
@@ -197,13 +208,16 @@
                                 </select>
                             </div>
                             <div class="form-group flex-end">
-                                <button id="btn-add-member" class="ff-btn-action full-width" style="height: 42px; margin-top: 22px;">Adicionar</button>
+                                <button id="btn-add-member" class="ff-btn-action full-width"
+                                    style="height: 42px; margin-top: 22px;">Adicionar</button>
                             </div>
                         </div>
 
                         <!-- Seleção Customizada de Classes (Exibida se custom selecionado) -->
                         <div id="custom-jobs-selector" class="custom-jobs-selector mt-3" hidden>
-                            <label class="d-block mb-2" style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as classes específicas do jogador:</label>
+                            <label class="d-block mb-2"
+                                style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as
+                                classes específicas do jogador:</label>
                             <div id="custom-jobs-grid" class="custom-jobs-grid">
                                 <!-- Preenchido dinamicamente com botões/checkboxes das 21 classes -->
                             </div>
@@ -214,7 +228,9 @@
                 <!-- Tabela de Party Principal (Ativos) -->
                 <div class="roster-table-container ff-panel mb-4">
                     <div class="panel-header">
-                        <h2>Party Principal Ativa (<span id="active-count-text">0 / 8</span>) <span id="roster-prog-badge" class="prog-chip-type" style="margin-left: 8px;">Geral</span></h2>
+                        <h2>Party Principal Ativa (<span id="active-count-text">0 / 8</span>) <span
+                                id="roster-prog-badge" class="prog-chip-type" style="margin-left: 8px;">Geral</span>
+                        </h2>
                     </div>
                     <table class="ff-table">
                         <thead>
@@ -235,7 +251,8 @@
 
                 <!-- Tabela de Banco de Reservas -->
                 <div class="roster-table-container ff-panel">
-                    <div class="panel-header" style="background: linear-gradient(180deg, #332222 0%, #1a1111 100%); border-bottom-color: #a53535;">
+                    <div class="panel-header"
+                        style="background: linear-gradient(180deg, #332222 0%, #1a1111 100%); border-bottom-color: #a53535;">
                         <h2 style="color: #fca5a5;">🛡️ Banco de Reservas (Substitutos)</h2>
                     </div>
                     <table class="ff-table">
@@ -264,7 +281,8 @@
                         <span class="badge badge-unavail">❌ Ausente</span>
                     </div>
                 </div>
-                <p class="section-desc">Selecione o mês e clique nos dias para definir a presença real de cada jogador.</p>
+                <p class="section-desc">Selecione o mês e clique nos dias para definir a presença real de cada jogador.
+                </p>
 
                 <div class="calendar-nav-header">
                     <button id="btn-prev-month" class="ff-btn-action">◀ Mês Anterior</button>
@@ -322,10 +340,74 @@
                         </div>
                         <div class="panel-body">
                             <label for="macro-textarea" class="sr-only">Texto da Macro</label>
-                            <textarea id="macro-textarea" class="ff-textarea" rows="10" placeholder="Cole aqui a macro de posições (ex: /p Clock positions: T1 N, T2 S, H1 W, H2 E...)"></textarea>
+                            <textarea id="macro-textarea" class="ff-textarea" rows="10"
+                                placeholder="Cole aqui a macro de posições (ex: /p Clock positions: T1 N, T2 S, H1 W, H2 E...)"></textarea>
                             <div class="notes-area mt-3">
                                 <label for="strategy-notes">Anotações e Links (Vídeos de Guias):</label>
-                                <input type="text" id="strategy-notes" class="ff-input" placeholder="https://youtube.com/watch?v=...">
+                                <input type="text" id="strategy-notes" class="ff-input"
+                                    placeholder="https://youtube.com/watch?v=...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ABA 5: EQUIPAMENTOS E LOOT -->
+            <section id="equipment-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="equipment-layout">
+                    <!-- Seletor Superior de Luta/Conteúdo para Equipamentos -->
+                    <div class="ff-panel full-width mb-3" style="background: linear-gradient(90deg, rgba(0, 136, 204, 0.15) 0%, rgba(8, 18, 36, 0.85) 100%); border-color: #33b5e5;">
+                        <div class="panel-body" style="padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-size: 1.4rem;">💎</span>
+                                <div>
+                                    <span style="font-size: 0.75rem; color: #33b5e5; font-weight: 700; text-transform: uppercase; display: block;">Luta / Conteúdo em Foco</span>
+                                    <span id="equip-current-prog-label" style="font-weight: 700; color: #fff; font-size: 1.1rem;">Geral</span>
+                                </div>
+                            </div>
+                            <div id="equip-prog-tabs-container" class="prog-tabs-bar" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">
+                                <!-- Sincronizado via JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="equipment-grid-container" style="display: grid; grid-template-columns: 1fr 3fr; gap: 24px;">
+                        <!-- Lista Lateral de Membros -->
+                        <div class="ff-panel members-side-list">
+                            <div class="panel-header" style="padding: 12px 16px;">
+                                <h3 style="font-size: 1.05rem; color: #33b5e5;">Membros</h3>
+                            </div>
+                            <div class="panel-body" style="padding: 12px;">
+                                <div id="equip-members-list" style="display: flex; flex-direction: column; gap: 6px;">
+                                    <!-- Preenchido via JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Grade Central dos 11 Slots de Equipamentos e BiS Link -->
+                        <div class="ff-panel equipment-slots-panel">
+                            <div class="panel-header" style="padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <h3 style="font-size: 1.2rem; color: #fff;">Equipamento Individual: <span id="equip-selected-member-name" style="color: #33b5e5;">Selecione um Membro</span></h3>
+                                    <span id="equip-selected-member-job" class="job-sigla" style="color: #fde047; font-size: 0.85rem;"></span>
+                                </div>
+                                <div id="bis-link-wrapper">
+                                    <a id="bis-link-anchor" href="https://www.thebalanceffxiv.com/" target="_blank" class="ff-btn-small" style="text-decoration: none; border-color: #33b5e5; color: #33b5e5; font-weight: bold;">
+                                        🔗 BiS do Tier (The Balance)
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="panel-body" style="padding: 20px;">
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                                    Defina a preferência de loot do jogador para cada slot neste conteúdo específico:
+                                    <span style="color:#10b981; font-weight:bold; margin-left:8px;">Need (🎲)</span> | 
+                                    <span style="color:#f59e0b; font-weight:bold; margin-left:4px;">Greed (🪙)</span> | 
+                                    <span style="color:#ef4444; font-weight:bold; margin-left:4px;">Pass (❌)</span>
+                                </p>
+
+                                <div id="equip-slots-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;">
+                                    <!-- Preenchido via JS com os 11 slots -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -337,7 +419,8 @@
 
         <!-- Rodapé Premium -->
         <footer class="ff-footer">
-            <p>FINAL FANTASY XIV Static Planner &copy; Criado para a Comunidade. Interface inspirada nos designs da Square Enix.</p>
+            <p>FINAL FANTASY XIV Static Planner &copy; Criado para a Comunidade. Interface inspirada nos designs da
+                Square Enix.</p>
             <p class="subtext">Versão 1.0 &bull; Armazenamento Local Seguro Ativado</p>
         </footer>
     </div>
@@ -350,8 +433,9 @@
                 <button class="btn-close-modal" aria-label="Fechar Modal">&times;</button>
             </div>
             <div class="modal-body">
-                <p>Você pode copiar o código JSON abaixo para enviar aos membros do seu grupo ou colar um código recebido para atualizar seu painel local.</p>
-                
+                <p>Você pode copiar o código JSON abaixo para enviar aos membros do seu grupo ou colar um código
+                    recebido para atualizar seu painel local.</p>
+
                 <div class="modal-tabs">
                     <button class="modal-tab-btn active" id="btn-show-export">Exportar</button>
                     <button class="modal-tab-btn" id="btn-show-import">Importar</button>
@@ -363,8 +447,10 @@
                 </div>
 
                 <div id="import-area" class="modal-tab-content" hidden>
-                    <textarea id="import-textarea" class="ff-textarea" rows="6" placeholder="Cole o código JSON da estática aqui..."></textarea>
-                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">💾 Carregar Dados Importados</button>
+                    <textarea id="import-textarea" class="ff-textarea" rows="6"
+                        placeholder="Cole o código JSON da estática aqui..."></textarea>
+                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">💾 Carregar Dados
+                        Importados</button>
                     <p id="import-error" class="text-danger mt-1" hidden></p>
                 </div>
             </div>
@@ -375,4 +461,5 @@
     <script src="js/data.js"></script>
     <script src="js/app.js"></script>
 </body>
+
 </html>

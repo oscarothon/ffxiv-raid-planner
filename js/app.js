@@ -1,8 +1,55 @@
 // Lógica da Aplicação - FFXIV Static Raid Planner Premium
 // Suporta: Independência de Elenco por Raid, Seleção de Classes Inline Animada & Agenda Preditiva Avançada
 
+const GEAR_SLOTS = [
+    { id: "weapon", name: "Arma Principal", icon: "⚔️" },
+    { id: "head", name: "Cabeça", icon: "🪖" },
+    { id: "body", name: "Peito", icon: "🥋" },
+    { id: "hands", name: "Mãos", icon: "🧤" },
+    { id: "legs", name: "Pernas", icon: "👖" },
+    { id: "feet", name: "Pés", icon: "🥾" },
+    { id: "earrings", name: "Brincos", icon: "✨" },
+    { id: "necklace", name: "Colar", icon: "📿" },
+    { id: "bracelets", name: "Braceletes", icon: "⭕" },
+    { id: "ring1", name: "Anel 1", icon: "💍" },
+    { id: "ring2", name: "Anel 2", icon: "💍" }
+];
+
+let selectedEquipmentMemberId = null;
+
+function getLootPref(player, progId, slotId) {
+    if (!player) return "pass";
+    if (!player.lootPreferences) player.lootPreferences = {};
+    const targetProg = progId || state.inspectedProgId || "geral";
+    if (!player.lootPreferences[targetProg]) player.lootPreferences[targetProg] = {};
+    return player.lootPreferences[targetProg][slotId] || "pass";
+}
+
+function setLootPref(player, progId, slotId, pref) {
+    if (!player) return;
+    if (!player.lootPreferences) player.lootPreferences = {};
+    const targetProg = progId || state.inspectedProgId || "geral";
+    if (!player.lootPreferences[targetProg]) player.lootPreferences[targetProg] = {};
+    player.lootPreferences[targetProg][slotId] = pref;
+}
+
+function getBisUrlForJob(jobId) {
+    if (!jobId) return "https://www.thebalanceffxiv.com/";
+    const jObj = FFXIV_JOBS.find(j => j.id === jobId);
+    if (!jObj) return "https://www.thebalanceffxiv.com/";
+    const roleMap = {
+        tank: "tanks",
+        healer: "healers",
+        melee: "melee",
+        ranged: "ranged",
+        caster: "casters"
+    };
+    const category = roleMap[jObj.role] || "tanks";
+    return `https://www.thebalanceffxiv.com/jobs/${category}/${jobId.toLowerCase()}/best-in-slot/`;
+}
+
 const DEFAULT_STATE = {
-    staticName: "Static Arcadion Vanguards",
+    staticName: "Little Ala Mhigos",
     theme: "dark",
     sfx: true,
     contentType: "raid",
@@ -395,7 +442,6 @@ function renderActiveProgsPanel() {
 }
 
 function renderProgTabsBar() {
-    const container = document.getElementById("prog-tabs-container");
     const badge = document.getElementById("roster-prog-badge");
     const focusEl = document.getElementById("current-focus-text");
     
@@ -411,26 +457,37 @@ function renderProgTabsBar() {
     if (badge) badge.textContent = shortTitle;
     if (focusEl) focusEl.textContent = shortTitle;
     
-    if (!container) return;
-    container.innerHTML = "";
+    const containers = [
+        document.getElementById("prog-tabs-container"),
+        document.getElementById("roster-prog-tabs-container"),
+        document.getElementById("equip-prog-tabs-container")
+    ];
+    
+    const equipProgLabel = document.getElementById("equip-current-prog-label");
+    if (equipProgLabel) equipProgLabel.textContent = currentObj.name.split(" (")[0];
     
     const listToRender = (state.activeProgs && state.activeProgs.length > 0) ? state.activeProgs : ["geral"];
     
-    listToRender.forEach(progId => {
-        const pObj = getProgObj(progId);
-        const btn = document.createElement("button");
-        btn.className = `prog-tab-btn ${progId === state.inspectedProgId ? 'active' : ''}`;
-        btn.textContent = pObj.name.split(" (")[0].split(":")[0];
-        btn.title = pObj.name;
-        
-        btn.addEventListener("click", () => {
-            playSfx('tab');
-            state.inspectedProgId = progId;
-            saveState();
-            renderProgTabsBar();
-            renderRosterTables();
+    containers.forEach(cont => {
+        if (!cont) return;
+        cont.innerHTML = "";
+        listToRender.forEach(progId => {
+            const pObj = getProgObj(progId);
+            const btn = document.createElement("button");
+            btn.className = `prog-tab-chip ${progId === state.inspectedProgId ? 'active' : ''}`;
+            btn.textContent = pObj.name.split(" (")[0].split(":")[0];
+            btn.title = pObj.name;
+            
+            btn.addEventListener("click", () => {
+                playSfx('tab');
+                state.inspectedProgId = progId;
+                saveState();
+                renderProgTabsBar();
+                renderRosterTables();
+                renderEquipmentPanel();
+            });
+            cont.appendChild(btn);
         });
-        container.appendChild(btn);
     });
 }
 
@@ -476,23 +533,21 @@ function renderRosterTables() {
             const mainJobObj = FFXIV_JOBS.find(j => j.id === currentAssignedJob) || { id: currentAssignedJob, role: "tank" };
             const mainImgHtml = mainJobObj.iconUrl ? `<img class="job-img-icon" src="${mainJobObj.iconUrl}" style="width:22px;height:22px;object-fit:contain;" alt="${currentAssignedJob}">` : '';
 
-            // Seletor Inline Customizado com Animação Expansível
-            const poolOptionsHtml = player.jobsPool.filter(jId => jId !== currentAssignedJob).map(jId => {
-                const jObj = FFXIV_JOBS.find(j => j.id === jId);
-                const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : '';
-                return `<button type="button" class="job-option-btn" data-id="${player.id}" data-job="${jId}" title="${jObj ? jObj.name : jId}">${imgH || jId}</button>`;
-            }).join('');
-
-            const inlineSelectorHtml = `
-                <div class="inline-job-selector-wrapper" id="sel-wrapper-${player.id}" title="Gama disponível. Clique no ícone principal para expandir ou trocar">
-                    <div class="inline-main-job" data-id="${player.id}">
-                        ${mainImgHtml} <span>${currentAssignedJob}</span>
-                    </div>
-                    <div class="inline-pool-container" id="pool-cont-${player.id}">
-                        ${poolOptionsHtml}
-                    </div>
+            const assignedJobHtml = `
+                <div class="active-assigned-job-container" title="Classe principal ativa para este conteúdo">
+                    <div class="job-badge" style="background-color: ${(FFXIV_ROLES[mainJobObj.role] || {}).color || '#000'}">${mainImgHtml || currentAssignedJob}</div>
+                    <span class="job-name-sigla">${currentAssignedJob}</span>
                 </div>
             `;
+
+            const poolBadgesHtml = player.jobsPool.map(jId => {
+                const jObj = FFXIV_JOBS.find(j => j.id === jId);
+                const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
+                const color = roleData ? roleData.color : '#475569';
+                const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
+                const isAssigned = jId === currentAssignedJob;
+                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
+            }).join(' ');
 
             tr.innerHTML = `
                 <td style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
@@ -501,11 +556,11 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        ${generateJobsPoolBadgesHtml(player)}
+                        ${poolBadgesHtml}
                     </div>
                 </td>
                 <td>
-                    ${inlineSelectorHtml}
+                    ${assignedJobHtml}
                 </td>
                 <td>
                     <div style="display: flex; align-items: center; gap: 6px;">
@@ -529,13 +584,23 @@ function renderRosterTables() {
     } else {
         benchMembers.forEach(player => {
             const tr = document.createElement("tr");
+            const currentAssignedJob = getAssignedJobForProg(player, activeProgId);
+            const poolBadgesHtml = player.jobsPool.map(jId => {
+                const jObj = FFXIV_JOBS.find(j => j.id === jId);
+                const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
+                const color = roleData ? roleData.color : '#475569';
+                const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
+                const isAssigned = jId === currentAssignedJob;
+                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
+            }).join(' ');
+
             tr.innerHTML = `
                 <td>
                     <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick">
                 </td>
                 <td>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        ${generateJobsPoolBadgesHtml(player)}
+                        ${poolBadgesHtml}
                     </div>
                 </td>
                 <td>
@@ -556,49 +621,26 @@ function renderRosterTables() {
     renderDashboardVisualizer();
     renderScheduleTable();
     updateDashboardStats();
+    renderEquipmentPanel();
 }
 
 function bindRosterTableEvents() {
     const container = document.getElementById("roster-tab");
     if (!container) return;
 
-    // Eventos de expansão animada inline para escolha de classe
-    container.querySelectorAll(".inline-main-job").forEach(el => {
-        el.addEventListener("click", (e) => {
-            e.stopPropagation();
-            playSfx('click');
-            const pId = el.dataset.id;
-            const poolCont = document.getElementById(`pool-cont-${pId}`);
-            if (poolCont) {
-                // Recolhe outros seletores abertos
-                document.querySelectorAll(".inline-pool-container.expanded").forEach(c => {
-                    if (c !== poolCont) c.classList.remove("expanded");
-                });
-                poolCont.classList.toggle("expanded");
-            }
-        });
-    });
-
-    container.querySelectorAll(".job-option-btn").forEach(btn => {
+    container.querySelectorAll(".direct-pool-job-btn").forEach(btn => {
         btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            playSfx('success');
             const pId = btn.dataset.id;
             const targetJob = btn.dataset.job;
             const targetPlayer = state.roster.find(p => p.id === pId);
-            
-            if (targetPlayer) {
-                btn.style.borderColor = "var(--gold-bright)";
-                btn.style.boxShadow = "0 0 10px var(--gold-bright)";
-                
-                const poolCont = document.getElementById(`pool-cont-${pId}`);
-                if (poolCont) poolCont.classList.remove("expanded");
-                
-                setTimeout(() => {
-                    setAssignedJobForProg(targetPlayer, state.inspectedProgId || "geral", targetJob);
-                    saveState();
-                    renderRosterTables();
-                }, 200);
+            const currentAssigned = getAssignedJobForProg(targetPlayer, state.inspectedProgId || "geral");
+            if (targetPlayer && targetJob !== currentAssigned) {
+                playSfx('success');
+                setAssignedJobForProg(targetPlayer, state.inspectedProgId || "geral", targetJob);
+                saveState();
+                renderRosterTables();
+                renderEquipmentPanel();
             }
         });
     });
@@ -1027,6 +1069,119 @@ function renderQuickSchedule() {
     });
 }
 
+function renderEquipmentPanel() {
+    const membersListCont = document.getElementById("equip-members-list");
+    const slotsGridCont = document.getElementById("equip-slots-grid");
+    const selectedNameEl = document.getElementById("equip-selected-member-name");
+    const selectedJobEl = document.getElementById("equip-selected-member-job");
+    const bisAnchorEl = document.getElementById("bis-link-anchor");
+    
+    if (!membersListCont || !slotsGridCont) return;
+    
+    const activeProgId = state.inspectedProgId || "geral";
+    
+    const sortedRoster = [...state.roster].sort((a, b) => {
+        const sA = getPlayerStatusForProg(a, activeProgId);
+        const sB = getPlayerStatusForProg(b, activeProgId);
+        if (sA === "active" && sB !== "active") return -1;
+        if (sA !== "active" && sB === "active") return 1;
+        return (a.name || "").localeCompare(b.name || "");
+    });
+    
+    membersListCont.innerHTML = "";
+    
+    if (sortedRoster.length === 0) {
+        membersListCont.innerHTML = `<span style="color:var(--text-muted); font-size:0.85rem; padding:10px;">Nenhum membro cadastrado.</span>`;
+        slotsGridCont.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); text-align:center; padding:30px;">Cadastre membros na aba Roster para definir seus equipamentos.</div>`;
+        if (selectedNameEl) selectedNameEl.textContent = "Sem Membros";
+        if (selectedJobEl) selectedJobEl.textContent = "";
+        return;
+    }
+    
+    let targetMember = sortedRoster.find(p => p.id === selectedEquipmentMemberId);
+    if (!targetMember && sortedRoster.length > 0) {
+        targetMember = sortedRoster[0];
+        selectedEquipmentMemberId = targetMember.id;
+    }
+    
+    sortedRoster.forEach(player => {
+        const sProg = getPlayerStatusForProg(player, activeProgId);
+        const currJob = getAssignedJobForProg(player, activeProgId);
+        const jObj = FFXIV_JOBS.find(j => j.id === currJob);
+        const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
+        
+        const btn = document.createElement("button");
+        btn.className = `member-select-btn ${player.id === selectedEquipmentMemberId ? 'active' : ''}`;
+        
+        const statusDot = sProg === "active" ? `<span style="color:var(--color-avail);" title="Titular">●</span>` : `<span style="color:var(--color-late);" title="Reserva">○</span>`;
+        
+        btn.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                ${statusDot}
+                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${player.name || 'Sem Nick'}</span>
+            </div>
+            <span class="job-sigla" style="color:${roleData ? roleData.color : '#fff'}; margin-top:0;">${currJob}</span>
+        `;
+        
+        btn.addEventListener("click", () => {
+            playSfx('click');
+            selectedEquipmentMemberId = player.id;
+            renderEquipmentPanel();
+        });
+        
+        membersListCont.appendChild(btn);
+    });
+    
+    if (targetMember) {
+        const currJob = getAssignedJobForProg(targetMember, activeProgId);
+        if (selectedNameEl) selectedNameEl.textContent = targetMember.name || "Sem Nick";
+        if (selectedJobEl) {
+            const jObj = FFXIV_JOBS.find(j => j.id === currJob);
+            selectedJobEl.textContent = `${currJob} ${jObj ? '- ' + jObj.name : ''}`;
+            selectedJobEl.style.color = jObj && FFXIV_ROLES[jObj.role] ? FFXIV_ROLES[jObj.role].color : "var(--gold-bright)";
+        }
+        
+        if (bisAnchorEl) {
+            bisAnchorEl.href = getBisUrlForJob(currJob);
+        }
+        
+        slotsGridCont.innerHTML = "";
+        GEAR_SLOTS.forEach(slot => {
+            const currPref = getLootPref(targetMember, activeProgId, slot.id);
+            
+            const card = document.createElement("div");
+            card.className = "equip-slot-card";
+            card.innerHTML = `
+                <div class="equip-slot-info">
+                    <div class="equip-slot-icon">${slot.icon}</div>
+                    <div>
+                        <span class="equip-slot-label">${slot.name}</span>
+                        <span class="equip-slot-sub">Loot Preferido</span>
+                    </div>
+                </div>
+                <div class="loot-pref-controls">
+                    <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need">🎲</button>
+                    <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed">🪙</button>
+                    <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass">❌</button>
+                </div>
+            `;
+            
+            card.querySelectorAll(".btn-loot-pref").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    playSfx('click');
+                    const clickedPref = e.currentTarget.dataset.pref;
+                    setLootPref(targetMember, activeProgId, slot.id, clickedPref);
+                    saveState();
+                    card.querySelectorAll(".btn-loot-pref").forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                });
+            });
+            
+            slotsGridCont.appendChild(card);
+        });
+    }
+}
+
 function updateDashboardStats() {
     const activeProgId = state.inspectedProgId || "geral";
     const titulares = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active");
@@ -1431,6 +1586,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     renderProgTabsBar();
                     renderEncounterOptions();
                     renderRosterTables();
+                    renderEquipmentPanel();
                     applyTheme();
                     
                     playSfx('success');
@@ -1453,4 +1609,5 @@ document.addEventListener("DOMContentLoaded", () => {
     renderProgTabsBar();
     renderEncounterOptions();
     renderRosterTables();
+    renderEquipmentPanel();
 });
