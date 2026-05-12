@@ -1,0 +1,8 @@
+# Logs e Arquivos de Sistema do SO
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários de editores
+.vscode/
+.idea/
+*.log

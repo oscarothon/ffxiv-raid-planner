@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FFXIV Static Raid Planner</title>
+    <meta name="description" content="Planejador premium de Grupo de Raid (Static) para Final Fantasy XIV. Gerencie membros, estratégias, cronograma e distribuição de loot com a autêntica interface de FFXIV.">
+    
+    <!-- Google Fonts: Cinzel para um toque clássico Final Fantasy e Inter para UI limpa -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Estilos Customizados -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Fundo Imersivo com Efeito de Partículas / Brilho -->
+    <div class="bg-fx"></div>
+
+    <div class="app-container">
+        <!-- Cabeçalho Principal Estilo FFXIV -->
+        <header class="ff-header">
+            <div class="logo-area">
+                <div class="crystal-icon">
+                    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                        <polygon points="50,5 90,50 50,95 10,50" fill="url(#crystal-grad)" stroke="#d4af37" stroke-width="2"/>
+                        <polygon points="50,15 75,50 50,85 25,50" fill="#ffffff" opacity="0.4"/>
+                        <defs>
+                            <linearGradient id="crystal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#8fd3f4" />
+                                <stop offset="100%" stop-color="#052c65" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div class="title-wrapper">
+                    <h1>S T A T I C &nbsp; P L A N N E R</h1>
+                    <span class="subtitle">FINAL FANTASY XIV &bull; RAID GROUP MANAGER</span>
+                </div>
+            </div>
+            
+            <!-- Controles do Header (Tema e Som) -->
+            <div class="header-controls">
+                <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)" aria-label="Alternar Tema">
+                    <span class="icon">🎨</span> <span class="txt">Tema</span>
+                </button>
+                <button id="btn-sound-toggle" class="ff-btn-small active" title="Ativar/Desativar Efeitos Sonoros FFXIV" aria-label="Efeitos Sonoros">
+                    <span class="icon">🔊</span> <span class="txt">SFX</span>
+                </button>
+                <button id="btn-export-import" class="ff-btn-action" title="Exportar ou Importar dados da Static">
+                    💾 Compartilhar / Dados
+                </button>
+            </div>
+        </header>
+
+        <!-- Menu Principal Estilo Abas do Jogo -->
+        <nav class="ff-tabs" aria-label="Navegação Principal">
+            <button class="tab-btn active" data-tab="dashboard" aria-selected="true" aria-controls="dashboard-tab">
+                <span class="tab-icon">👑</span> Visão Geral
+            </button>
+            <button class="tab-btn" data-tab="roster" aria-selected="false" aria-controls="roster-tab">
+                <span class="tab-icon">🛡️</span> Membros (Roster)
+            </button>
+            <button class="tab-btn" data-tab="schedule" aria-selected="false" aria-controls="schedule-tab">
+                <span class="tab-icon">📅</span> Agenda Semanal
+            </button>
+            <button class="tab-btn" data-tab="strategies" aria-selected="false" aria-controls="strategies-tab">
+                <span class="tab-icon">📜</span> Estratégias & Macros
+            </button>
+            <button class="tab-btn" data-tab="loot" aria-selected="false" aria-controls="loot-tab">
+                <span class="tab-icon">🎁</span> Rastreador de Loot
+            </button>
+        </nav>
+
+        <!-- Conteúdo Principal -->
+        <main class="main-content">
+            <!-- ABA 1: VISÃO GERAL (DASHBOARD) -->
+            <section id="dashboard-tab" class="tab-pane active" role="tabpanel">
+                <div class="dashboard-grid">
+                    <div class="ff-panel welcome-panel">
+                        <div class="panel-header">
+                            <h2>Status do Grupo</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="static-name-container">
+                                <label for="static-name-input">Nome da Static:</label>
+                                <input type="text" id="static-name-input" class="ff-input" value="Static Arcadion Vanguards" placeholder="Digite o nome da estática...">
+                            </div>
+                            <div class="static-stats">
+                                <div class="stat-box">
+                                    <span class="stat-label">Membros Cadastrados</span>
+                                    <span class="stat-value" id="count-roster">8 / 8</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span class="stat-label">Média iLvl</span>
+                                    <span class="stat-value" id="avg-ilvl">715</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span class="stat-label">Foco Atual</span>
+                                    <span class="stat-value highlight-gold" id="current-focus-text">AAC Light-heavyweight</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ff-panel quick-schedule-panel">
+                        <div class="panel-header">
+                            <h2>Próximos Dias de Raid</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div id="quick-schedule-list" class="quick-schedule-list">
+                                <!-- Preenchido via JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ff-panel comp-panel full-width">
+                        <div class="panel-header">
+                            <h2>Composição Atual do Roster</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div id="comp-visualizer" class="comp-visualizer">
+                                <!-- Preenchido com os 8 cards simplificados de membros -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ABA 2: MEMBROS (ROSTER) -->
+            <section id="roster-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="panel-header-action">
+                    <h2>Membros do Roster (Party de 8 Jogadores)</h2>
+                    <button id="btn-reset-roster" class="ff-btn-danger">⚠️ Restaurar Padrão</button>
+                </div>
+                <p class="section-desc">Defina os jogadores, seus jobs e controle o nível de item (iLvl) e o status de equipamento final (BiS).</p>
+                
+                <div class="roster-table-container ff-panel">
+                    <table class="ff-table">
+                        <thead>
+                            <tr>
+                                <th>Posição</th>
+                                <th>Nome do Jogador</th>
+                                <th>Função</th>
+                                <th>Job (Classe)</th>
+                                <th>iLvl</th>
+                                <th>BiS Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roster-tbody">
+                            <!-- Gerado dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ABA 3: AGENDA (SCHEDULE) -->
+            <section id="schedule-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="panel-header-action">
+                    <h2>Disponibilidade Semanal</h2>
+                    <div class="legend">
+                        <span class="badge badge-avail">✔️ Disponível</span>
+                        <span class="badge badge-late">⚠️ Atraso</span>
+                        <span class="badge badge-unavail">❌ Ausente</span>
+                    </div>
+                </div>
+                <p class="section-desc">Clique nos dias para alternar o status de presença de cada jogador para a semana atual.</p>
+
+                <div class="schedule-table-container ff-panel">
+                    <table class="ff-table schedule-table">
+                        <thead>
+                            <tr>
+                                <th>Jogador</th>
+                                <th>Segunda</th>
+                                <th>Terça</th>
+                                <th>Quarta</th>
+                                <th>Quinta</th>
+                                <th>Sexta</th>
+                                <th>Sábado</th>
+                                <th>Domingo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="schedule-tbody">
+                            <!-- Gerado dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ABA 4: ESTRATÉGIAS & MACROS -->
+            <section id="strategies-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="strategies-layout">
+                    <div class="ff-panel selector-panel">
+                        <div class="panel-header">
+                            <h2>Seleção de Conteúdo</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="form-group">
+                                <label for="select-content-type">Tipo de Conteúdo:</label>
+                                <select id="select-content-type" class="ff-select">
+                                    <option value="raid">Raids (Savage / Normal)</option>
+                                    <option value="ultimate">Ultimate Raids</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="select-encounter">Encontro / Tier:</label>
+                                <select id="select-encounter" class="ff-select">
+                                    <!-- Dinâmico -->
+                                </select>
+                            </div>
+                            <div class="selected-content-details" id="selected-content-details">
+                                <h3 id="details-title">AAC Light-heavyweight (Savage)</h3>
+                                <p class="expansion-tag" id="details-expansion">Expansão: Dawntrail</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ff-panel macro-panel">
+                        <div class="panel-header">
+                            <h2>Macro do Chat & Estratégia</h2>
+                            <button id="btn-copy-macro" class="ff-btn-small">📋 Copiar Macro</button>
+                        </div>
+                        <div class="panel-body">
+                            <label for="macro-textarea" class="sr-only">Texto da Macro</label>
+                            <textarea id="macro-textarea" class="ff-textarea" rows="10" placeholder="Cole aqui a macro de posições (ex: /p Clock positions: T1 N, T2 S, H1 W, H2 E...)"></textarea>
+                            <div class="notes-area mt-3">
+                                <label for="strategy-notes">Anotações e Links (Vídeos de Guias):</label>
+                                <input type="text" id="strategy-notes" class="ff-input" placeholder="https://youtube.com/watch?v=...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ABA 5: RASTREADOR DE LOOT -->
+            <section id="loot-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="panel-header-action">
+                    <h2>Distribuição Semanal de Baús (Loot Tracker)</h2>
+                    <p class="section-desc">Registre quem recebeu baús (Coffers) e itens de aprimoramento para garantir justiça na estática.</p>
+                </div>
+
+                <div class="ff-panel loot-panel">
+                    <div class="loot-controls">
+                        <label for="select-loot-tier">Tier para Rastreamento:</label>
+                        <select id="select-loot-tier" class="ff-select">
+                            <option value="M1S">M1S - AAC Light-heavyweight v1</option>
+                            <option value="M2S">M2S - AAC Light-heavyweight v2</option>
+                            <option value="M3S">M3S - AAC Light-heavyweight v3</option>
+                            <option value="M4S">M4S - AAC Light-heavyweight v4</option>
+                        </select>
+                    </div>
+
+                    <table class="ff-table mt-3">
+                        <thead>
+                            <tr>
+                                <th>Jogador</th>
+                                <th>Acessório Coffer</th>
+                                <th>Armadura Coffer</th>
+                                <th>Arma Coffer / Twine</th>
+                                <th>Montaria / Minion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="loot-tbody">
+                            <!-- Dinâmico -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- Rodapé Premium -->
+        <footer class="ff-footer">
+            <p>FINAL FANTASY XIV Static Planner &copy; Criado para a Comunidade. Interface inspirada nos designs da Square Enix.</p>
+            <p class="subtext">Versão 1.0 &bull; Armazenamento Local Seguro Ativado</p>
+        </footer>
+    </div>
+
+    <!-- MODAL DE EXPORTAÇÃO / IMPORTAÇÃO -->
+    <div id="modal-share" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
+        <div class="ff-modal">
+            <div class="modal-header">
+                <h3>Dados da Static & Compartilhamento</h3>
+                <button class="btn-close-modal" aria-label="Fechar Modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Você pode copiar o código JSON abaixo para enviar aos membros do seu grupo ou colar um código recebido para atualizar seu painel local.</p>
+                
+                <div class="modal-tabs">
+                    <button class="modal-tab-btn active" id="btn-show-export">Exportar</button>
+                    <button class="modal-tab-btn" id="btn-show-import">Importar</button>
+                </div>
+
+                <div id="export-area" class="modal-tab-content">
+                    <textarea id="export-textarea" class="ff-textarea" rows="6" readonly></textarea>
+                    <button id="btn-copy-export" class="ff-btn-action mt-2 full-width">📋 Copiar Código JSON</button>
+                </div>
+
+                <div id="import-area" class="modal-tab-content" hidden>
+                    <textarea id="import-textarea" class="ff-textarea" rows="6" placeholder="Cole o código JSON da estática aqui..."></textarea>
+                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">💾 Carregar Dados Importados</button>
+                    <p id="import-error" class="text-danger mt-1" hidden></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts da Aplicação -->
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
