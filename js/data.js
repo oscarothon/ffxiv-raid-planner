@@ -10,35 +10,35 @@ const FFXIV_ROLES = {
 
 const FFXIV_JOBS = [
     // Tanks
-    { id: "PLD", name: "Paladin", role: "tank" },
-    { id: "WAR", name: "Warrior", role: "tank" },
-    { id: "DRK", name: "Dark Knight", role: "tank" },
-    { id: "GNB", name: "Gunbreaker", role: "tank" },
+    { id: "PLD", name: "Paladin", role: "tank", icon: "🛡️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/paladin.png" },
+    { id: "WAR", name: "Warrior", role: "tank", icon: "🪓", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/warrior.png" },
+    { id: "DRK", name: "Dark Knight", role: "tank", icon: "🗡️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/darkknight.png" },
+    { id: "GNB", name: "Gunbreaker", role: "tank", icon: "🔫", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/gunbreaker.png" },
 
     // Healers
-    { id: "WHM", name: "White Mage", role: "healer" },
-    { id: "SCH", name: "Scholar", role: "healer" },
-    { id: "AST", name: "Astrologian", role: "healer" },
-    { id: "SGE", name: "Sage", role: "healer" },
+    { id: "WHM", name: "White Mage", role: "healer", icon: "🪄", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/whitemage.png" },
+    { id: "SCH", name: "Scholar", role: "healer", icon: "📖", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/scholar.png" },
+    { id: "AST", name: "Astrologian", role: "healer", icon: "🃏", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/astrologian.png" },
+    { id: "SGE", name: "Sage", role: "healer", icon: "🛰️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/sage.png" },
 
     // Melee DPS
-    { id: "MNK", name: "Monk", role: "melee" },
-    { id: "DRG", name: "Dragoon", role: "melee" },
-    { id: "NIN", name: "Ninja", role: "melee" },
-    { id: "SAM", name: "Samurai", role: "melee" },
-    { id: "RPR", name: "Reaper", role: "melee" },
-    { id: "VPR", name: "Viper", role: "melee" },
+    { id: "MNK", name: "Monk", role: "melee", icon: "🥊", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/monk.png" },
+    { id: "DRG", name: "Dragoon", role: "melee", icon: "🐉", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/dragoon.png" },
+    { id: "NIN", name: "Ninja", role: "melee", icon: "🥷", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/ninja.png" },
+    { id: "SAM", name: "Samurai", role: "melee", icon: "⛩️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/samurai.png" },
+    { id: "RPR", name: "Reaper", role: "melee", icon: "☠️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/reaper.png" },
+    { id: "VPR", name: "Viper", role: "melee", icon: "🐍", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/vpr.png" },
 
     // Ranged Physical DPS
-    { id: "BRD", name: "Bard", role: "ranged" },
-    { id: "MCH", name: "Machinist", role: "ranged" },
-    { id: "DNC", name: "Dancer", role: "ranged" },
+    { id: "BRD", name: "Bard", role: "ranged", icon: "🏹", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/bard.png" },
+    { id: "MCH", name: "Machinist", role: "ranged", icon: "⚙️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/machinist.png" },
+    { id: "DNC", name: "Dancer", role: "ranged", icon: "💃", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/dancer.png" },
 
     // Magical Ranged DPS (Casters)
-    { id: "BLM", name: "Black Mage", role: "caster" },
-    { id: "SMN", name: "Summoner", role: "caster" },
-    { id: "RDM", name: "Red Mage", role: "caster" },
-    { id: "PCT", name: "Pictomancer", role: "caster" }
+    { id: "BLM", name: "Black Mage", role: "caster", icon: "☄️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/blackmage.png" },
+    { id: "SMN", name: "Summoner", role: "caster", icon: "🐲", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/summoner.png" },
+    { id: "RDM", name: "Red Mage", role: "caster", icon: "🌹", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/redmage.png" },
+    { id: "PCT", name: "Pictomancer", role: "caster", icon: "🎨", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/pct.png" }
 ];
 
 const FFXIV_ULTIMATES = [

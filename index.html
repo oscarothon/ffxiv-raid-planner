@@ -68,9 +68,6 @@
             <button class="tab-btn" data-tab="strategies" aria-selected="false" aria-controls="strategies-tab">
                 <span class="tab-icon">📜</span> Estratégias & Macros
             </button>
-            <button class="tab-btn" data-tab="loot" aria-selected="false" aria-controls="loot-tab">
-                <span class="tab-icon">🎁</span> Rastreador de Loot
-            </button>
         </nav>
 
         <!-- Conteúdo Principal -->
@@ -88,9 +85,13 @@
                                 <input type="text" id="static-name-input" class="ff-input" value="Static Arcadion Vanguards" placeholder="Digite o nome da estática...">
                             </div>
                             <div class="static-stats">
-                                <div class="stat-box">
-                                    <span class="stat-label">Membros Cadastrados</span>
-                                    <span class="stat-value" id="count-roster">8 / 8</span>
+                                <div class="stat-box" style="padding: 10px 4px;">
+                                    <span class="stat-label">Membros (Foco Atual)</span>
+                                    <div id="count-roster" class="roster-counts-row mt-1">
+                                        <span class="roster-count-item titulares" title="Titulares da Party">T: 0</span>
+                                        <span class="roster-count-item reservas" title="Reservas no Banco">R: 0</span>
+                                        <span class="roster-count-item total" title="Total do Elenco">Tot: 0</span>
+                                    </div>
                                 </div>
                                 <div class="stat-box">
                                     <span class="stat-label">Média iLvl</span>
@@ -100,6 +101,33 @@
                                     <span class="stat-label">Foco Atual</span>
                                     <span class="stat-value highlight-gold" id="current-focus-text">AAC Light-heavyweight</span>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ff-panel active-progs-panel">
+                        <div class="panel-header">
+                            <h2>🎯 Raids e Ultimates em Andamento</h2>
+                        </div>
+                        <div class="panel-body">
+                            <p class="section-desc mb-2" style="font-size: 0.8rem;">Gerencie os conteúdos em que o grupo está progredindo simultaneamente.</p>
+                            <div id="active-progs-list" class="active-progs-container">
+                                <!-- Chips dinâmicos dos progs ativos -->
+                            </div>
+                            <div class="add-prog-controls">
+                                <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
+                                    <label for="select-add-savage" style="font-size: 0.75rem;">Adicionar Savage Raid:</label>
+                                    <select id="select-add-savage" class="ff-select">
+                                        <option value="">-- Selecione a Raid --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
+                                    <label for="select-add-ultimate" style="font-size: 0.75rem;">Adicionar Ultimate:</label>
+                                    <select id="select-add-ultimate" class="ff-select">
+                                        <option value="">-- Selecione a Ultimate --</option>
+                                    </select>
+                                </div>
+                                <button id="btn-add-prog" class="ff-btn" style="align-self: flex-end; height: 38px; padding: 0 12px;">➕ Adicionar</button>
                             </div>
                         </div>
                     </div>
@@ -120,6 +148,9 @@
                             <h2>Composição Atual do Roster</h2>
                         </div>
                         <div class="panel-body">
+                            <div id="prog-tabs-container" class="prog-tabs-bar">
+                                <!-- Botões de aba gerados dinamicamente para cada prog ativo -->
+                            </div>
                             <div id="comp-visualizer" class="comp-visualizer">
                                 <!-- Preenchido com os 8 cards simplificados de membros -->
                             </div>
@@ -131,24 +162,92 @@
             <!-- ABA 2: MEMBROS (ROSTER) -->
             <section id="roster-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="panel-header-action">
-                    <h2>Membros do Roster (Party de 8 Jogadores)</h2>
-                    <button id="btn-reset-roster" class="ff-btn-danger">⚠️ Restaurar Padrão</button>
+                    <h2>Gerenciamento de Elenco (Flex Roster & Reservas)</h2>
+                    <button id="btn-reset-roster" class="ff-btn-danger">⚠️ Limpar Todos</button>
                 </div>
-                <p class="section-desc">Defina os jogadores, seus jobs e controle o nível de item (iLvl) e o status de equipamento final (BiS).</p>
+                <p class="section-desc">Cadastre jogadores, defina suas Gamas de Classes (Pool) ou papéis Flex, e monte a Party Principal travando as classes atribuídas.</p>
                 
-                <div class="roster-table-container ff-panel">
+                <!-- Formulário de Cadastro Rápido -->
+                <div class="ff-panel add-member-panel mb-4">
+                    <div class="panel-header">
+                        <h2>➕ Cadastrar Novo Jogador</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="add-member-form" style="grid-template-columns: 1.5fr 3fr 1.5fr 1fr;">
+                            <div class="form-group">
+                                <label for="input-member-name">Nome / Nick in-game:</label>
+                                <input type="text" id="input-member-name" class="ff-input" placeholder="Ex: WoL Azem">
+                            </div>
+                            <div class="form-group">
+                                <label>Perfis Flex (Marque um ou mais):</label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; align-items: center;">
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="tank"> Tank</label>
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="healer"> Healer</label>
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="melee"> Melee</label>
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="ranged"> Ranged</label>
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="caster"> Caster</label>
+                                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--gold-bright); font-weight: bold;"><input type="checkbox" class="ff-checkbox chk-flex-profile" value="custom" id="chk-flex-custom"> Específico</label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="select-member-status">Alocação Inicial:</label>
+                                <select id="select-member-status" class="ff-select">
+                                    <option value="active">Party Principal (Ativo)</option>
+                                    <option value="bench">Banco de Reservas (Substituto)</option>
+                                </select>
+                            </div>
+                            <div class="form-group flex-end">
+                                <button id="btn-add-member" class="ff-btn-action full-width" style="height: 42px; margin-top: 22px;">Adicionar</button>
+                            </div>
+                        </div>
+
+                        <!-- Seleção Customizada de Classes (Exibida se custom selecionado) -->
+                        <div id="custom-jobs-selector" class="custom-jobs-selector mt-3" hidden>
+                            <label class="d-block mb-2" style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as classes específicas do jogador:</label>
+                            <div id="custom-jobs-grid" class="custom-jobs-grid">
+                                <!-- Preenchido dinamicamente com botões/checkboxes das 21 classes -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela de Party Principal (Ativos) -->
+                <div class="roster-table-container ff-panel mb-4">
+                    <div class="panel-header">
+                        <h2>Party Principal Ativa (<span id="active-count-text">0 / 8</span>) <span id="roster-prog-badge" class="prog-chip-type" style="margin-left: 8px;">Geral</span></h2>
+                    </div>
                     <table class="ff-table">
                         <thead>
                             <tr>
-                                <th>Posição</th>
-                                <th>Nome do Jogador</th>
-                                <th>Função</th>
-                                <th>Job (Classe)</th>
-                                <th>iLvl</th>
-                                <th>BiS Status</th>
+                                <th style="width: 5%;">#</th>
+                                <th style="width: 25%;">Nome do Jogador</th>
+                                <th style="width: 35%;">Gama de Classes (Pool Disponível)</th>
+                                <th style="width: 15%;">Classe Atribuída</th>
+                                <th style="width: 12%;">iLvl / BiS</th>
+                                <th style="width: 8%;">Ações</th>
                             </tr>
                         </thead>
-                        <tbody id="roster-tbody">
+                        <tbody id="roster-active-tbody">
+                            <!-- Gerado dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Tabela de Banco de Reservas -->
+                <div class="roster-table-container ff-panel">
+                    <div class="panel-header" style="background: linear-gradient(180deg, #332222 0%, #1a1111 100%); border-bottom-color: #a53535;">
+                        <h2 style="color: #fca5a5;">🛡️ Banco de Reservas (Substitutos)</h2>
+                    </div>
+                    <table class="ff-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 30%;">Nome do Jogador</th>
+                                <th style="width: 50%;">Gama de Classes (Pool Disponível)</th>
+                                <th style="width: 10%;">iLvl</th>
+                                <th style="width: 10%;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roster-bench-tbody">
                             <!-- Gerado dinamicamente -->
                         </tbody>
                     </table>
@@ -158,30 +257,30 @@
             <!-- ABA 3: AGENDA (SCHEDULE) -->
             <section id="schedule-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="panel-header-action">
-                    <h2>Disponibilidade Semanal</h2>
+                    <h2>Disponibilidade Mensal</h2>
                     <div class="legend">
                         <span class="badge badge-avail">✔️ Disponível</span>
-                        <span class="badge badge-late">⚠️ Atraso</span>
+                        <span class="badge badge-late">⚠️ Talvez / Atraso</span>
                         <span class="badge badge-unavail">❌ Ausente</span>
                     </div>
                 </div>
-                <p class="section-desc">Clique nos dias para alternar o status de presença de cada jogador para a semana atual.</p>
+                <p class="section-desc">Selecione o mês e clique nos dias para definir a presença real de cada jogador.</p>
 
-                <div class="schedule-table-container ff-panel">
-                    <table class="ff-table schedule-table">
+                <div class="calendar-nav-header">
+                    <button id="btn-prev-month" class="ff-btn-action">◀ Mês Anterior</button>
+                    <span id="calendar-month-label" class="calendar-month-title">Maio 2026</span>
+                    <button id="btn-next-month" class="ff-btn-action">Mês Seguinte ▶</button>
+                </div>
+
+                <div class="calendar-table-wrapper ff-panel">
+                    <table class="calendar-table">
                         <thead>
-                            <tr>
-                                <th>Jogador</th>
-                                <th>Segunda</th>
-                                <th>Terça</th>
-                                <th>Quarta</th>
-                                <th>Quinta</th>
-                                <th>Sexta</th>
-                                <th>Sábado</th>
-                                <th>Domingo</th>
+                            <tr id="calendar-thead-row">
+                                <th class="col-fixed">Jogador</th>
+                                <!-- Dias gerados via JS -->
                             </tr>
                         </thead>
-                        <tbody id="schedule-tbody">
+                        <tbody id="calendar-tbody">
                             <!-- Gerado dinamicamente -->
                         </tbody>
                     </table>
@@ -233,40 +332,7 @@
                 </div>
             </section>
 
-            <!-- ABA 5: RASTREADOR DE LOOT -->
-            <section id="loot-tab" class="tab-pane" role="tabpanel" hidden>
-                <div class="panel-header-action">
-                    <h2>Distribuição Semanal de Baús (Loot Tracker)</h2>
-                    <p class="section-desc">Registre quem recebeu baús (Coffers) e itens de aprimoramento para garantir justiça na estática.</p>
-                </div>
 
-                <div class="ff-panel loot-panel">
-                    <div class="loot-controls">
-                        <label for="select-loot-tier">Tier para Rastreamento:</label>
-                        <select id="select-loot-tier" class="ff-select">
-                            <option value="M1S">M1S - AAC Light-heavyweight v1</option>
-                            <option value="M2S">M2S - AAC Light-heavyweight v2</option>
-                            <option value="M3S">M3S - AAC Light-heavyweight v3</option>
-                            <option value="M4S">M4S - AAC Light-heavyweight v4</option>
-                        </select>
-                    </div>
-
-                    <table class="ff-table mt-3">
-                        <thead>
-                            <tr>
-                                <th>Jogador</th>
-                                <th>Acessório Coffer</th>
-                                <th>Armadura Coffer</th>
-                                <th>Arma Coffer / Twine</th>
-                                <th>Montaria / Minion</th>
-                            </tr>
-                        </thead>
-                        <tbody id="loot-tbody">
-                            <!-- Dinâmico -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
         </main>
 
         <!-- Rodapé Premium -->
