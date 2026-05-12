@@ -893,6 +893,226 @@ label {
 }
 
 /* ==========================================================================
+   Layout Estilo Wiki: Armor | Class Portrait | Accessories
+   ========================================================================== */
+.equip-slots-grid {
+    display: block;
+}
+
+.gear-wiki-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr 1fr;
+    gap: 14px;
+    align-items: start;
+}
+
+.gear-wiki-column {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.gear-wiki-col-header {
+    font-family: var(--font-title);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gold-bright);
+    text-align: center;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.4);
+    background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.15), transparent);
+    margin: -10px -10px 4px -10px;
+    padding: 8px 10px;
+    text-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
+}
+
+/* Linha individual de slot */
+.gear-slot-row {
+    display: grid;
+    grid-template-columns: 52px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 8px;
+    background: rgba(0, 136, 204, 0.06);
+    border: 1px solid rgba(51, 181, 229, 0.15);
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.gear-slot-row:hover {
+    background: rgba(0, 136, 204, 0.14);
+    border-color: var(--clear-blue-bright);
+    transform: translateX(2px);
+}
+
+.gear-row-icon-wrap {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, rgba(20, 30, 50, 0.95) 0%, rgba(5, 10, 20, 0.95) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.55);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.8), 0 0 6px rgba(212, 175, 55, 0.2);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.gear-row-icon-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85));
+}
+
+.gear-row-icon-fallback {
+    font-size: 1.6rem;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.gear-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gear-row-itemname {
+    color: var(--clear-blue-bright);
+    font-weight: 700;
+    font-size: 0.82rem;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(51, 181, 229, 0.3);
+}
+
+.gear-row-slotname {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: 'Inter', sans-serif;
+}
+
+.gear-slot-row .loot-pref-controls {
+    margin-top: 4px;
+    padding: 2px;
+}
+
+.gear-slot-row .btn-loot-pref {
+    width: 26px;
+    height: 26px;
+    font-size: 0.9rem;
+}
+
+/* Coluna central: Retrato/Ícone da Classe */
+.gear-character-column {
+    background: linear-gradient(180deg, rgba(0, 136, 204, 0.12) 0%, rgba(4, 16, 34, 0.6) 100%);
+    align-items: center;
+    text-align: center;
+    padding: 14px 12px;
+    border: 1px solid rgba(51, 181, 229, 0.3);
+}
+
+.job-portrait-frame {
+    width: 100%;
+    aspect-ratio: 1 / 1.15;
+    max-width: 220px;
+    margin: 6px auto;
+    background: linear-gradient(180deg, rgba(180, 190, 210, 0.18) 0%, rgba(40, 50, 70, 0.45) 60%, rgba(20, 25, 40, 0.65) 100%);
+    border: 2px solid var(--role-color, var(--clear-blue-bright));
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow:
+        0 0 25px rgba(51, 181, 229, 0.25),
+        inset 0 0 30px rgba(0,0,0,0.5),
+        inset 0 2px 0 rgba(255,255,255,0.08);
+    position: relative;
+    overflow: hidden;
+}
+
+.job-portrait-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.08), transparent 60%),
+        radial-gradient(ellipse at 50% 100%, rgba(0,0,0,0.5), transparent 50%);
+    pointer-events: none;
+}
+
+.job-portrait-img {
+    width: 70%;
+    height: 70%;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.8)) drop-shadow(0 0 12px var(--role-color, rgba(51, 181, 229, 0.6)));
+    z-index: 1;
+    animation: jobPortraitFloat 4s ease-in-out infinite alternate;
+}
+
+.job-portrait-fallback {
+    font-size: 4.5rem;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.8));
+    z-index: 1;
+}
+
+@keyframes jobPortraitFloat {
+    from { transform: translateY(0) scale(1); }
+    to   { transform: translateY(-4px) scale(1.02); }
+}
+
+.job-portrait-name {
+    font-family: var(--font-title);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 8px;
+    text-shadow: 0 0 8px rgba(51, 181, 229, 0.6), 0 2px 4px rgba(0,0,0,0.8);
+    letter-spacing: 0.5px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.job-portrait-job {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+@media (max-width: 1100px) {
+    .gear-wiki-layout {
+        grid-template-columns: 1fr;
+    }
+    .gear-character-column {
+        order: -1;
+    }
+    .job-portrait-frame {
+        max-width: 160px;
+    }
+}
+
+/* ==========================================================================
    Painel Lateral de Resumo & Prioridade da Luta
    ========================================================================== */
 .fight-summary-panel {
@@ -1404,9 +1624,9 @@ label {
 }
 
 /* Responsividade Básica */
-@media (max-width: 1280px) {
+@media (max-width: 1500px) {
     .equipment-grid-container {
-        grid-template-columns: 1fr 1.6fr;
+        grid-template-columns: 220px 1fr;
     }
     .equipment-grid-container .fight-summary-panel {
         grid-column: 1 / -1;

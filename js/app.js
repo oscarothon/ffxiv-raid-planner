@@ -1,19 +1,20 @@
 // Lógica da Aplicação - FFXIV Static Raid Planner Premium
 // Suporta: Independência de Elenco por Raid, Seleção de Classes Inline Animada & Agenda Preditiva Avançada
 
-// Ícones nativos do FFXIV: Emperor's New Attire (set translúcido/invisível) via GarlandTools
+// Ícones nativos do FFXIV: Emperor's New Attire (set translúcido/invisível) via FFXIV Console Games Wiki
+const WIKI_ICON_BASE = "https://ffxiv.consolegameswiki.com/mediawiki/images/thumb";
 const GEAR_SLOTS = [
-    { id: "weapon",    name: "Arma Principal", icon: "⚔️", iconUrl: "https://garlandtools.org/files/icons/item/30515.png" },
-    { id: "head",      name: "Cabeça",         icon: "🪖", iconUrl: "https://garlandtools.org/files/icons/item/10032.png" },
-    { id: "body",      name: "Peito",          icon: "🥋", iconUrl: "https://garlandtools.org/files/icons/item/10033.png" },
-    { id: "hands",     name: "Mãos",           icon: "🧤", iconUrl: "https://garlandtools.org/files/icons/item/10034.png" },
-    { id: "legs",      name: "Pernas",         icon: "👖", iconUrl: "https://garlandtools.org/files/icons/item/10035.png" },
-    { id: "feet",      name: "Pés",            icon: "🥾", iconUrl: "https://garlandtools.org/files/icons/item/10165.png" },
-    { id: "earrings",  name: "Brincos",        icon: "✨", iconUrl: "https://garlandtools.org/files/icons/item/10593.png" },
-    { id: "necklace",  name: "Colar",          icon: "📿", iconUrl: "https://garlandtools.org/files/icons/item/10591.png" },
-    { id: "bracelets", name: "Braceletes",     icon: "⭕", iconUrl: "https://garlandtools.org/files/icons/item/10592.png" },
-    { id: "ring1",     name: "Anel 1",         icon: "💍", iconUrl: "https://garlandtools.org/files/icons/item/10594.png" },
-    { id: "ring2",     name: "Anel 2",         icon: "💍", iconUrl: "https://garlandtools.org/files/icons/item/10594.png" }
+    { id: "weapon",    name: "Arma",       itemName: "The Emperor's New Fists",     icon: "⚔️", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/6/6b/The_emperors_new_fists_icon1.png/80px-The_emperors_new_fists_icon1.png` },
+    { id: "head",      name: "Cabeça",     itemName: "The Emperor's New Hat",       icon: "🪖", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/1/1a/The_emperors_new_hat_icon1.png/80px-The_emperors_new_hat_icon1.png` },
+    { id: "body",      name: "Peito",      itemName: "The Emperor's New Robe",      icon: "🥋", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/d/d1/The_emperors_new_robe_icon1.png/80px-The_emperors_new_robe_icon1.png` },
+    { id: "hands",     name: "Mãos",       itemName: "The Emperor's New Gloves",    icon: "🧤", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/7/74/The_emperors_new_gloves_icon1.png/80px-The_emperors_new_gloves_icon1.png` },
+    { id: "legs",      name: "Pernas",     itemName: "The Emperor's New Breeches",  icon: "👖", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/a/ae/The_emperors_new_breeches_icon1.png/80px-The_emperors_new_breeches_icon1.png` },
+    { id: "feet",      name: "Pés",        itemName: "The Emperor's New Boots",     icon: "🥾", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/7/70/The_emperors_new_boots_icon1.png/80px-The_emperors_new_boots_icon1.png` },
+    { id: "earrings",  name: "Brincos",    itemName: "The Emperor's New Earrings",  icon: "✨", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/7/72/The_emperors_new_earrings_icon1.png/80px-The_emperors_new_earrings_icon1.png` },
+    { id: "necklace",  name: "Colar",      itemName: "The Emperor's New Necklace",  icon: "📿", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/0/0b/The_emperors_new_necklace_icon1.png/80px-The_emperors_new_necklace_icon1.png` },
+    { id: "bracelets", name: "Braceletes", itemName: "The Emperor's New Bracelet",  icon: "⭕", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/1/1d/The_emperors_new_bracelet_icon1.png/80px-The_emperors_new_bracelet_icon1.png` },
+    { id: "ring1",     name: "Anel 1",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/f/f4/The_emperors_new_ring_icon1.png/80px-The_emperors_new_ring_icon1.png` },
+    { id: "ring2",     name: "Anel 2",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/f/f4/The_emperors_new_ring_icon1.png/80px-The_emperors_new_ring_icon1.png` }
 ];
 
 // Dicionário oficial de slugs do The Balance (Dawntrail)
@@ -1168,44 +1169,76 @@ function renderEquipmentPanel() {
             bisAnchorEl.href = getBisUrlForJob(currJob);
         }
         
-        slotsGridCont.innerHTML = "";
-        GEAR_SLOTS.forEach(slot => {
+        // Layout estilo Wiki: Armaduras | Classe (centro) | Acessórios
+        const armorSlots = GEAR_SLOTS.filter(s => s.group === "armor");
+        const accessorySlots = GEAR_SLOTS.filter(s => s.group === "accessory");
+        const centerJobObj = FFXIV_JOBS.find(j => j.id === currJob);
+        const centerRole = centerJobObj ? FFXIV_ROLES[centerJobObj.role] : null;
+        const centerJobImg = centerJobObj && centerJobObj.iconUrl
+            ? `<img class="job-portrait-img" src="${centerJobObj.iconUrl}" alt="${currJob}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="job-portrait-fallback" style="display:none;">${centerJobObj.icon || '⚔️'}</div>`
+            : `<div class="job-portrait-fallback" style="display:flex;">${centerJobObj ? centerJobObj.icon : '⚔️'}</div>`;
+
+        const buildSlotRowHtml = (slot) => {
             const currPref = getLootPref(targetMember, activeProgId, slot.id);
-
             const iconHtml = slot.iconUrl
-                ? `<img class="equip-slot-img-icon" src="${slot.iconUrl}" alt="${slot.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';"><span class="equip-slot-icon-fallback" style="display:none;font-size:1.5rem;">${slot.icon}</span>`
-                : `<span style="font-size:1.5rem">${slot.icon}</span>`;
-
-            const card = document.createElement("div");
-            card.className = "equip-slot-card";
-            card.innerHTML = `
-                <div class="equip-slot-info">
-                    <div class="equip-slot-icon">${iconHtml}</div>
-                    <div>
-                        <span class="equip-slot-label">${slot.name}</span>
-                        <span class="equip-slot-sub">Loot Preferido</span>
+                ? `<img class="gear-row-icon-img" src="${slot.iconUrl}" alt="${slot.itemName || slot.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><span class="gear-row-icon-fallback" style="display:none;">${slot.icon}</span>`
+                : `<span class="gear-row-icon-fallback" style="display:flex;">${slot.icon}</span>`;
+            return `
+                <div class="gear-slot-row" data-slot="${slot.id}">
+                    <div class="gear-row-icon-wrap">${iconHtml}</div>
+                    <div class="gear-row-body">
+                        <span class="gear-row-itemname" title="${slot.itemName || slot.name}">${slot.itemName || slot.name}</span>
+                        <span class="gear-row-slotname">${slot.name}</span>
+                        <div class="loot-pref-controls">
+                            <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need" data-slot="${slot.id}">🎲</button>
+                            <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed" data-slot="${slot.id}">🪙</button>
+                            <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass" data-slot="${slot.id}">❌</button>
+                        </div>
                     </div>
                 </div>
-                <div class="loot-pref-controls">
-                    <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need">🎲</button>
-                    <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed">🪙</button>
-                    <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass">❌</button>
-                </div>
             `;
+        };
 
-            card.querySelectorAll(".btn-loot-pref").forEach(btn => {
-                btn.addEventListener("click", (e) => {
-                    playSfx('click');
-                    const clickedPref = e.currentTarget.dataset.pref;
-                    setLootPref(targetMember, activeProgId, slot.id, clickedPref);
-                    saveState();
-                    card.querySelectorAll(".btn-loot-pref").forEach(b => b.classList.remove("active"));
-                    btn.classList.add("active");
-                    renderFightSummaryAndPriorities();
-                });
+        const armorHtml = armorSlots.map(buildSlotRowHtml).join("");
+        const accessoryHtml = accessorySlots.map(buildSlotRowHtml).join("");
+
+        slotsGridCont.innerHTML = `
+            <div class="gear-wiki-layout">
+                <div class="gear-wiki-column gear-armor-column">
+                    <div class="gear-wiki-col-header">Armor</div>
+                    ${armorHtml}
+                </div>
+                <div class="gear-wiki-column gear-character-column">
+                    <div class="gear-wiki-col-header">Class</div>
+                    <div class="job-portrait-frame" style="--role-color: ${centerRole ? centerRole.color : '#33b5e5'};">
+                        ${centerJobImg}
+                    </div>
+                    <div class="job-portrait-name" title="${targetMember.name || ''}">${targetMember.name || '<em>Sem Nick</em>'}</div>
+                    <div class="job-portrait-job" style="color: ${centerRole ? centerRole.color : 'var(--gold-bright)'};">
+                        ${currJob}${centerJobObj ? ' • ' + centerJobObj.name : ''}
+                    </div>
+                </div>
+                <div class="gear-wiki-column gear-accessory-column">
+                    <div class="gear-wiki-col-header">Accessories</div>
+                    ${accessoryHtml}
+                </div>
+            </div>
+        `;
+
+        slotsGridCont.querySelectorAll(".btn-loot-pref").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                playSfx('click');
+                const clickedPref = e.currentTarget.dataset.pref;
+                const slotId = e.currentTarget.dataset.slot;
+                setLootPref(targetMember, activeProgId, slotId, clickedPref);
+                saveState();
+                const row = e.currentTarget.closest(".gear-slot-row");
+                if (row) {
+                    row.querySelectorAll(".btn-loot-pref").forEach(b => b.classList.remove("active"));
+                }
+                e.currentTarget.classList.add("active");
+                renderFightSummaryAndPriorities();
             });
-
-            slotsGridCont.appendChild(card);
         });
     }
 

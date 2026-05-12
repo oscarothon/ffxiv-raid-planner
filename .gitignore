@@ -6,3 +6,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Configurações locais do Claude Code
+.claude/
