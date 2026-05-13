@@ -50,8 +50,6 @@
             <div class="header-controls">
                 <div id="user-pill" class="user-pill" hidden>
                     <span class="user-pill-name" id="user-pill-name"></span>
-                    <span class="user-pill-static" id="user-pill-static" title="Static atual"></span>
-                    <button id="btn-show-invite" class="ff-btn-small" title="Ver código de convite da static">🔗</button>
                     <button id="btn-logout" class="ff-btn-small" title="Sair">🚪</button>
                 </div>
                 <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)"
@@ -221,12 +219,14 @@
 
                         <!-- Seleção Customizada de Classes (Exibida se custom selecionado) -->
                         <div id="custom-jobs-selector" class="custom-jobs-selector mt-3" hidden>
-                            <label class="d-block mb-2"
-                                style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as
-                                classes específicas do jogador:</label>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <label style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as classes específicas:</label>
+                                <span class="custom-jobs-counter" id="custom-jobs-counter">0 selecionada(s)</span>
+                            </div>
                             <div id="custom-jobs-grid" class="custom-jobs-grid">
                                 <!-- Preenchido dinamicamente com botões/checkboxes das 21 classes -->
                             </div>
+                            <div class="custom-jobs-selected-preview" id="custom-jobs-selected-preview" hidden></div>
                         </div>
                     </div>
                 </div>
@@ -487,6 +487,35 @@
         </div>
     </div>
 
+    <!-- MODAL DE EDIÇÃO DE JOGADOR -->
+    <div id="modal-edit-player" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
+        <div class="ff-modal" style="max-width: 580px;">
+            <div class="modal-header">
+                <h3>✏️ Editar Jogador</h3>
+                <button class="btn-close-modal" data-target="modal-edit-player" aria-label="Fechar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-player-name">Nome / Nick in-game:</label>
+                    <input type="text" id="edit-player-name" class="ff-input">
+                </div>
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Pool de Classes Disponíveis:</label>
+                        <span class="custom-jobs-counter" id="edit-jobs-counter">0 selecionada(s)</span>
+                    </div>
+                    <p class="section-desc" style="font-size: 0.75rem; margin-bottom: 8px;">Clique nas classes para adicionar ou remover do pool deste jogador.</p>
+                    <div id="edit-jobs-grid" class="custom-jobs-grid"></div>
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    <button id="btn-edit-player-cancel" class="ff-btn-small" style="flex: 1;">Cancelar</button>
+                    <button id="btn-edit-player-save" class="ff-btn-action" style="flex: 2;">💾 Salvar Alterações</button>
+                </div>
+                <p id="edit-player-error" class="text-danger mt-2" hidden></p>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL DE AUTENTICAÇÃO (Login / Registro) -->
     <div id="modal-auth" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
         <div class="ff-modal" style="max-width: 460px;">
@@ -530,41 +559,6 @@
                 </div>
 
                 <p id="auth-error" class="text-danger mt-2" hidden></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL DE SELEÇÃO DE STATIC (criar ou entrar via código) -->
-    <div id="modal-static" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
-        <div class="ff-modal" style="max-width: 520px;">
-            <div class="modal-header">
-                <h3>⚔️ Escolha sua Static</h3>
-            </div>
-            <div class="modal-body">
-                <div id="my-statics-list" class="my-statics-list" style="margin-bottom: 16px;"></div>
-
-                <div class="modal-tabs">
-                    <button class="modal-tab-btn active" id="btn-show-create-static">Criar Static</button>
-                    <button class="modal-tab-btn" id="btn-show-join-static">Entrar por Código</button>
-                </div>
-
-                <div id="create-static-area" class="modal-tab-content">
-                    <div class="form-group">
-                        <label for="new-static-name">Nome da Static:</label>
-                        <input type="text" id="new-static-name" class="ff-input" placeholder="Ex: Little Ala Mhigos">
-                    </div>
-                    <button id="btn-create-static" class="ff-btn-action full-width mt-2">🌟 Criar Static</button>
-                </div>
-
-                <div id="join-static-area" class="modal-tab-content" hidden>
-                    <div class="form-group">
-                        <label for="join-code">Código de Convite:</label>
-                        <input type="text" id="join-code" class="ff-input" placeholder="Ex: aBc12xYz">
-                    </div>
-                    <button id="btn-join-static" class="ff-btn-action full-width mt-2">🤝 Entrar na Static</button>
-                </div>
-
-                <p id="static-error" class="text-danger mt-2" hidden></p>
             </div>
         </div>
     </div>

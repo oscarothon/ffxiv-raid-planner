@@ -24,6 +24,40 @@ app.config.update(
 init_db()
 
 
+# ---------- Static global compartilhada (uma única para todos) ----------
+GLOBAL_STATIC_NAME = "Little Ala Mhigos"
+GLOBAL_INVITE_CODE = "global"
+
+
+def _ensure_global_static():
+    """Garante que existe a static global e retorna seu id."""
+    with db_conn() as conn:
+        cur = conn.execute("SELECT id FROM statics WHERE invite_code = ?", (GLOBAL_INVITE_CODE,))
+        row = cur.fetchone()
+        if row:
+            return row["id"]
+        cur = conn.execute(
+            "INSERT INTO statics (name, invite_code, owner_user_id) VALUES (?, ?, NULL)",
+            (GLOBAL_STATIC_NAME, GLOBAL_INVITE_CODE),
+        )
+        return cur.lastrowid
+
+
+def _attach_user_to_global(user_id):
+    """Adiciona o user à static global e marca como ativa."""
+    static_id = _ensure_global_static()
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO static_members (static_id, user_id) VALUES (?, ?)",
+            (static_id, user_id),
+        )
+        conn.execute(
+            "UPDATE users SET active_static_id = ? WHERE id = ?",
+            (static_id, user_id),
+        )
+    return static_id
+
+
 # ---------- Frontend estático ----------
 @app.route("/")
 def index():
@@ -53,10 +87,11 @@ def register():
     except sqlite3.IntegrityError:
         return jsonify({"error": "Nome de usuário já cadastrado."}), 409
 
+    static_id = _attach_user_to_global(user_id)
     session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
-    return jsonify({"id": user_id, "username": username, "active_static_id": None})
+    return jsonify({"id": user_id, "username": username, "active_static_id": static_id})
 
 
 @app.post("/api/login")
@@ -72,13 +107,16 @@ def login():
         if not row or not check_password_hash(row["password_hash"], password):
             return jsonify({"error": "Usuário ou senha inválidos."}), 401
 
+        # Garante que o usuário sempre está na static global compartilhada
+        static_id = _attach_user_to_global(row["id"])
+
         session.permanent = True
         session["user_id"] = row["id"]
         session["username"] = row["username"]
         return jsonify({
             "id": row["id"],
             "username": row["username"],
-            "active_static_id": row["active_static_id"],
+            "active_static_id": static_id,
         })
     finally:
         conn.close()
@@ -95,10 +133,11 @@ def me():
     user = current_user()
     if not user:
         return jsonify({"error": "unauthorized"}), 401
+    static_id = user["active_static_id"] or _attach_user_to_global(user["id"])
     return jsonify({
         "id": user["id"],
         "username": user["username"],
-        "active_static_id": user["active_static_id"],
+        "active_static_id": static_id,
     })
 
 

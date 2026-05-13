@@ -1,20 +1,20 @@
 // Lógica da Aplicação - FFXIV Static Raid Planner Premium
 // Suporta: Independência de Elenco por Raid, Seleção de Classes Inline Animada & Agenda Preditiva Avançada
 
-// Ícones nativos do FFXIV: Emperor's New Attire (set translúcido/invisível) via FFXIV Console Games Wiki
-const WIKI_ICON_BASE = "https://ffxiv.consolegameswiki.com/mediawiki/images/thumb";
+// Ícones nativos do FFXIV: Emperor's New Attire — arquivos locais em assets/icons/emperor/
+const EMP_ICON_BASE = "assets/icons/emperor";
 const GEAR_SLOTS = [
-    { id: "weapon",    name: "Arma",       itemName: "The Emperor's New Fists",     icon: "⚔️", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/6/6b/The_emperors_new_fists_icon1.png/80px-The_emperors_new_fists_icon1.png` },
-    { id: "head",      name: "Cabeça",     itemName: "The Emperor's New Hat",       icon: "🪖", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/1/1a/The_emperors_new_hat_icon1.png/80px-The_emperors_new_hat_icon1.png` },
-    { id: "body",      name: "Peito",      itemName: "The Emperor's New Robe",      icon: "🥋", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/d/d1/The_emperors_new_robe_icon1.png/80px-The_emperors_new_robe_icon1.png` },
-    { id: "hands",     name: "Mãos",       itemName: "The Emperor's New Gloves",    icon: "🧤", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/7/74/The_emperors_new_gloves_icon1.png/80px-The_emperors_new_gloves_icon1.png` },
-    { id: "legs",      name: "Pernas",     itemName: "The Emperor's New Breeches",  icon: "👖", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/a/ae/The_emperors_new_breeches_icon1.png/80px-The_emperors_new_breeches_icon1.png` },
-    { id: "feet",      name: "Pés",        itemName: "The Emperor's New Boots",     icon: "🥾", group: "armor",     iconUrl: `${WIKI_ICON_BASE}/7/70/The_emperors_new_boots_icon1.png/80px-The_emperors_new_boots_icon1.png` },
-    { id: "earrings",  name: "Brincos",    itemName: "The Emperor's New Earrings",  icon: "✨", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/7/72/The_emperors_new_earrings_icon1.png/80px-The_emperors_new_earrings_icon1.png` },
-    { id: "necklace",  name: "Colar",      itemName: "The Emperor's New Necklace",  icon: "📿", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/0/0b/The_emperors_new_necklace_icon1.png/80px-The_emperors_new_necklace_icon1.png` },
-    { id: "bracelets", name: "Braceletes", itemName: "The Emperor's New Bracelet",  icon: "⭕", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/1/1d/The_emperors_new_bracelet_icon1.png/80px-The_emperors_new_bracelet_icon1.png` },
-    { id: "ring1",     name: "Anel 1",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/f/f4/The_emperors_new_ring_icon1.png/80px-The_emperors_new_ring_icon1.png` },
-    { id: "ring2",     name: "Anel 2",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${WIKI_ICON_BASE}/f/f4/The_emperors_new_ring_icon1.png/80px-The_emperors_new_ring_icon1.png` }
+    { id: "weapon",    name: "Arma",       itemName: "The Emperor's New Fists",     icon: "⚔️", group: "armor",     iconUrl: `${EMP_ICON_BASE}/fists.png` },
+    { id: "head",      name: "Cabeça",     itemName: "The Emperor's New Hat",       icon: "🪖", group: "armor",     iconUrl: `${EMP_ICON_BASE}/hat.png` },
+    { id: "body",      name: "Peito",      itemName: "The Emperor's New Robe",      icon: "🥋", group: "armor",     iconUrl: `${EMP_ICON_BASE}/robe.png` },
+    { id: "hands",     name: "Mãos",       itemName: "The Emperor's New Gloves",    icon: "🧤", group: "armor",     iconUrl: `${EMP_ICON_BASE}/gloves.png` },
+    { id: "legs",      name: "Pernas",     itemName: "The Emperor's New Breeches",  icon: "👖", group: "armor",     iconUrl: `${EMP_ICON_BASE}/breeches.png` },
+    { id: "feet",      name: "Pés",        itemName: "The Emperor's New Boots",     icon: "🥾", group: "armor",     iconUrl: `${EMP_ICON_BASE}/boots.png` },
+    { id: "earrings",  name: "Brincos",    itemName: "The Emperor's New Earrings",  icon: "✨", group: "accessory", iconUrl: `${EMP_ICON_BASE}/earrings.png` },
+    { id: "necklace",  name: "Colar",      itemName: "The Emperor's New Necklace",  icon: "📿", group: "accessory", iconUrl: `${EMP_ICON_BASE}/necklace.png` },
+    { id: "bracelets", name: "Braceletes", itemName: "The Emperor's New Bracelet",  icon: "⭕", group: "accessory", iconUrl: `${EMP_ICON_BASE}/bracelet.png` },
+    { id: "ring1",     name: "Anel 1",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${EMP_ICON_BASE}/ring.png` },
+    { id: "ring2",     name: "Anel 2",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${EMP_ICON_BASE}/ring.png` }
 ];
 
 // Dicionário oficial de slugs do The Balance (Dawntrail)
@@ -231,7 +231,6 @@ function saveState() {
         API.putState(state).catch(err => {
             console.error("Falha ao salvar estado:", err);
             if (err.status === 401) showAuthModal();
-            else if (err.status === 400 || err.status === 404) showStaticModal();
         });
     }, 400);
     updateDashboardStats();
@@ -297,6 +296,27 @@ function getProgObj(progId) {
 // ==========================================================================
 // Seletor Customizado de Classes
 // ==========================================================================
+function updateCustomJobsCounter() {
+    const counter = document.getElementById("custom-jobs-counter");
+    const preview = document.getElementById("custom-jobs-selected-preview");
+    const n = customSelectedJobs.size;
+    if (counter) {
+        counter.textContent = `${n} selecionada${n === 1 ? '' : 's'}`;
+        counter.classList.toggle("zero", n === 0);
+    }
+    if (preview) {
+        if (n === 0) {
+            preview.hidden = true;
+            preview.innerHTML = "";
+        } else {
+            preview.hidden = false;
+            preview.innerHTML = Array.from(customSelectedJobs)
+                .map(id => `<span class="sel-chip">${id}</span>`)
+                .join("");
+        }
+    }
+}
+
 function initCustomJobsGrid() {
     const grid = document.getElementById("custom-jobs-grid");
     if (!grid) return;
@@ -308,11 +328,11 @@ function initCustomJobsGrid() {
         btn.type = "button";
         btn.className = "custom-job-btn";
         btn.dataset.job = job.id;
-        
+
         const roleData = FFXIV_ROLES[job.role];
         btn.style.borderBottom = `2px solid ${roleData ? roleData.color : '#fff'}`;
         const imgHtml = job.iconUrl ? `<img class="job-img-icon" src="${job.iconUrl}" alt="${job.id}" onerror="this.style.display='none'">` : job.icon;
-        btn.innerHTML = `${imgHtml} ${job.id}`;
+        btn.innerHTML = `${imgHtml}<span>${job.id}</span>`;
         btn.title = job.name;
 
         btn.addEventListener("click", () => {
@@ -324,9 +344,11 @@ function initCustomJobsGrid() {
                 customSelectedJobs.add(job.id);
                 btn.classList.add("selected");
             }
+            updateCustomJobsCounter();
         });
         grid.appendChild(btn);
     });
+    updateCustomJobsCounter();
 }
 
 // ==========================================================================
@@ -609,6 +631,7 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
+                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador">✏️</button>
                         <button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid">👇</button>
                         <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador">❌</button>
                     </div>
@@ -647,6 +670,7 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
+                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador">✏️</button>
                         <button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid">👆</button>
                         <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador">❌</button>
                     </div>
@@ -766,6 +790,128 @@ function bindRosterTableEvents() {
             }
         });
     });
+
+    container.querySelectorAll(".btn-edit-member").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            const id = e.currentTarget.dataset.id;
+            openEditPlayerModal(id);
+        });
+    });
+}
+
+// ==========================================================================
+// Modal de Edição de Jogador (nome + pool de classes)
+// ==========================================================================
+let editingPlayerId = null;
+let editingSelectedJobs = new Set();
+
+function openEditPlayerModal(playerId) {
+    const player = state.roster.find(p => p.id === playerId);
+    if (!player) return;
+    editingPlayerId = playerId;
+    editingSelectedJobs = new Set(player.jobsPool || []);
+
+    const modal = document.getElementById("modal-edit-player");
+    const nameInp = document.getElementById("edit-player-name");
+    const errEl = document.getElementById("edit-player-error");
+    if (nameInp) nameInp.value = player.name || "";
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+
+    renderEditJobsGrid();
+    if (modal) modal.hidden = false;
+    playSfx('tab');
+}
+
+function closeEditPlayerModal() {
+    const modal = document.getElementById("modal-edit-player");
+    if (modal) modal.hidden = true;
+    editingPlayerId = null;
+    editingSelectedJobs.clear();
+}
+
+function updateEditJobsCounter() {
+    const counter = document.getElementById("edit-jobs-counter");
+    if (!counter) return;
+    const n = editingSelectedJobs.size;
+    counter.textContent = `${n} selecionada${n === 1 ? '' : 's'}`;
+    counter.classList.toggle("zero", n === 0);
+}
+
+function renderEditJobsGrid() {
+    const grid = document.getElementById("edit-jobs-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    FFXIV_JOBS.forEach(job => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "custom-job-btn";
+        btn.dataset.job = job.id;
+        if (editingSelectedJobs.has(job.id)) btn.classList.add("selected");
+
+        const roleData = FFXIV_ROLES[job.role];
+        btn.style.borderBottom = `2px solid ${roleData ? roleData.color : '#fff'}`;
+        const imgHtml = job.iconUrl ? `<img class="job-img-icon" src="${job.iconUrl}" alt="${job.id}" onerror="this.style.display='none'">` : job.icon;
+        btn.innerHTML = `${imgHtml}<span>${job.id}</span>`;
+        btn.title = job.name;
+
+        btn.addEventListener("click", () => {
+            playSfx('click');
+            if (editingSelectedJobs.has(job.id)) {
+                editingSelectedJobs.delete(job.id);
+                btn.classList.remove("selected");
+            } else {
+                editingSelectedJobs.add(job.id);
+                btn.classList.add("selected");
+            }
+            updateEditJobsCounter();
+        });
+        grid.appendChild(btn);
+    });
+    updateEditJobsCounter();
+}
+
+function saveEditedPlayer() {
+    if (!editingPlayerId) return;
+    const player = state.roster.find(p => p.id === editingPlayerId);
+    if (!player) return;
+
+    const errEl = document.getElementById("edit-player-error");
+    const nameInp = document.getElementById("edit-player-name");
+    const newName = (nameInp ? nameInp.value : "").trim();
+
+    if (!newName) {
+        if (errEl) { errEl.textContent = "Informe o nome do jogador."; errEl.hidden = false; }
+        return;
+    }
+    if (editingSelectedJobs.size === 0) {
+        if (errEl) { errEl.textContent = "Selecione ao menos uma classe no pool."; errEl.hidden = false; }
+        return;
+    }
+
+    const newPool = Array.from(editingSelectedJobs);
+    player.name = newName;
+    player.jobsPool = newPool;
+
+    // Reajusta a classe atribuída por prog se ela não estiver mais no pool
+    if (!newPool.includes(player.assignedJob)) {
+        player.assignedJob = newPool[0];
+    }
+    if (player.assignedJobsByProg) {
+        Object.keys(player.assignedJobsByProg).forEach(pId => {
+            if (!newPool.includes(player.assignedJobsByProg[pId])) {
+                player.assignedJobsByProg[pId] = newPool[0];
+            }
+        });
+    }
+
+    // O player virou específico (custom) ao editar pool manualmente
+    player.flexType = "custom";
+
+    playSfx('success');
+    saveState();
+    closeEditPlayerModal();
+    renderRosterTables();
 }
 
 // Fechar modais/seletores ao clicar fora
@@ -1421,66 +1567,13 @@ function hideAuthModal() {
     if (m) m.hidden = true;
 }
 
-function showStaticModal(errMsg) {
-    const m = document.getElementById("modal-static");
-    const e = document.getElementById("static-error");
-    if (m) m.hidden = false;
-    if (e) {
-        if (errMsg) { e.textContent = errMsg; e.hidden = false; }
-        else { e.hidden = true; e.textContent = ""; }
-    }
-    renderMyStaticsList();
-}
-
-function hideStaticModal() {
-    const m = document.getElementById("modal-static");
-    if (m) m.hidden = true;
-}
-
-async function renderMyStaticsList() {
-    const cont = document.getElementById("my-statics-list");
-    if (!cont) return;
-    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:8px;">Carregando suas statics...</div>`;
-    try {
-        const list = await API.myStatics();
-        if (!list || list.length === 0) {
-            cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:8px; font-style:italic;">Você ainda não participa de nenhuma static. Crie uma ou entre por código abaixo.</div>`;
-            return;
-        }
-        cont.innerHTML = "";
-        list.forEach(s => {
-            const row = document.createElement("div");
-            row.className = "static-list-row";
-            row.innerHTML = `
-                <span class="static-name">${s.name}</span>
-                <span class="static-code" title="Código de convite">${s.invite_code}</span>
-            `;
-            row.addEventListener("click", async () => {
-                playSfx('click');
-                try {
-                    await API.switchStatic(s.id);
-                    hideStaticModal();
-                    await bootstrapAfterAuth();
-                } catch (err) {
-                    showStaticModal(err.message);
-                }
-            });
-            cont.appendChild(row);
-        });
-    } catch (err) {
-        cont.innerHTML = `<div style="color:var(--color-unavail); font-size:0.85rem; padding:8px;">Erro ao listar statics.</div>`;
-    }
-}
-
 function updateUserPill() {
     const pill = document.getElementById("user-pill");
     const nameEl = document.getElementById("user-pill-name");
-    const staticEl = document.getElementById("user-pill-static");
     if (!pill) return;
     if (currentUser) {
         pill.hidden = false;
         if (nameEl) nameEl.textContent = currentUser.username;
-        if (staticEl) staticEl.textContent = currentStaticName || "Sem static";
     } else {
         pill.hidden = true;
     }
@@ -1492,16 +1585,11 @@ async function bootstrapAfterAuth() {
         showAuthModal();
         return;
     }
-    if (result === "needs_static") {
-        showStaticModal();
-        return;
-    }
     if (result !== "loaded") {
         showAuthModal("Erro ao carregar dados. Tente entrar novamente.");
         return;
     }
     hideAuthModal();
-    hideStaticModal();
     updateUserPill();
     renderAllAfterLoad();
 }
@@ -1978,8 +2066,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             try {
                 currentUser = await API.register(u, p);
                 playSfx('success');
-                hideAuthModal();
-                showStaticModal();
+                await bootstrapAfterAuth();
             } catch (err) {
                 showAuthModal(err.message);
             }
@@ -1992,92 +2079,30 @@ document.addEventListener("DOMContentLoaded", async () => {
             playSfx('click');
             try { await API.logout(); } catch (_) {}
             currentUser = null;
-            currentStaticName = null;
-            currentInviteCode = null;
             updateUserPill();
             showAuthModal();
         });
     }
 
-    // ----- Handlers de Static (criar/entrar/listar) -----
-    const btnShowCreateStatic = document.getElementById("btn-show-create-static");
-    const btnShowJoinStatic = document.getElementById("btn-show-join-static");
-    const createStaticArea = document.getElementById("create-static-area");
-    const joinStaticArea = document.getElementById("join-static-area");
-
-    if (btnShowCreateStatic && btnShowJoinStatic && createStaticArea && joinStaticArea) {
-        btnShowCreateStatic.addEventListener("click", () => {
-            playSfx('click');
-            btnShowCreateStatic.classList.add("active");
-            btnShowJoinStatic.classList.remove("active");
-            createStaticArea.hidden = false;
-            joinStaticArea.hidden = true;
+    // ----- Handlers do Modal de Edição de Jogador -----
+    const btnEditSave = document.getElementById("btn-edit-player-save");
+    const btnEditCancel = document.getElementById("btn-edit-player-cancel");
+    const modalEditPlayer = document.getElementById("modal-edit-player");
+    if (btnEditSave) btnEditSave.addEventListener("click", saveEditedPlayer);
+    if (btnEditCancel) btnEditCancel.addEventListener("click", () => { playSfx('click'); closeEditPlayerModal(); });
+    if (modalEditPlayer) {
+        // Clique no overlay (fora da modal) fecha
+        modalEditPlayer.addEventListener("click", (e) => {
+            if (e.target === modalEditPlayer) closeEditPlayerModal();
         });
-        btnShowJoinStatic.addEventListener("click", () => {
-            playSfx('click');
-            btnShowJoinStatic.classList.add("active");
-            btnShowCreateStatic.classList.remove("active");
-            joinStaticArea.hidden = false;
-            createStaticArea.hidden = true;
-        });
+        // Botão X
+        const closeBtn = modalEditPlayer.querySelector(".btn-close-modal");
+        if (closeBtn) closeBtn.addEventListener("click", () => { playSfx('click'); closeEditPlayerModal(); });
     }
 
-    const btnCreateStatic = document.getElementById("btn-create-static");
-    if (btnCreateStatic) {
-        btnCreateStatic.addEventListener("click", async () => {
-            const name = document.getElementById("new-static-name").value.trim();
-            try {
-                const s = await API.createStatic(name || "Minha Static");
-                playSfx('success');
-                hideStaticModal();
-                alert(`Static criada!\n\nCódigo de convite: ${s.invite_code}\n\nCompartilhe com seu grupo. Eles podem entrar usando "Entrar por Código".`);
-                await bootstrapAfterAuth();
-            } catch (err) {
-                showStaticModal(err.message);
-            }
-        });
-    }
-
-    const btnJoinStatic = document.getElementById("btn-join-static");
-    if (btnJoinStatic) {
-        btnJoinStatic.addEventListener("click", async () => {
-            const code = document.getElementById("join-code").value.trim();
-            try {
-                await API.joinStatic(code);
-                playSfx('success');
-                hideStaticModal();
-                await bootstrapAfterAuth();
-            } catch (err) {
-                showStaticModal(err.message);
-            }
-        });
-    }
-
-    const btnShowInvite = document.getElementById("btn-show-invite");
-    if (btnShowInvite) {
-        btnShowInvite.addEventListener("click", () => {
-            playSfx('click');
-            if (!currentInviteCode) {
-                alert("Sem static ativa.");
-                return;
-            }
-            const url = `${window.location.origin}/`;
-            navigator.clipboard.writeText(currentInviteCode).then(() => {
-                alert(`Código de convite copiado!\n\nCódigo: ${currentInviteCode}\nURL: ${url}\n\nEntregue ao seu grupo — eles entram em "Entrar por Código".`);
-            }).catch(() => {
-                alert(`Código de convite: ${currentInviteCode}\nURL: ${url}`);
-            });
-        });
-    }
-
-    // ----- Bootstrap final: decide qual modal abrir ou carrega estado -----
+    // ----- Bootstrap final: tem sessão? carrega; senão pede login -----
     if (currentUser) {
-        if (currentUser.active_static_id) {
-            await bootstrapAfterAuth();
-        } else {
-            updateUserPill();
-            showStaticModal();
-        }
+        await bootstrapAfterAuth();
     } else {
         showAuthModal();
     }
