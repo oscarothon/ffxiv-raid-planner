@@ -160,6 +160,29 @@ body {
     animation: floatCrystal 4s ease-in-out infinite alternate;
 }
 
+/* Logo FC: banner com griffin/heráldica */
+.fc-banner-logo {
+    width: 70px;
+    height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)) drop-shadow(0 0 12px rgba(126, 58, 168, 0.5));
+    animation: bannerSway 5s ease-in-out infinite alternate;
+}
+
+.fc-banner-logo img {
+    width: 100%;
+    height: auto;
+    display: block;
+    image-rendering: -webkit-optimize-contrast;
+}
+
+@keyframes bannerSway {
+    from { transform: translateY(0) rotate(-1deg); }
+    to   { transform: translateY(-3px) rotate(1deg); }
+}
+
 .title-wrapper h1 {
     font-family: var(--font-title);
     font-size: 1.8rem;

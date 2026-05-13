@@ -95,6 +95,17 @@ const FLEX_POOLS = {
 let state = {};
 let customSelectedJobs = new Set();
 
+// Ordena uma lista de jobIds segundo a ordem canônica definida em FFXIV_JOBS,
+// garantindo que remover e re-adicionar um job retorne à mesma posição.
+function sortJobsCanonical(jobIds) {
+    const order = new Map(FFXIV_JOBS.map((j, i) => [j.id, i]));
+    return [...jobIds].sort((a, b) => {
+        const ia = order.has(a) ? order.get(a) : 999;
+        const ib = order.has(b) ? order.get(b) : 999;
+        return ia - ib;
+    });
+}
+
 // ==========================================================================
 // Sistema de Efeitos Sonoros FFXIV
 // ==========================================================================
@@ -889,7 +900,7 @@ function saveEditedPlayer() {
         return;
     }
 
-    const newPool = Array.from(editingSelectedJobs);
+    const newPool = sortJobsCanonical(editingSelectedJobs);
     player.name = newName;
     player.jobsPool = newPool;
 
@@ -1679,7 +1690,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
             });
 
-            let jobsPool = Array.from(new Set(mergedPool));
+            let jobsPool = sortJobsCanonical(new Set(mergedPool));
 
             if (jobsPool.length === 0) {
                 alert("Nenhuma classe resultante na Pool. Selecione pelo menos uma classe avulsa ou perfil predefinido.");
