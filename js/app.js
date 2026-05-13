@@ -43,6 +43,7 @@ const BALANCE_JOB_SLUGS = {
 };
 
 let selectedEquipmentMemberId = null;
+let activeContentTypeId = "raid";
 
 function getLootPref(player, progId, slotId) {
     if (!player) return "pass";
@@ -456,9 +457,7 @@ const ROLE_WEIGHTS = { tank: 1, healer: 2, melee: 3, ranged: 4, caster: 5 };
 
 function renderActiveProgsPanel() {
     const container = document.getElementById("active-progs-list");
-    const selSavage = document.getElementById("select-add-savage");
-    const selUlt = document.getElementById("select-add-ultimate");
-    
+
     if (container) {
         container.innerHTML = "";
         if (!state.activeProgs || state.activeProgs.length === 0) {
@@ -467,7 +466,6 @@ function renderActiveProgsPanel() {
             state.activeProgs.forEach(progId => {
                 const progObj = getProgObj(progId);
                 const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
-                
                 const chip = document.createElement("div");
                 chip.className = "prog-chip";
                 chip.innerHTML = `
@@ -477,7 +475,7 @@ function renderActiveProgsPanel() {
                 `;
                 container.appendChild(chip);
             });
-            
+
             container.querySelectorAll(".prog-chip-close").forEach(btn => {
                 btn.addEventListener("click", (e) => {
                     playSfx('click');
@@ -494,22 +492,39 @@ function renderActiveProgsPanel() {
             });
         }
     }
-    
-    if (selSavage && selSavage.children.length <= 1) {
-        FFXIV_RAIDS.forEach(r => {
-            const opt = document.createElement("option");
-            opt.value = r.id;
-            opt.textContent = `${r.name} (${r.expansion})`;
-            selSavage.appendChild(opt);
+
+    // Render content type buttons
+    const typeSelector = document.getElementById("content-type-selector");
+    if (typeSelector) {
+        typeSelector.innerHTML = "";
+        CONTENT_TYPES.forEach(ct => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `btn-content-type ${ct.id === activeContentTypeId ? 'active' : ''}`;
+            btn.innerHTML = `${ct.icon} ${ct.label}`;
+            btn.addEventListener("click", () => {
+                playSfx('tab');
+                activeContentTypeId = ct.id;
+                renderActiveProgsPanel();
+            });
+            typeSelector.appendChild(btn);
         });
     }
-    if (selUlt && selUlt.children.length <= 1) {
-        FFXIV_ULTIMATES.forEach(u => {
-            const opt = document.createElement("option");
-            opt.value = u.id;
-            opt.textContent = `${u.name} (${u.expansion})`;
-            selUlt.appendChild(opt);
-        });
+
+    // Populate unified content select
+    const selContent = document.getElementById("select-add-content");
+    if (selContent) {
+        selContent.innerHTML = '<option value="">-- Selecione --</option>';
+        const currentType = CONTENT_TYPES.find(ct => ct.id === activeContentTypeId);
+        if (currentType) {
+            currentType.getList().forEach(item => {
+                const opt = document.createElement("option");
+                opt.value = item.id;
+                opt.textContent = `${item.name} (${item.expansion})`;
+                if (state.activeProgs && state.activeProgs.includes(item.id)) opt.disabled = true;
+                selContent.appendChild(opt);
+            });
+        }
     }
 }
 
@@ -1271,7 +1286,7 @@ function renderEquipmentPanel() {
     const selectedNameEl = document.getElementById("equip-selected-member-name");
     const selectedJobEl = document.getElementById("equip-selected-member-job");
     const bisAnchorEl = document.getElementById("bis-link-anchor");
-    
+
     if (!membersListCont || !slotsGridCont) return;
     
     const activeProgId = state.inspectedProgId || "geral";
@@ -1740,36 +1755,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnAddProg = document.getElementById("btn-add-prog");
     if (btnAddProg) {
         btnAddProg.addEventListener("click", () => {
-            const selSav = document.getElementById("select-add-savage");
-            const selUlt = document.getElementById("select-add-ultimate");
-            const targetId = (selSav ? selSav.value : "") || (selUlt ? selUlt.value : "");
-            
-            if (!targetId) {
-                alert("Selecione uma Raid Savage ou uma Ultimate para adicionar aos seus progressos.");
+            const selContent = document.getElementById("select-add-content");
+            if (!selContent || !selContent.value) return;
+            const selectedId = selContent.value;
+            if (state.activeProgs && state.activeProgs.includes(selectedId)) {
+                alert("Este conteúdo já está na lista de progressos ativos!");
                 return;
             }
-            
-            if (!state.activeProgs) state.activeProgs = [];
-            if (state.activeProgs.includes(targetId)) {
-                alert("Este conteúdo já está na lista de progressos ativos.");
-                return;
-            }
-            
-            state.activeProgs.push(targetId);
-            state.inspectedProgId = targetId;
-            
-            // Inicializa statusByProg de todo o elenco para o novo progresso
-            state.roster.forEach(p => {
-                if (!p.statusByProg) p.statusByProg = {};
-                p.statusByProg[targetId] = p.status === "bench" ? "bench" : "bench"; // Inicia reservas para montar a party customizada
-            });
-
-            saveState();
             playSfx('success');
-            
-            if (selSav) selSav.value = "";
-            if (selUlt) selUlt.value = "";
-            
+            if (!state.activeProgs) state.activeProgs = [];
+            state.activeProgs.push(selectedId);
+            state.roster.forEach(player => {
+                if (!player.statusByProg) player.statusByProg = {};
+                if (!player.statusByProg[selectedId]) {
+                    player.statusByProg[selectedId] = player.status === "bench" ? "bench" : "active";
+                }
+            });
+            saveState();
             renderActiveProgsPanel();
             renderProgTabsBar();
             renderRosterTables();
