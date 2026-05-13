@@ -2031,49 +2031,11 @@ label {
     font-weight: 700;
 }
 
-/* === Status de membros nos prog chips === */
-.prog-chip-member-status {
-    font-family: var(--font-ui);
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    margin-top: 2px;
-    display: flex;
-    gap: 8px;
-}
-.prog-chip-member-status .status-active { color: var(--color-avail); font-weight: 600; }
-.prog-chip-member-status .status-bench  { color: var(--gold-muted);  font-weight: 600; }
-
-/* === Job selected flash === */
-@keyframes jobSelectedFlash {
-    0%   { transform: scale(1);    box-shadow: 0 0 15px var(--clear-blue-bright); }
-    40%  { transform: scale(1.1);  box-shadow: 0 0 40px #fff, 0 0 70px var(--clear-blue-bright); }
-    100% { transform: scale(1);    box-shadow: 0 0 15px var(--clear-blue-bright); }
-}
-.job-selected-flash { animation: jobSelectedFlash 0.55s ease-out !important; }
-
 /* === Crystal button pulse === */
 @keyframes crystalButtonPulse {
     from { box-shadow: 0 0 15px rgba(0,153,221,0.4), 0 4px 15px rgba(0,0,0,0.5); }
     to   { box-shadow: 0 0 30px rgba(51,181,229,0.7), 0 0 8px rgba(255,255,255,0.2), 0 4px 20px rgba(0,0,0,0.5); }
 }
-
-/* === Equipment stat bar === */
-.equip-stat-bar {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    padding: 8px 16px;
-    background: rgba(0,136,204,0.08);
-    border: 1px solid rgba(51,181,229,0.2);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-ui);
-    font-size: 0.82rem;
-    color: var(--text-muted);
-}
-.equip-stat-bar .stat-item { display: flex; align-items: center; gap: 4px; }
-.equip-stat-bar .stat-value { font-weight: 700; color: var(--text-main); }
-.equip-stat-bar .stat-active .stat-value { color: var(--color-avail); }
-.equip-stat-bar .stat-bench  .stat-value { color: var(--gold-bright); }
 
 /* === Enhanced add-prog-controls container === */
 .add-prog-controls-enhanced {

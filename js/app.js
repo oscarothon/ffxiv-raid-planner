@@ -466,19 +466,11 @@ function renderActiveProgsPanel() {
             state.activeProgs.forEach(progId => {
                 const progObj = getProgObj(progId);
                 const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
-                const activeCount = state.roster.filter(p => getPlayerStatusForProg(p, progId) === "active").length;
-                const benchCount  = state.roster.filter(p => getPlayerStatusForProg(p, progId) !== "active").length;
-
                 const chip = document.createElement("div");
                 chip.className = "prog-chip";
                 chip.innerHTML = `
                     <span class="prog-chip-type" style="color: ${isUlt ? '#e17a47' : 'var(--gold-bright)'}">${isUlt ? 'Ultimate' : 'Savage'}</span>
                     <span style="font-weight: 600;">${progObj.name.split(" (")[0].split(":")[0]}</span>
-                    <div class="prog-chip-member-status">
-                        <span class="status-active">${activeCount} titular${activeCount !== 1 ? 'es' : ''}</span>
-                        <span>•</span>
-                        <span class="status-bench">${benchCount} banco</span>
-                    </div>
                     <button class="prog-chip-close" data-id="${progId}" title="Remover Progresso">&times;</button>
                 `;
                 container.appendChild(chip);
@@ -738,18 +730,6 @@ function bindRosterTableEvents() {
                 saveState();
                 renderRosterTables();
                 renderEquipmentPanel();
-                requestAnimationFrame(() => {
-                    document.querySelectorAll("#roster-active-tbody tr").forEach(row => {
-                        const nameInput = row.querySelector('.inp-roster-name');
-                        if (nameInput && nameInput.dataset.id === pId) {
-                            const container = row.querySelector('.active-assigned-job-container');
-                            if (container) {
-                                container.classList.add('job-selected-flash');
-                                setTimeout(() => container.classList.remove('job-selected-flash'), 600);
-                            }
-                        }
-                    });
-                });
             }
         });
     });
@@ -1306,22 +1286,6 @@ function renderEquipmentPanel() {
     const selectedNameEl = document.getElementById("equip-selected-member-name");
     const selectedJobEl = document.getElementById("equip-selected-member-job");
     const bisAnchorEl = document.getElementById("bis-link-anchor");
-
-    const statBar = document.getElementById("equip-stat-bar");
-    if (statBar) {
-        const _progId = state.inspectedProgId || "geral";
-        const _active = state.roster.filter(p => getPlayerStatusForProg(p, _progId) === "active").length;
-        const _bench  = state.roster.filter(p => getPlayerStatusForProg(p, _progId) !== "active").length;
-        const _prog   = getProgObj(_progId);
-        const _name   = _prog.name.split(" (")[0].split(":")[0];
-        statBar.innerHTML = `
-            <span style="color:var(--border-crystal);font-weight:700;margin-right:8px;">⚔️ ${_name}</span>
-            <span class="stat-item stat-active"><span class="stat-value">${_active}</span> titular${_active !== 1 ? 'es' : ''}</span>
-            <span style="color:var(--text-muted);">•</span>
-            <span class="stat-item stat-bench"><span class="stat-value">${_bench}</span> banco</span>
-            <span style="color:var(--text-muted);margin-left:auto;font-size:0.75rem;">${_active}/8 vagas preenchidas</span>
-        `;
-    }
 
     if (!membersListCont || !slotsGridCont) return;
     
