@@ -1187,8 +1187,7 @@ function renderEquipmentPanel() {
                 <div class="gear-slot-row" data-slot="${slot.id}">
                     <div class="gear-row-icon-wrap">${iconHtml}</div>
                     <div class="gear-row-body">
-                        <span class="gear-row-itemname" title="${slot.itemName || slot.name}">${slot.itemName || slot.name}</span>
-                        <span class="gear-row-slotname">${slot.name}</span>
+                        <span class="gear-row-slotname" title="${slot.itemName || slot.name}">${slot.name}</span>
                         <div class="loot-pref-controls">
                             <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need" data-slot="${slot.id}">🎲</button>
                             <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed" data-slot="${slot.id}">🪙</button>
