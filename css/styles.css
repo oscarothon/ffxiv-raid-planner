@@ -1959,6 +1959,148 @@ label {
     margin-top: 4px;
 }
 
+/* === Botão Crystal Add === */
+.ff-btn-crystal-add {
+    background: linear-gradient(135deg, #0099dd 0%, #005599 50%, #003388 100%);
+    border: 2px solid rgba(51, 181, 229, 0.8);
+    color: #ffffff;
+    font-family: var(--font-title);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 0 28px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0,153,221,0.5), 0 4px 15px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+    transition: all 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
+    animation: crystalButtonPulse 3s infinite alternate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-transform: uppercase;
+}
+.ff-btn-crystal-add::before {
+    content: "";
+    position: absolute;
+    top: -50%; left: -75%;
+    width: 50%; height: 200%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+    transform: skewX(-20deg);
+    transition: left 0.6s ease;
+}
+.ff-btn-crystal-add:hover::before { left: 150%; }
+.ff-btn-crystal-add:hover {
+    background: linear-gradient(135deg, #33b5e5 0%, #0077bb 50%, #004499 100%);
+    box-shadow: 0 0 35px rgba(51,181,229,0.7), 0 0 10px rgba(255,255,255,0.3), 0 4px 20px rgba(0,0,0,0.6);
+    transform: translateY(-2px) scale(1.02);
+}
+.ff-btn-crystal-add:active { transform: translateY(0) scale(0.98); }
+
+/* === Seletor de tipo de conteúdo === */
+.content-type-selector { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-content-type {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(51,181,229,0.3);
+    color: var(--text-muted);
+    font-family: var(--font-title);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 7px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.5px;
+}
+.btn-content-type:hover {
+    border-color: var(--clear-blue-bright);
+    color: var(--text-main);
+    background: rgba(0,136,204,0.2);
+}
+.btn-content-type.active {
+    background: linear-gradient(135deg, rgba(0,136,204,0.4) 0%, rgba(0,68,136,0.6) 100%);
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(0,136,204,0.4), inset 0 0 6px rgba(253,224,71,0.1);
+    font-weight: 700;
+}
+
+/* === Status de membros nos prog chips === */
+.prog-chip-member-status {
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    display: flex;
+    gap: 8px;
+}
+.prog-chip-member-status .status-active { color: var(--color-avail); font-weight: 600; }
+.prog-chip-member-status .status-bench  { color: var(--gold-muted);  font-weight: 600; }
+
+/* === Job selected flash === */
+@keyframes jobSelectedFlash {
+    0%   { transform: scale(1);    box-shadow: 0 0 15px var(--clear-blue-bright); }
+    40%  { transform: scale(1.1);  box-shadow: 0 0 40px #fff, 0 0 70px var(--clear-blue-bright); }
+    100% { transform: scale(1);    box-shadow: 0 0 15px var(--clear-blue-bright); }
+}
+.job-selected-flash { animation: jobSelectedFlash 0.55s ease-out !important; }
+
+/* === Crystal button pulse === */
+@keyframes crystalButtonPulse {
+    from { box-shadow: 0 0 15px rgba(0,153,221,0.4), 0 4px 15px rgba(0,0,0,0.5); }
+    to   { box-shadow: 0 0 30px rgba(51,181,229,0.7), 0 0 8px rgba(255,255,255,0.2), 0 4px 20px rgba(0,0,0,0.5); }
+}
+
+/* === Equipment stat bar === */
+.equip-stat-bar {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 8px 16px;
+    background: rgba(0,136,204,0.08);
+    border: 1px solid rgba(51,181,229,0.2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.equip-stat-bar .stat-item { display: flex; align-items: center; gap: 4px; }
+.equip-stat-bar .stat-value { font-weight: 700; color: var(--text-main); }
+.equip-stat-bar .stat-active .stat-value { color: var(--color-avail); }
+.equip-stat-bar .stat-bench  .stat-value { color: var(--gold-bright); }
+
+/* === Enhanced add-prog-controls container === */
+.add-prog-controls-enhanced {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    background: linear-gradient(135deg, rgba(0,68,136,0.2) 0%, rgba(0,0,0,0.4) 100%);
+    padding: 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(51,181,229,0.2);
+    position: relative;
+    overflow: hidden;
+}
+.add-prog-controls-enhanced::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--clear-blue-bright), var(--gold-bright), var(--clear-blue-bright), transparent);
+    animation: borderSweep 4s linear infinite;
+}
+@keyframes borderSweep {
+    0%   { opacity: 0.3; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.3; }
+}
+
 /* Responsividade Básica */
 @media (max-width: 1500px) {
     .equipment-grid-container {

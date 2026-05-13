@@ -79,3 +79,9 @@ const FFXIV_RAIDS = [
     { id: "coil_second", name: "Second Coil of Bahamut (Savage)", expansion: "A Realm Reborn", encounters: ["T6S", "T7S", "T8S", "T9S"] },
     { id: "coil_binding", name: "Binding Coil of Bahamut", expansion: "A Realm Reborn", encounters: ["T1", "T2", "T3", "T4", "T5"] }
 ];
+
+// Tipos de conteúdo suportados — extensível para futuros conteúdos
+const CONTENT_TYPES = [
+    { id: "raid",     label: "Savage",   icon: "⚔️", getList: () => FFXIV_RAIDS },
+    { id: "ultimate", label: "Ultimate", icon: "🌀", getList: () => FFXIV_ULTIMATES }
+];

@@ -90,23 +90,23 @@
                             <div id="active-progs-list" class="active-progs-container">
                                 <!-- Chips dinâmicos dos progs ativos -->
                             </div>
-                            <div class="add-prog-controls">
-                                <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
-                                    <label for="select-add-savage" style="font-size: 0.75rem;">Adicionar Savage
-                                        Raid:</label>
-                                    <select id="select-add-savage" class="ff-select">
-                                        <option value="">-- Selecione a Raid --</option>
+                            <div class="add-prog-controls-enhanced">
+                                <div style="width: 100%; margin-bottom: 8px;">
+                                    <span style="font-size: 0.75rem; color: var(--border-crystal); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Tipo de Conteúdo:</span>
+                                    <div class="content-type-selector" id="content-type-selector">
+                                        <!-- Preenchido via JS usando CONTENT_TYPES -->
+                                    </div>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+                                    <label for="select-add-content" style="font-size: 0.75rem;">Selecionar Conteúdo:</label>
+                                    <select id="select-add-content" class="ff-select">
+                                        <option value="">-- Selecione --</option>
                                     </select>
                                 </div>
-                                <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
-                                    <label for="select-add-ultimate" style="font-size: 0.75rem;">Adicionar
-                                        Ultimate:</label>
-                                    <select id="select-add-ultimate" class="ff-select">
-                                        <option value="">-- Selecione a Ultimate --</option>
-                                    </select>
-                                </div>
-                                <button id="btn-add-prog" class="ff-btn-content-add"
-                                    style="align-self: flex-end; height: 38px; padding: 0 20px;" title="Adicionar novo conteúdo com paleta Clear Blue">➕ Adicionar</button>
+                                <button id="btn-add-prog" class="ff-btn-crystal-add"
+                                    style="align-self: flex-end;" title="Adicionar conteúdo ao grupo">
+                                    <span style="font-size: 1.1rem;">💎</span> Adicionar
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -365,6 +365,10 @@
                                 <!-- Sincronizado via JS -->
                             </div>
                         </div>
+                    </div>
+
+                    <div id="equip-stat-bar" class="equip-stat-bar" style="margin-bottom: 12px;">
+                        <!-- Preenchido via JS -->
                     </div>
 
                     <div class="equipment-grid-container">
