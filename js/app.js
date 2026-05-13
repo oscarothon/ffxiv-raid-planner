@@ -141,83 +141,99 @@ function playSfx(type) {
 }
 
 // ==========================================================================
-// Gerenciamento de Estado e Persistência Independente por Raid
+// Gerenciamento de Estado e Persistência via API (Flask + SQLite)
 // ==========================================================================
-function loadState() {
-    const saved = localStorage.getItem("ffxiv_static_planner_state");
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            state = { ...DEFAULT_STATE, ...parsed };
-            if (!Array.isArray(state.roster)) state.roster = [];
-            delete state.loot;
-            
-            if (!state.activeProgs || state.activeProgs.length === 0) {
-                state.activeProgs = ["arcadion_lh"];
-            }
-            if (!state.inspectedProgId) {
-                state.inspectedProgId = state.activeProgs[0];
-            }
-            if (!state.currentMonth) {
-                state.currentMonth = new Date().toISOString().slice(0, 7);
-            }
-            if (!state.scheduledProgs) {
-                state.scheduledProgs = {};
-            }
-            if (!state.lootPriorities || typeof state.lootPriorities !== "object") {
-                state.lootPriorities = {};
-            }
-            
-            state.roster = state.roster.map(player => {
-                const id = player.id || "mem_" + Math.random().toString(36).substr(2, 9);
-                const flexType = player.flexType || "custom";
-                let jobsPool = player.jobsPool || [];
-                if (jobsPool.length === 0 && player.job) jobsPool = [player.job];
-                if (jobsPool.length === 0) jobsPool = ["WAR"];
-                
-                const assignedJob = player.assignedJob || player.job || jobsPool[0];
-                const assignedJobsByProg = player.assignedJobsByProg || {};
-                const monthlySchedule = player.monthlySchedule || {};
-                
-                // Migração/Suporte ao statusByProg (Independência de Escalada por Raid)
-                const statusByProg = player.statusByProg || {};
-                const baseStatus = player.status === "bench" ? "bench" : "active";
-                
-                // Se o primeiro prog não estiver definido em statusByProg, inicializa
-                if (state.activeProgs && state.activeProgs.length > 0) {
-                    state.activeProgs.forEach(pId => {
-                        if (!statusByProg[pId]) {
-                            statusByProg[pId] = baseStatus;
-                        }
-                    });
-                }
-                
-                return {
-                    id,
-                    name: player.name || "",
-                    flexType,
-                    jobsPool,
-                    assignedJob,
-                    assignedJobsByProg,
-                    monthlySchedule,
-                    statusByProg,
-                    ilvl: parseInt(player.ilvl) || 710,
-                    bis: !!player.bis,
-                    status: baseStatus
-                };
-            });
-        } catch (e) {
-            state = JSON.parse(JSON.stringify(DEFAULT_STATE));
-        }
-    } else {
-        state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+let currentUser = null;
+let currentStaticName = null;
+let currentInviteCode = null;
+let saveTimer = null;
+
+function hydrateState(parsed) {
+    state = { ...DEFAULT_STATE, ...(parsed || {}) };
+    if (!Array.isArray(state.roster)) state.roster = [];
+    delete state.loot;
+
+    if (!state.activeProgs || state.activeProgs.length === 0) {
+        state.activeProgs = ["arcadion_lh"];
     }
+    if (!state.inspectedProgId) {
+        state.inspectedProgId = state.activeProgs[0];
+    }
+    if (!state.currentMonth) {
+        state.currentMonth = new Date().toISOString().slice(0, 7);
+    }
+    if (!state.scheduledProgs) {
+        state.scheduledProgs = {};
+    }
+    if (!state.lootPriorities || typeof state.lootPriorities !== "object") {
+        state.lootPriorities = {};
+    }
+
+    state.roster = state.roster.map(player => {
+        const id = player.id || "mem_" + Math.random().toString(36).substr(2, 9);
+        const flexType = player.flexType || "custom";
+        let jobsPool = player.jobsPool || [];
+        if (jobsPool.length === 0 && player.job) jobsPool = [player.job];
+        if (jobsPool.length === 0) jobsPool = ["WAR"];
+
+        const assignedJob = player.assignedJob || player.job || jobsPool[0];
+        const assignedJobsByProg = player.assignedJobsByProg || {};
+        const monthlySchedule = player.monthlySchedule || {};
+        const statusByProg = player.statusByProg || {};
+        const baseStatus = player.status === "bench" ? "bench" : "active";
+
+        if (state.activeProgs && state.activeProgs.length > 0) {
+            state.activeProgs.forEach(pId => {
+                if (!statusByProg[pId]) statusByProg[pId] = baseStatus;
+            });
+        }
+
+        return {
+            id,
+            name: player.name || "",
+            flexType,
+            jobsPool,
+            assignedJob,
+            assignedJobsByProg,
+            monthlySchedule,
+            statusByProg,
+            ilvl: parseInt(player.ilvl) || 710,
+            bis: !!player.bis,
+            status: baseStatus,
+            lootPreferences: player.lootPreferences || {}
+        };
+    });
+
     applyTheme();
+}
+
+async function loadState() {
+    try {
+        const res = await API.getState();
+        currentStaticName = res.static_name;
+        currentInviteCode = res.invite_code;
+        hydrateState(res.data || {});
+        return "loaded";
+    } catch (err) {
+        if (err.status === 401) return "needs_login";
+        if (err.status === 404 && err.data && err.data.error === "no_active_static") {
+            return "needs_static";
+        }
+        console.error("Falha ao carregar estado:", err);
+        return "error";
+    }
 }
 
 function saveState() {
     delete state.loot;
-    localStorage.setItem("ffxiv_static_planner_state", JSON.stringify(state));
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        API.putState(state).catch(err => {
+            console.error("Falha ao salvar estado:", err);
+            if (err.status === 401) showAuthModal();
+            else if (err.status === 400 || err.status === 404) showStaticModal();
+        });
+    }, 400);
     updateDashboardStats();
 }
 
@@ -1386,10 +1402,141 @@ function updateDashboardStats() {
 }
 
 // ==========================================================================
+// Fluxo de Autenticação e Modais
+// ==========================================================================
+function showAuthModal(errMsg) {
+    const m = document.getElementById("modal-auth");
+    const e = document.getElementById("auth-error");
+    if (m) m.hidden = false;
+    if (e) {
+        if (errMsg) { e.textContent = errMsg; e.hidden = false; }
+        else { e.hidden = true; e.textContent = ""; }
+    }
+    const ms = document.getElementById("modal-static");
+    if (ms) ms.hidden = true;
+}
+
+function hideAuthModal() {
+    const m = document.getElementById("modal-auth");
+    if (m) m.hidden = true;
+}
+
+function showStaticModal(errMsg) {
+    const m = document.getElementById("modal-static");
+    const e = document.getElementById("static-error");
+    if (m) m.hidden = false;
+    if (e) {
+        if (errMsg) { e.textContent = errMsg; e.hidden = false; }
+        else { e.hidden = true; e.textContent = ""; }
+    }
+    renderMyStaticsList();
+}
+
+function hideStaticModal() {
+    const m = document.getElementById("modal-static");
+    if (m) m.hidden = true;
+}
+
+async function renderMyStaticsList() {
+    const cont = document.getElementById("my-statics-list");
+    if (!cont) return;
+    cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:8px;">Carregando suas statics...</div>`;
+    try {
+        const list = await API.myStatics();
+        if (!list || list.length === 0) {
+            cont.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:8px; font-style:italic;">Você ainda não participa de nenhuma static. Crie uma ou entre por código abaixo.</div>`;
+            return;
+        }
+        cont.innerHTML = "";
+        list.forEach(s => {
+            const row = document.createElement("div");
+            row.className = "static-list-row";
+            row.innerHTML = `
+                <span class="static-name">${s.name}</span>
+                <span class="static-code" title="Código de convite">${s.invite_code}</span>
+            `;
+            row.addEventListener("click", async () => {
+                playSfx('click');
+                try {
+                    await API.switchStatic(s.id);
+                    hideStaticModal();
+                    await bootstrapAfterAuth();
+                } catch (err) {
+                    showStaticModal(err.message);
+                }
+            });
+            cont.appendChild(row);
+        });
+    } catch (err) {
+        cont.innerHTML = `<div style="color:var(--color-unavail); font-size:0.85rem; padding:8px;">Erro ao listar statics.</div>`;
+    }
+}
+
+function updateUserPill() {
+    const pill = document.getElementById("user-pill");
+    const nameEl = document.getElementById("user-pill-name");
+    const staticEl = document.getElementById("user-pill-static");
+    if (!pill) return;
+    if (currentUser) {
+        pill.hidden = false;
+        if (nameEl) nameEl.textContent = currentUser.username;
+        if (staticEl) staticEl.textContent = currentStaticName || "Sem static";
+    } else {
+        pill.hidden = true;
+    }
+}
+
+async function bootstrapAfterAuth() {
+    const result = await loadState();
+    if (result === "needs_login") {
+        showAuthModal();
+        return;
+    }
+    if (result === "needs_static") {
+        showStaticModal();
+        return;
+    }
+    if (result !== "loaded") {
+        showAuthModal("Erro ao carregar dados. Tente entrar novamente.");
+        return;
+    }
+    hideAuthModal();
+    hideStaticModal();
+    updateUserPill();
+    renderAllAfterLoad();
+}
+
+function renderAllAfterLoad() {
+    renderActiveProgsPanel();
+    renderProgTabsBar();
+    renderEncounterOptions();
+    renderRosterTables();
+    renderEquipmentPanel();
+
+    const macroTextarea = document.getElementById("macro-textarea");
+    if (macroTextarea) macroTextarea.value = state.macroText || "";
+    const strategyNotesInput = document.getElementById("strategy-notes");
+    if (strategyNotesInput) strategyNotesInput.value = state.strategyNotes || "";
+    const selectContentType = document.getElementById("select-content-type");
+    if (selectContentType) selectContentType.value = state.contentType || "raid";
+    const btnSoundToggle = document.getElementById("btn-sound-toggle");
+    if (btnSoundToggle) btnSoundToggle.classList.toggle("active", !!state.sfx);
+}
+
+// ==========================================================================
 // Controladores de Eventos Iniciais
 // ==========================================================================
-document.addEventListener("DOMContentLoaded", () => {
-    loadState();
+document.addEventListener("DOMContentLoaded", async () => {
+    // Inicializa o estado vazio para que renderizadores não quebrem antes do load
+    state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+
+    // Tenta verificar sessão antes de tudo
+    try {
+        currentUser = await API.me();
+    } catch (err) {
+        currentUser = null;
+    }
+
     initCustomJobsGrid();
 
     const customJobsSelector = document.getElementById("custom-jobs-selector");
@@ -1784,9 +1931,154 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    renderActiveProgsPanel();
-    renderProgTabsBar();
-    renderEncounterOptions();
-    renderRosterTables();
-    renderEquipmentPanel();
+    // ----- Handlers de Autenticação -----
+    const btnShowLogin = document.getElementById("btn-show-login");
+    const btnShowRegister = document.getElementById("btn-show-register");
+    const loginArea = document.getElementById("auth-login-area");
+    const registerArea = document.getElementById("auth-register-area");
+
+    if (btnShowLogin && btnShowRegister && loginArea && registerArea) {
+        btnShowLogin.addEventListener("click", () => {
+            playSfx('click');
+            btnShowLogin.classList.add("active");
+            btnShowRegister.classList.remove("active");
+            loginArea.hidden = false;
+            registerArea.hidden = true;
+        });
+        btnShowRegister.addEventListener("click", () => {
+            playSfx('click');
+            btnShowRegister.classList.add("active");
+            btnShowLogin.classList.remove("active");
+            registerArea.hidden = false;
+            loginArea.hidden = true;
+        });
+    }
+
+    const btnAuthLogin = document.getElementById("btn-auth-login");
+    if (btnAuthLogin) {
+        btnAuthLogin.addEventListener("click", async () => {
+            const u = document.getElementById("login-username").value.trim();
+            const p = document.getElementById("login-password").value;
+            if (!u || !p) { showAuthModal("Preencha usuário e senha."); return; }
+            try {
+                currentUser = await API.login(u, p);
+                playSfx('success');
+                await bootstrapAfterAuth();
+            } catch (err) {
+                showAuthModal(err.message);
+            }
+        });
+    }
+
+    const btnAuthRegister = document.getElementById("btn-auth-register");
+    if (btnAuthRegister) {
+        btnAuthRegister.addEventListener("click", async () => {
+            const u = document.getElementById("reg-username").value.trim();
+            const p = document.getElementById("reg-password").value;
+            try {
+                currentUser = await API.register(u, p);
+                playSfx('success');
+                hideAuthModal();
+                showStaticModal();
+            } catch (err) {
+                showAuthModal(err.message);
+            }
+        });
+    }
+
+    const btnLogout = document.getElementById("btn-logout");
+    if (btnLogout) {
+        btnLogout.addEventListener("click", async () => {
+            playSfx('click');
+            try { await API.logout(); } catch (_) {}
+            currentUser = null;
+            currentStaticName = null;
+            currentInviteCode = null;
+            updateUserPill();
+            showAuthModal();
+        });
+    }
+
+    // ----- Handlers de Static (criar/entrar/listar) -----
+    const btnShowCreateStatic = document.getElementById("btn-show-create-static");
+    const btnShowJoinStatic = document.getElementById("btn-show-join-static");
+    const createStaticArea = document.getElementById("create-static-area");
+    const joinStaticArea = document.getElementById("join-static-area");
+
+    if (btnShowCreateStatic && btnShowJoinStatic && createStaticArea && joinStaticArea) {
+        btnShowCreateStatic.addEventListener("click", () => {
+            playSfx('click');
+            btnShowCreateStatic.classList.add("active");
+            btnShowJoinStatic.classList.remove("active");
+            createStaticArea.hidden = false;
+            joinStaticArea.hidden = true;
+        });
+        btnShowJoinStatic.addEventListener("click", () => {
+            playSfx('click');
+            btnShowJoinStatic.classList.add("active");
+            btnShowCreateStatic.classList.remove("active");
+            joinStaticArea.hidden = false;
+            createStaticArea.hidden = true;
+        });
+    }
+
+    const btnCreateStatic = document.getElementById("btn-create-static");
+    if (btnCreateStatic) {
+        btnCreateStatic.addEventListener("click", async () => {
+            const name = document.getElementById("new-static-name").value.trim();
+            try {
+                const s = await API.createStatic(name || "Minha Static");
+                playSfx('success');
+                hideStaticModal();
+                alert(`Static criada!\n\nCódigo de convite: ${s.invite_code}\n\nCompartilhe com seu grupo. Eles podem entrar usando "Entrar por Código".`);
+                await bootstrapAfterAuth();
+            } catch (err) {
+                showStaticModal(err.message);
+            }
+        });
+    }
+
+    const btnJoinStatic = document.getElementById("btn-join-static");
+    if (btnJoinStatic) {
+        btnJoinStatic.addEventListener("click", async () => {
+            const code = document.getElementById("join-code").value.trim();
+            try {
+                await API.joinStatic(code);
+                playSfx('success');
+                hideStaticModal();
+                await bootstrapAfterAuth();
+            } catch (err) {
+                showStaticModal(err.message);
+            }
+        });
+    }
+
+    const btnShowInvite = document.getElementById("btn-show-invite");
+    if (btnShowInvite) {
+        btnShowInvite.addEventListener("click", () => {
+            playSfx('click');
+            if (!currentInviteCode) {
+                alert("Sem static ativa.");
+                return;
+            }
+            const url = `${window.location.origin}/`;
+            navigator.clipboard.writeText(currentInviteCode).then(() => {
+                alert(`Código de convite copiado!\n\nCódigo: ${currentInviteCode}\nURL: ${url}\n\nEntregue ao seu grupo — eles entram em "Entrar por Código".`);
+            }).catch(() => {
+                alert(`Código de convite: ${currentInviteCode}\nURL: ${url}`);
+            });
+        });
+    }
+
+    // ----- Bootstrap final: decide qual modal abrir ou carrega estado -----
+    if (currentUser) {
+        if (currentUser.active_static_id) {
+            await bootstrapAfterAuth();
+        } else {
+            updateUserPill();
+            showStaticModal();
+        }
+    } else {
+        showAuthModal();
+    }
 });

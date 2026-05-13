@@ -9,3 +9,16 @@ Thumbs.db
 
 # Configurações locais do Claude Code
 .claude/
+
+# Python / venv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
+
