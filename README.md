@@ -101,3 +101,11 @@ fly deploy
 | PUT    | `/api/state`               | ✓    | Salva o blob JSON da static ativa        |
 
 Senhas armazenadas com `werkzeug.security.generate_password_hash` (PBKDF2). Sessões são cookies HTTP-only assinados via `SECRET_KEY`.
+
+## Créditos
+
+- **Tipografia**: [Cinzel](https://fonts.google.com/specimen/Cinzel) (Natanael Gama, SIL OFL) — Roman caps decorativa que evoca a estética FFXIV.
+
+## Disclaimer
+
+Projeto fan-made sem afiliação oficial. **FINAL FANTASY XIV** é propriedade intelectual da Square Enix Co., Ltd. Todos os direitos da marca, logo, jobs, classes e nomes de bosses pertencem aos respectivos detentores.
