@@ -42,9 +42,9 @@
     --color-late: #f59e0b;
     --color-unavail: #ef4444;
 
-    /* Tipografia Premium */
-    --font-title: 'Cormorant Garamond', serif;
-    --font-ui: 'Crimson Pro', serif;
+    /* Tipografia — Cinzel em todo lugar (Roman caps decorativa, vibe FFXIV) */
+    --font-title: 'Cinzel', 'Times New Roman', serif;
+    --font-ui: 'Cinzel', 'Times New Roman', serif;
     
     /* Sombras e Raios */
     --shadow-ff: 0 12px 40px 0 rgba(0, 136, 204, 0.25);
@@ -165,14 +165,14 @@ body {
     font-size: 1.8rem;
     font-weight: 700;
     color: var(--text-title);
-    letter-spacing: 4px;
+    letter-spacing: 2px;
     text-shadow: 0 0 10px var(--clear-blue-glow), 0 2px 4px rgba(0,0,0,0.8);
     margin: 0;
     line-height: 1.1;
 }
 
 .title-wrapper .subtitle {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.7rem;
     font-weight: 600;
     color: var(--border-crystal);
@@ -555,7 +555,7 @@ body {
     background: rgba(0, 136, 204, 0.2);
     border: 1px solid rgba(51, 181, 229, 0.3);
     color: var(--text-main);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.8rem;
     font-weight: 600;
     padding: 6px 12px;
@@ -645,7 +645,7 @@ body {
     background: linear-gradient(180deg, #991b1b 0%, #7f1d1d 100%);
     border: 1px solid #ef4444;
     color: #fca5a5;
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.8rem;
     font-weight: 600;
     padding: 6px 12px;
@@ -670,7 +670,7 @@ body {
 
 label {
     display: block;
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--border-crystal);
@@ -724,7 +724,7 @@ label {
     border: 1px solid rgba(51, 181, 229, 0.3);
     color: var(--text-muted);
     padding: 6px 14px;
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.85rem;
     font-weight: 600;
     border-radius: 20px;
@@ -839,7 +839,7 @@ label {
 .ff-table th {
     background: rgba(0, 0, 0, 0.6);
     color: var(--border-crystal);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -1004,7 +1004,7 @@ label {
 }
 
 .job-sigla {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.65rem;
     font-weight: 800;
     color: var(--border-crystal);
@@ -1028,7 +1028,7 @@ label {
 }
 
 .member-ilvl {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.7rem;
     color: var(--text-muted);
 }
@@ -1045,7 +1045,7 @@ label {
 }
 
 .empty-slot-txt {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
@@ -1289,7 +1289,7 @@ label {
 }
 
 .job-portrait-job {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 1px;
@@ -1457,7 +1457,7 @@ label {
 }
 
 .priority-row .priority-job-sigla {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-weight: 800;
     font-size: 0.7rem;
     color: var(--clear-blue-bright);
@@ -1586,7 +1586,7 @@ label {
 }
 
 .equip-slot-sub {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-ui);
     font-size: 0.7rem;
     color: var(--text-muted);
 }
