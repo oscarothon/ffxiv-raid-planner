@@ -1,0 +1,16 @@
+Armorer_Icon_2.png	Classes & Jobs / Disciple of Land/Hand Class Icons
+Carpenter_Icon_2.png	Classes & Jobs / Disciple of Land/Hand Class Icons
+Fisher_Icon_2.png	Classes & Jobs / Disciple of Land/Hand Class Icons
+Leatherworker_Icon_2.png	Classes & Jobs / Disciple of Land/Hand Class Icons
+Conjurer_Icon_2.png	Classes & Jobs / Disciple of War/Magic Class Icons
+Thaumaturge_Icon_2.png	Classes & Jobs / Disciple of War/Magic Class Icons
+Map102_Icon.png	Map Icons /
+Map55_Icon.png	Map Icons /
+Map80_Icon.png	Map Icons /
+Marker10_Icon.png	Mobs / Target Markers
+Marker11_Icon.png	Mobs / Target Markers
+Lorequest3_Icon.png	Quests / Quest Icons
+Mainquest8_Icon.png	Quests / Quest Icons
+Novicequest3_Icon.png	Quests / Quest Icons
+Novicequest8_Icon.png	Quests / Quest Icons
+The_Feast7_Icon.png	The Feast Icons /
