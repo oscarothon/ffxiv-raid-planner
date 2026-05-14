@@ -438,7 +438,7 @@ PRs são bem-vindos. Fluxo recomendado:
 - **Tipografia** — [Cinzel](https://fonts.google.com/specimen/Cinzel) por Natanael Gama (SIL OFL). Roman caps decorativa que captura a estética FFXIV.
 - **Ícones** — [Dictionary of Icons](https://ffxiv.gamerescape.com/wiki/Dictionary_of_Icons) (FFXIV Gamer Escape Wiki). 900+ ícones extraídos do client e disponibilizados pela comunidade.
 - **Free Company** — Little Ala Mhigos (Phantom Train, Crystal DC)
-- **Construído por** — Renato Lousan ([@oscarothon](https://github.com/oscarothon))
+- **Construído por** — Renato Lousan ([@renatolousan](https://github.com/renatolousan)) e Oscar Othon ([@oscarothon](https://github.com/oscarothon))
 
 ---
 
