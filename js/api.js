@@ -38,5 +38,9 @@ const API = (() => {
         switchStatic:  (static_id)        => request("/api/statics/switch",  { method: "POST", body: { static_id } }),
         getState:      ()                 => request("/api/state"),
         putState:      (data)             => request("/api/state",           { method: "PUT", body: data }),
+        listMembers:   (staticId)         => request(`/api/statics/${staticId}/members`),
+        setMemberRole: (staticId, userId, role) =>
+                                             request(`/api/statics/${staticId}/members/${userId}/role`,
+                                                     { method: "PUT", body: { role } }),
     };
 })();

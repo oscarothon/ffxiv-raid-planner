@@ -156,7 +156,75 @@ function playSfx(type) {
 let currentUser = null;
 let currentStaticName = null;
 let currentInviteCode = null;
+let currentStaticId = null;
+let currentUserId = null;
+let currentUserRole = null; // 'admin' | 'officer' | 'member'
 let saveTimer = null;
+
+// ==========================================================================
+// Helpers de Permissão (cargos: admin > officer > member)
+// ==========================================================================
+function isAdmin()    { return currentUserRole === 'admin'; }
+function isOfficer()  { return currentUserRole === 'admin' || currentUserRole === 'officer'; }
+function isMember()   { return !!currentUserRole; }
+
+function isOwnSlot(player) {
+    return !!player && player.user_id != null && player.user_id === currentUserId;
+}
+function findOwnSlot() {
+    return state.roster.find(p => p.user_id === currentUserId) || null;
+}
+function hasOwnSlot() { return !!findOwnSlot(); }
+
+function canManageRoles()    { return isAdmin(); }
+function canManageStatic()   { return isAdmin(); } // staticName, reset roster, etc.
+function canManageContent()  { return isOfficer(); } // add/remove progs, agendar, prioridade loot
+function canEditOtherPlayer(){ return isOfficer(); }
+function canEditPlayer(p)    { return isOfficer() || isOwnSlot(p); }
+function canScheduleDate()   { return isOfficer(); }
+function canEditScheduleFor(p) { return isOfficer() || isOwnSlot(p); }
+
+// Rótulo amigável do cargo
+function roleLabel(r) {
+    if (r === 'admin')   return 'Administrador';
+    if (r === 'officer') return 'Officer';
+    if (r === 'member')  return 'Membro';
+    return 'Visitante';
+}
+
+// ==========================================================================
+// Sistema de Toast (notificações tematizadas)
+// ==========================================================================
+function showToast(message, opts = {}) {
+    const cont = document.getElementById("toast-container");
+    if (!cont) {
+        // fallback silencioso para console se o container ainda não existir
+        console.warn("[toast]", message);
+        return;
+    }
+    const type = opts.type || "info";
+    const defaultTitles = {
+        info:    "Aviso",
+        warning: "Atenção",
+        error:   "Sem permissão",
+        success: "Sucesso"
+    };
+    const title = opts.title || defaultTitles[type] || "Aviso";
+    const duration = opts.duration ?? 4500;
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <div class="toast-title">${title}</div>
+        <div class="toast-body">${message}</div>
+    `;
+    cont.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add("toast-removing");
+        setTimeout(() => toast.remove(), 320);
+    }, duration);
+}
 
 function hydrateState(parsed) {
     state = { ...DEFAULT_STATE, ...(parsed || {}) };
@@ -200,6 +268,7 @@ function hydrateState(parsed) {
 
         return {
             id,
+            user_id: (typeof player.user_id === "number") ? player.user_id : null,
             name: player.name || "",
             flexType,
             jobsPool,
@@ -222,6 +291,9 @@ async function loadState() {
         const res = await API.getState();
         currentStaticName = res.static_name;
         currentInviteCode = res.invite_code;
+        currentStaticId   = res.static_id;
+        currentUserId     = res.user_id;
+        currentUserRole   = res.user_role;
         hydrateState(res.data || {});
         return "loaded";
     } catch (err) {
@@ -240,7 +312,16 @@ function saveState() {
     saveTimer = setTimeout(() => {
         API.putState(state).catch(err => {
             console.error("Falha ao salvar estado:", err);
-            if (err.status === 401) showAuthModal();
+            if (err.status === 401) {
+                showAuthModal();
+                return;
+            }
+            if (err.status === 403 && err.data && err.data.error === "forbidden_changes") {
+                // Backend rejeitou mudanças por falta de permissão.
+                // Recarrega o estado canônico para reverter a UI.
+                showToast("Você não tem autoridade para realizar essa alteração. As mudanças foram revertidas.", { type: "error" });
+                bootstrapAfterAuth();
+            }
         });
     }, 400);
     updateDashboardStats();
@@ -422,20 +503,25 @@ const ROLE_WEIGHTS = { tank: 1, healer: 2, melee: 3, ranged: 4, caster: 5 };
 function renderActiveProgsPanel() {
     const container = document.getElementById("active-progs-list");
 
+    const canManage = canManageContent();
+
     if (container) {
         container.innerHTML = "";
         if (!state.activeProgs || state.activeProgs.length === 0) {
-            container.innerHTML = `<span style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">Nenhum conteúdo em progresso cadastrado. Utilize os seletores abaixo.</span>`;
+            container.innerHTML = `<span style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">Nenhum conteúdo em progresso cadastrado.${canManage ? ' Utilize os seletores abaixo.' : ''}</span>`;
         } else {
             state.activeProgs.forEach(progId => {
                 const progObj = getProgObj(progId);
                 const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
                 const chip = document.createElement("div");
                 chip.className = "prog-chip";
+                const closeBtn = canManage
+                    ? `<button class="prog-chip-close" data-id="${progId}" title="Remover Progresso">&times;</button>`
+                    : "";
                 chip.innerHTML = `
                     <span class="prog-chip-type" style="color: ${isUlt ? '#e17a47' : 'var(--gold-bright)'}">${isUlt ? 'Ultimate' : 'Savage'}</span>
                     <span style="font-weight: 600;">${progObj.name.split(" (")[0].split(":")[0]}</span>
-                    <button class="prog-chip-close" data-id="${progId}" title="Remover Progresso">&times;</button>
+                    ${closeBtn}
                 `;
                 container.appendChild(chip);
             });
@@ -456,6 +542,10 @@ function renderActiveProgsPanel() {
             });
         }
     }
+
+    // Esconde a área de adicionar conteúdo para members
+    const addControls = document.querySelector(".add-prog-controls-enhanced");
+    if (addControls) addControls.style.display = canManage ? "" : "none";
 
     // Render content type buttons
     const typeSelector = document.getElementById("content-type-selector");
@@ -542,6 +632,23 @@ function renderProgTabsBar() {
     });
 }
 
+// Constrói o HTML dos botões de ação para uma linha do roster baseado em permissões
+function buildRowActions(player, ctx) {
+    const editBtn = `<button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>`;
+    const benchBtn = `<button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid"><img src="assets/icons/dictionary/party_member.png" alt="Banco" style="width:28px;height:28px;display:block;"></button>`;
+    const activeBtn = `<button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid"><img src="assets/icons/dictionary/party_leader.png" alt="Alocar" style="width:28px;height:28px;display:block;"></button>`;
+    const delBtn = `<button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>`;
+
+    if (isOfficer()) {
+        return ctx === "active" ? `${editBtn}${benchBtn}${delBtn}` : `${editBtn}${activeBtn}${delBtn}`;
+    }
+    if (isOwnSlot(player)) {
+        // Member no próprio slot: pode editar e excluir, não pode mover banco/titular
+        return `${editBtn}${delBtn}`;
+    }
+    return "";
+}
+
 // Renderiza Tabela de Membros discriminando o Elenco Ativo e Banco específicos para a Raid selecionada
 function renderRosterTables() {
     const activeTbody = document.getElementById("roster-active-tbody");
@@ -591,19 +698,23 @@ function renderRosterTables() {
                 </div>
             `;
 
+            const canEdit = canEditPlayer(player);
+            const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
+
             const poolBadgesHtml = player.jobsPool.map(jId => {
                 const jObj = FFXIV_JOBS.find(j => j.id === jId);
                 const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
                 const color = roleData ? roleData.color : '#475569';
                 const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
                 const isAssigned = jId === currentAssignedJob;
-                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
+                const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
+                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
             }).join(' ');
 
             tr.innerHTML = `
                 <td style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
                 <td>
-                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick">
+                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
                 </td>
                 <td>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
@@ -615,15 +726,13 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 65px; padding: 6px;">
-                        <label title="BiS (Best in Slot)"><input type="checkbox" class="ff-checkbox chk-roster-bis" data-id="${player.id}" ${player.bis ? 'checked' : ''}></label>
+                        <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 65px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
+                        <label title="BiS (Best in Slot)"><input type="checkbox" class="ff-checkbox chk-roster-bis" data-id="${player.id}" ${player.bis ? 'checked' : ''} ${canEdit ? '' : 'disabled'}></label>
                     </div>
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
-                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>
-                        <button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid"><img src="assets/icons/dictionary/party_member.png" alt="Banco" style="width:28px;height:28px;display:block;"></button>
-                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>
+                        ${buildRowActions(player, "active")}
                     </div>
                 </td>
             `;
@@ -637,18 +746,22 @@ function renderRosterTables() {
         benchMembers.forEach(player => {
             const tr = document.createElement("tr");
             const currentAssignedJob = getAssignedJobForProg(player, activeProgId);
+            const canEdit = canEditPlayer(player);
+            const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
+
             const poolBadgesHtml = player.jobsPool.map(jId => {
                 const jObj = FFXIV_JOBS.find(j => j.id === jId);
                 const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
                 const color = roleData ? roleData.color : '#475569';
                 const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
                 const isAssigned = jId === currentAssignedJob;
-                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
+                const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
+                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
             }).join(' ');
 
             tr.innerHTML = `
                 <td>
-                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick">
+                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
                 </td>
                 <td>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
@@ -656,18 +769,35 @@ function renderRosterTables() {
                     </div>
                 </td>
                 <td>
-                    <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 70px; padding: 6px;">
+                    <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 70px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
-                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>
-                        <button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid"><img src="assets/icons/dictionary/party_leader.png" alt="Alocar" style="width:28px;height:28px;display:block;"></button>
-                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>
+                        ${buildRowActions(player, "bench")}
                     </div>
                 </td>
             `;
             benchTbody.appendChild(tr);
         });
+    }
+
+    // Visibilidade do painel "Cadastrar Novo Jogador" conforme cargo
+    const addPanel = document.querySelector(".add-member-panel");
+    const addPanelHeader = addPanel?.querySelector(".panel-header h2");
+    if (addPanel) {
+        if (isOfficer()) {
+            addPanel.style.display = "";
+            if (addPanelHeader) addPanelHeader.textContent = "Cadastrar Novo Jogador";
+        } else if (isMember()) {
+            if (hasOwnSlot()) {
+                addPanel.style.display = "none";
+            } else {
+                addPanel.style.display = "";
+                if (addPanelHeader) addPanelHeader.textContent = "Crie seu Slot de Jogador";
+            }
+        } else {
+            addPanel.style.display = "none";
+        }
     }
 
     bindRosterTableEvents();
@@ -754,7 +884,7 @@ function bindRosterTableEvents() {
             const activeProgId = state.inspectedProgId || "geral";
             const activeCount = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active").length;
             if (activeCount >= 8) {
-                alert("A Party Principal desta Raid já atingiu o limite máximo de 8 jogadores! Mova alguém para o banco primeiro.");
+                showToast("A Party Principal desta Raid já atingiu o limite máximo de 8 jogadores. Mova alguém para o banco primeiro.", { type: "warning", title: "Party Cheia" });
                 return;
             }
             playSfx('success');
@@ -1006,10 +1136,15 @@ function renderScheduleTable() {
             return `<option value="${pId}" ${pId === selectedProg ? 'selected' : ''}>${shortName}</option>`;
         }).join('');
 
+        const scheduleDisabled = canScheduleDate() ? "" : "disabled";
+        const selectTitle = canScheduleDate()
+            ? "Raid Alvo do Dia"
+            : "Apenas Officers ou Administradores podem agendar dias";
+
         th.innerHTML = `
             <div class="cell-day-num">${d}</div>
             <div class="cell-day-wk">${wkDay}</div>
-            <select class="ff-select sel-day-target-prog" data-date="${dateKey}" title="Raid Alvo do Dia" style="font-size:0.65rem; padding:1px 2px; width:100%; margin-top:4px; background:rgba(0,0,0,0.6); border:1px solid #475569; color:var(--gold-muted);">
+            <select class="ff-select sel-day-target-prog" data-date="${dateKey}" title="${selectTitle}" style="font-size:0.65rem; padding:1px 2px; width:100%; margin-top:4px; background:rgba(0,0,0,0.6); border:1px solid #475569; color:var(--gold-muted);" ${scheduleDisabled}>
                 ${progOptions}
             </select>
         `;
@@ -1054,10 +1189,12 @@ function renderScheduleTable() {
         tdName.innerHTML = `${player.name || '<span style="font-style:italic;color:#94a3b8;">Sem Nick</span>'} ${statusTag}`;
         tr.appendChild(tdName);
 
+        const canTogglePlayer = canEditScheduleFor(player);
+
         for (let d = 1; d <= numDays; d++) {
             const dateKey = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
             const statusVal = player.monthlySchedule[dateKey] || "";
-            
+
             let statusText = "";
             let statusClass = "";
             if (statusVal === "avail") { statusText = "✔️"; statusClass = "avail"; }
@@ -1065,20 +1202,25 @@ function renderScheduleTable() {
             else if (statusVal === "unavail") { statusText = "❌"; statusClass = "unavail"; }
 
             const tdDay = document.createElement("td");
-            tdDay.className = `cell-status ${statusClass}`;
+            tdDay.className = `cell-status ${statusClass}${canTogglePlayer ? '' : ' cell-readonly'}`;
             tdDay.textContent = statusText;
-            tdDay.title = `Dia ${d}: Clique para alternar`;
-            
-            tdDay.addEventListener("click", () => {
-                playSfx('click');
-                if (statusVal === "") player.monthlySchedule[dateKey] = "avail";
-                else if (statusVal === "avail") player.monthlySchedule[dateKey] = "late";
-                else if (statusVal === "late") player.monthlySchedule[dateKey] = "unavail";
-                else delete player.monthlySchedule[dateKey];
-                
-                saveState();
-                renderScheduleTable();
-            });
+            tdDay.title = canTogglePlayer ? `Dia ${d}: Clique para alternar` : `Dia ${d}: somente o próprio jogador ou officer pode alterar`;
+
+            if (canTogglePlayer) {
+                tdDay.addEventListener("click", () => {
+                    playSfx('click');
+                    if (statusVal === "") player.monthlySchedule[dateKey] = "avail";
+                    else if (statusVal === "avail") player.monthlySchedule[dateKey] = "late";
+                    else if (statusVal === "late") player.monthlySchedule[dateKey] = "unavail";
+                    else delete player.monthlySchedule[dateKey];
+
+                    saveState();
+                    renderScheduleTable();
+                });
+            } else {
+                tdDay.style.cursor = "not-allowed";
+                tdDay.style.opacity = "0.55";
+            }
             tr.appendChild(tdDay);
         }
         tbody.appendChild(tr);
@@ -1330,6 +1472,9 @@ function renderEquipmentPanel() {
             ? `<img class="job-portrait-img" src="${centerJobObj.iconUrl}" alt="${currJob}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="job-portrait-fallback" style="display:none;">${centerJobObj.icon || '⚔️'}</div>`
             : `<div class="job-portrait-fallback" style="display:flex;">${centerJobObj ? centerJobObj.icon : '⚔️'}</div>`;
 
+        const canEditLoot = canEditPlayer(targetMember);
+        const lootDisabledAttr = canEditLoot ? '' : 'disabled';
+
         const buildSlotRowHtml = (slot) => {
             const currPref = getLootPref(targetMember, activeProgId, slot.id);
             const iconHtml = slot.iconUrl
@@ -1341,9 +1486,9 @@ function renderEquipmentPanel() {
                     <div class="gear-row-body">
                         <span class="gear-row-slotname" title="${slot.itemName || slot.name}">${slot.name}</span>
                         <div class="loot-pref-controls">
-                            <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need" data-slot="${slot.id}">🎲</button>
-                            <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed" data-slot="${slot.id}">🪙</button>
-                            <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass" data-slot="${slot.id}">❌</button>
+                            <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need" data-slot="${slot.id}" ${lootDisabledAttr}>🎲</button>
+                            <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed" data-slot="${slot.id}" ${lootDisabledAttr}>🪙</button>
+                            <button type="button" class="btn-loot-pref pass ${currPref === 'pass' ? 'active' : ''}" title="Pass (Passar)" data-pref="pass" data-slot="${slot.id}" ${lootDisabledAttr}>❌</button>
                         </div>
                     </div>
                 </div>
@@ -1480,6 +1625,8 @@ function renderFightSummaryAndPriorities() {
         return;
     }
 
+    const canReorder = canManageContent();
+
     priorityOrder.forEach((memberId, idx) => {
         const player = state.roster.find(p => p.id === memberId);
         if (!player) return;
@@ -1487,14 +1634,16 @@ function renderFightSummaryAndPriorities() {
         const assignedJob = getAssignedJobForProg(player, activeProgId);
         const row = document.createElement("div");
         row.className = `priority-row rank-${idx + 1}`;
+        const controlsHtml = canReorder ? `
+            <div class="priority-controls">
+                <button type="button" class="btn-priority-move btn-priority-up" data-id="${player.id}" title="Subir na fila" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                <button type="button" class="btn-priority-move btn-priority-down" data-id="${player.id}" title="Descer na fila" ${idx === priorityOrder.length - 1 ? 'disabled' : ''}>▼</button>
+            </div>` : '';
         row.innerHTML = `
             <span class="priority-rank">${idx + 1}</span>
             <span class="priority-name" title="${player.name || 'Sem Nick'}">${player.name || '<em>Sem Nick</em>'}</span>
             <span class="priority-job-sigla">${assignedJob}</span>
-            <div class="priority-controls">
-                <button type="button" class="btn-priority-move btn-priority-up" data-id="${player.id}" title="Subir na fila" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                <button type="button" class="btn-priority-move btn-priority-down" data-id="${player.id}" title="Descer na fila" ${idx === priorityOrder.length - 1 ? 'disabled' : ''}>▼</button>
-            </div>
+            ${controlsHtml}
         `;
         priorityCont.appendChild(row);
     });
@@ -1538,6 +1687,105 @@ function updateDashboardStats() {
 }
 
 // ==========================================================================
+// Modal de Gerenciamento de Membros (apenas admin)
+// ==========================================================================
+let cachedMembers = [];
+
+async function openMembersModal() {
+    if (!canManageRoles()) return;
+    if (!currentStaticId) return;
+    const modal = document.getElementById("modal-members");
+    const errEl = document.getElementById("members-error");
+    const cont = document.getElementById("members-list-container");
+    if (!modal || !cont) return;
+
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+    cont.innerHTML = `<div style="color:var(--text-muted); padding:14px; text-align:center;">Carregando membros...</div>`;
+    modal.hidden = false;
+    playSfx('tab');
+
+    try {
+        cachedMembers = await API.listMembers(currentStaticId);
+        renderMembersList();
+    } catch (err) {
+        cont.innerHTML = "";
+        if (errEl) {
+            errEl.textContent = `Falha ao carregar membros: ${err.message || err.status}`;
+            errEl.hidden = false;
+        }
+    }
+}
+
+function closeMembersModal() {
+    const modal = document.getElementById("modal-members");
+    if (modal) modal.hidden = true;
+}
+
+function renderMembersList() {
+    const cont = document.getElementById("members-list-container");
+    if (!cont) return;
+    cont.innerHTML = "";
+
+    cachedMembers.forEach(m => {
+        const isSelf = m.id === currentUserId;
+        const row = document.createElement("div");
+        row.className = "member-row";
+
+        const isLastAdmin = m.role === "admin"
+            && cachedMembers.filter(x => x.role === "admin").length === 1;
+
+        const selectDisabled = isSelf && isLastAdmin
+            ? `disabled title="Não é possível rebaixar o último administrador"`
+            : "";
+
+        row.innerHTML = `
+            <div>
+                <span class="member-row-name">${m.username}${isSelf ? '<span class="you-tag">(você)</span>' : ''}</span>
+                <div class="member-row-joined">Entrou em: ${(m.joined_at || '').slice(0, 10)}</div>
+            </div>
+            <select class="member-role-select" data-uid="${m.id}" ${selectDisabled}>
+                <option value="admin"   ${m.role === 'admin'   ? 'selected' : ''}>Administrador</option>
+                <option value="officer" ${m.role === 'officer' ? 'selected' : ''}>Officer</option>
+                <option value="member"  ${m.role === 'member'  ? 'selected' : ''}>Membro</option>
+            </select>
+        `;
+        cont.appendChild(row);
+    });
+
+    cont.querySelectorAll(".member-role-select").forEach(sel => {
+        sel.addEventListener("change", async (e) => {
+            const uid = parseInt(e.target.dataset.uid);
+            const newRole = e.target.value;
+            const errEl = document.getElementById("members-error");
+            try {
+                await API.setMemberRole(currentStaticId, uid, newRole);
+                // Atualiza cache local
+                const m = cachedMembers.find(x => x.id === uid);
+                if (m) m.role = newRole;
+                // Se foi o próprio user que mudou de cargo, recarrega o estado
+                if (uid === currentUserId) {
+                    currentUserRole = newRole;
+                    updateUserPill();
+                    renderAllAfterLoad();
+                }
+                playSfx('success');
+                renderMembersList();
+            } catch (err) {
+                if (errEl) {
+                    errEl.textContent = err.data?.error === "cannot_demote_last_admin"
+                        ? "Não é possível rebaixar o último administrador da static."
+                        : `Falha ao atualizar cargo: ${err.message || err.status}`;
+                    errEl.hidden = false;
+                }
+                // Reverte o select visualmente
+                const m = cachedMembers.find(x => x.id === uid);
+                if (m) e.target.value = m.role;
+            }
+        });
+    });
+}
+
+// ==========================================================================
 // Fluxo de Autenticação e Modais
 // ==========================================================================
 function showAuthModal(errMsg) {
@@ -1560,13 +1808,27 @@ function hideAuthModal() {
 function updateUserPill() {
     const pill = document.getElementById("user-pill");
     const nameEl = document.getElementById("user-pill-name");
+    const roleEl = document.getElementById("user-pill-role");
     if (!pill) return;
     if (currentUser) {
         pill.hidden = false;
         if (nameEl) nameEl.textContent = currentUser.username;
+        if (roleEl) {
+            roleEl.textContent = roleLabel(currentUserRole);
+            roleEl.className = `user-pill-role role-${currentUserRole || 'none'}`;
+            roleEl.hidden = !currentUserRole;
+        }
     } else {
         pill.hidden = true;
     }
+
+    // Mostra/esconde botão admin de gerenciar membros
+    const btnManage = document.getElementById("btn-manage-members");
+    if (btnManage) btnManage.hidden = !canManageRoles();
+
+    // Mostra/esconde botão de "Limpar Todos" baseado em admin
+    const btnResetRoster = document.getElementById("btn-reset-roster");
+    if (btnResetRoster) btnResetRoster.hidden = !canManageStatic();
 }
 
 async function bootstrapAfterAuth() {
@@ -1630,15 +1892,28 @@ document.addEventListener("DOMContentLoaded", async () => {
             const statusVal = statusSel ? statusSel.value : "active";
 
             if (!name) {
-                alert("Por favor, informe o Nome ou Nick in-game do jogador.");
+                showToast("Informe o nome ou nick in-game do jogador.", { type: "warning" });
                 if (nameInp) nameInp.focus();
                 return;
+            }
+
+            // Permissão: membros só podem criar o próprio slot (e só um)
+            const isOfficerPlus = isOfficer();
+            if (!isOfficerPlus) {
+                if (!isMember()) {
+                    showToast("Você precisa estar logado para adicionar um jogador.", { type: "warning" });
+                    return;
+                }
+                if (hasOwnSlot()) {
+                    showToast("Você já tem um slot de jogador cadastrado. Edite-o em vez de criar outro.", { type: "warning", title: "Slot já existe" });
+                    return;
+                }
             }
 
             const checkedProfiles = Array.from(document.querySelectorAll(".chk-flex-profile:checked")).map(chk => chk.value);
 
             if (checkedProfiles.length === 0) {
-                alert("Selecione pelo menos um Perfil Flex ou o modo Específico.");
+                showToast("Selecione pelo menos um perfil flex ou o modo Específico.", { type: "warning" });
                 return;
             }
 
@@ -1648,7 +1923,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (statusVal === "active") {
                 const activeCount = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active").length;
                 if (activeCount >= 8) {
-                    alert("A Party Principal desta Raid já está completa com 8 jogadores! O novo jogador será adicionado automaticamente como Reserva neste conteúdo.");
+                    showToast("Party Principal já está completa com 8 jogadores. O novo jogador entrará como Reserva neste conteúdo.", { type: "warning", title: "Party Cheia" });
                     finalStatusForProg = "bench";
                 }
             }
@@ -1665,7 +1940,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             let jobsPool = sortJobsCanonical(new Set(mergedPool));
 
             if (jobsPool.length === 0) {
-                alert("Nenhuma classe resultante na Pool. Selecione pelo menos uma classe avulsa ou perfil predefinido.");
+                showToast("Nenhuma classe resultante na Pool. Selecione pelo menos uma classe avulsa ou perfil predefinido.", { type: "warning" });
                 return;
             }
 
@@ -1684,8 +1959,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 statusByProg["geral"] = finalStatusForProg;
             }
 
+            // Member: o slot criado é vinculado à sua conta automaticamente.
+            // Officer+: cria slot livre (sem user_id) — pode vincular depois manualmente.
+            const linkedUserId = isOfficerPlus ? null : currentUserId;
+
             state.roster.push({
                 id: "mem_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+                user_id: linkedUserId,
                 name,
                 flexType,
                 jobsPool,
@@ -1716,7 +1996,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (!selContent || !selContent.value) return;
             const selectedId = selContent.value;
             if (state.activeProgs && state.activeProgs.includes(selectedId)) {
-                alert("Este conteúdo já está na lista de progressos ativos!");
+                showToast("Este conteúdo já está na lista de progressos ativos.", { type: "warning", title: "Já cadastrado" });
                 return;
             }
             playSfx('success');
@@ -1901,22 +2181,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (importedData && Array.isArray(importedData.roster)) {
                     state = { ...DEFAULT_STATE, ...importedData };
                     saveState();
-                    
-                    if (staticNameInput) staticNameInput.value = state.staticName;
-                    const selContentType = document.getElementById("select-content-type");
-                    if (selContentType) selContentType.value = state.contentType;
-                    
+
                     renderActiveProgsPanel();
                     renderProgTabsBar();
-                    renderEncounterOptions();
                     renderRosterTables();
                     renderEquipmentPanel();
                     applyTheme();
-                    
+
                     playSfx('success');
                     if (modalShare) modalShare.hidden = true;
                     if (importError) importError.hidden = true;
-                    alert("Dados do elenco carregados com sucesso!");
+                    showToast("Dados do elenco carregados com sucesso.", { type: "success" });
                 } else {
                     throw new Error("Formato JSON inválido para o Roster.");
                 }
@@ -1983,14 +2258,64 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
+    // Enter nos campos de login/registro dispara o botão correspondente
+    ["login-username", "login-password"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                btnAuthLogin?.click();
+            }
+        });
+    });
+    ["reg-username", "reg-password"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                btnAuthRegister?.click();
+            }
+        });
+    });
+
     const btnLogout = document.getElementById("btn-logout");
     if (btnLogout) {
         btnLogout.addEventListener("click", async () => {
             playSfx('click');
             try { await API.logout(); } catch (_) {}
             currentUser = null;
+            currentUserRole = null;
+            currentUserId = null;
+            currentStaticId = null;
             updateUserPill();
             showAuthModal();
+        });
+    }
+
+    // ----- Modal de Gerenciamento de Membros (Admin) -----
+    const btnManageMembers = document.getElementById("btn-manage-members");
+    if (btnManageMembers) {
+        btnManageMembers.addEventListener("click", () => {
+            playSfx('click');
+            openMembersModal();
+        });
+    }
+
+    // Fechar qualquer modal via data-target="modal-xxx" no .btn-close-modal
+    document.querySelectorAll(".btn-close-modal[data-target]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetId = btn.dataset.target;
+            const m = document.getElementById(targetId);
+            if (m) m.hidden = true;
+            playSfx('click');
+        });
+    });
+
+    // Fechar modal de membros clicando no overlay
+    const modalMembers = document.getElementById("modal-members");
+    if (modalMembers) {
+        modalMembers.addEventListener("click", (e) => {
+            if (e.target === modalMembers) modalMembers.hidden = true;
         });
     }
 
