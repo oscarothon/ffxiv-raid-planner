@@ -3,7 +3,8 @@ import os
 import json
 import secrets
 import sqlite3
-from flask import Flask, request, jsonify, session, send_from_directory
+import hashlib
+from flask import Flask, request, jsonify, session, send_from_directory, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from .db import ROOT_DIR, init_db, get_conn, db_conn, VALID_ROLES, ROLE_ADMIN, ROLE_OFFICER, ROLE_MEMBER
@@ -268,6 +269,17 @@ def _assert_member(static_id, user_id):
 
 
 # ---------- Estado (blob JSON compartilhado da static) ----------
+def _compute_state_etag(static_id, updated_at, user_id, role):
+    """Gera um ETag específico para o requisitante.
+
+    Inclui o role do user porque /api/state retorna user_role no payload —
+    se o cargo do user mudar (via /api/statics/.../role), o ETag também muda,
+    fazendo o polling detectar a mudança mesmo sem alteração no data_json.
+    """
+    raw = f"{static_id}:{updated_at}:{user_id}:{role or 'none'}".encode("utf-8")
+    return '"' + hashlib.sha1(raw).hexdigest()[:16] + '"'
+
+
 @app.get("/api/state")
 @login_required
 def get_state():
@@ -287,21 +299,37 @@ def get_state():
         if not row:
             return jsonify({"error": "static_not_found"}), 404
 
+        role = get_user_role(static_id, session["user_id"])
+        etag = _compute_state_etag(static_id, row["updated_at"], session["user_id"], role)
+
+        # Suporte a If-None-Match: retorna 304 quando o cliente já tem a versão atual.
+        # ETag inclui role para garantir invalidação ao mudar cargo do usuário.
+        client_etag = request.headers.get("If-None-Match")
+        if client_etag and client_etag == etag:
+            resp = make_response("", 304)
+            resp.headers["ETag"] = etag
+            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+            return resp
+
         try:
             data = json.loads(row["data_json"] or "{}")
         except (TypeError, ValueError):
             data = {}
 
-        role = get_user_role(static_id, session["user_id"])
-        return jsonify({
+        resp = jsonify({
             "static_id": static_id,
             "static_name": row["name"],
             "invite_code": row["invite_code"],
             "updated_at": row["updated_at"],
+            "etag": etag,
             "data": data,
             "user_id": session["user_id"],
             "user_role": role,
         })
+        resp.headers["ETag"] = etag
+        # Sempre revalidar — o conteúdo é específico do usuário e pode mudar a qualquer momento
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
     finally:
         conn.close()
 
@@ -446,7 +474,13 @@ def put_state():
             "UPDATE statics SET data_json = ?, updated_at = datetime('now') WHERE id = ?",
             (json.dumps(payload, ensure_ascii=False), static_id),
         )
-    return jsonify({"ok": True})
+        cur = conn.execute("SELECT updated_at FROM statics WHERE id = ?", (static_id,))
+        updated_at = cur.fetchone()["updated_at"]
+
+    new_etag = _compute_state_etag(static_id, updated_at, session["user_id"], role)
+    resp = jsonify({"ok": True, "etag": new_etag, "updated_at": updated_at})
+    resp.headers["ETag"] = new_etag
+    return resp
 
 
 # ---------- Gerenciamento de Membros (admin) ----------

@@ -8,10 +8,19 @@ const API = (() => {
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             method: opts.method || "GET",
         };
+        if (opts.extraHeaders) {
+            Object.assign(init.headers, opts.extraHeaders);
+        }
         if (opts.body !== undefined) {
             init.body = JSON.stringify(opts.body);
         }
         const res = await fetch(path, init);
+
+        // Caminho rápido: 304 Not Modified — usado pelo polling de sincronização.
+        if (res.status === 304) {
+            return { __notModified: true, status: 304 };
+        }
+
         let data = null;
         const txt = await res.text();
         if (txt) {
@@ -26,6 +35,19 @@ const API = (() => {
         return data;
     }
 
+    /**
+     * GET /api/state com suporte a If-None-Match.
+     * Retorna { notModified: true } quando o servidor responde 304.
+     * Caso contrário, retorna o payload completo (que já inclui `etag`).
+     */
+    async function getStateConditional(ifNoneMatch) {
+        const opts = {};
+        if (ifNoneMatch) opts.extraHeaders = { "If-None-Match": ifNoneMatch };
+        const res = await request("/api/state", opts);
+        if (res && res.__notModified) return { notModified: true };
+        return { notModified: false, payload: res };
+    }
+
     return {
         request,
         me:            ()                 => request("/api/me"),
@@ -37,6 +59,7 @@ const API = (() => {
         joinStatic:    (invite_code)      => request("/api/statics/join",    { method: "POST", body: { invite_code } }),
         switchStatic:  (static_id)        => request("/api/statics/switch",  { method: "POST", body: { static_id } }),
         getState:      ()                 => request("/api/state"),
+        getStateConditional,
         putState:      (data)             => request("/api/state",           { method: "PUT", body: data }),
         listMembers:   (staticId)         => request(`/api/statics/${staticId}/members`),
         setMemberRole: (staticId, userId, role) =>

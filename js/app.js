@@ -161,6 +161,13 @@ let currentUserId = null;
 let currentUserRole = null; // 'admin' | 'officer' | 'member'
 let saveTimer = null;
 
+// Sincronização entre contas (Fase 1B)
+let lastStateETag = null;
+let pollingTimer = null;
+let pendingSaveAt = 0; // timestamp do último saveState() pendente — evita reload durante edição
+const POLL_INTERVAL_MS = 30000;
+const SAVE_QUIET_WINDOW_MS = 2000; // não recarrega se o user salvou nos últimos 2s
+
 // ==========================================================================
 // Helpers de Permissão (cargos: admin > officer > member)
 // ==========================================================================
@@ -294,6 +301,7 @@ async function loadState() {
         currentStaticId   = res.static_id;
         currentUserId     = res.user_id;
         currentUserRole   = res.user_role;
+        lastStateETag     = res.etag || null;
         hydrateState(res.data || {});
         return "loaded";
     } catch (err) {
@@ -308,9 +316,14 @@ async function loadState() {
 
 function saveState() {
     delete state.loot;
+    pendingSaveAt = Date.now();
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-        API.putState(state).catch(err => {
+        API.putState(state).then(res => {
+            // O backend retorna o novo ETag após salvar — evita reload desnecessário no polling
+            if (res && res.etag) lastStateETag = res.etag;
+            pendingSaveAt = Date.now(); // marca o save como concluído (mas mantém janela quieta)
+        }).catch(err => {
             console.error("Falha ao salvar estado:", err);
             if (err.status === 401) {
                 showAuthModal();
@@ -332,6 +345,127 @@ function applyTheme() {
         document.body.classList.add('theme-classic');
     } else {
         document.body.classList.remove('theme-classic');
+    }
+}
+
+// ==========================================================================
+// Sincronização entre Contas (Polling com ETag) — Fase 1B
+// ==========================================================================
+
+/**
+ * Aplica novo estado vindo do servidor preservando ao máximo o contexto local
+ * do usuário (aba ativa, prog inspecionado, foco em input, scroll, modal aberto).
+ */
+function applyRemoteState(newPayload) {
+    // Preserva contexto de UI
+    const activeTab        = document.querySelector(".tab-btn.active")?.dataset?.tab;
+    const inspectedProgId  = state.inspectedProgId;
+    const focusedEl        = document.activeElement;
+    const focusedId        = focusedEl && focusedEl.id ? focusedEl.id : null;
+    const focusedDataId    = focusedEl && focusedEl.dataset && focusedEl.dataset.id ? focusedEl.dataset.id : null;
+    const focusedTag       = focusedEl ? focusedEl.tagName : null;
+    const cursorStart      = focusedEl && typeof focusedEl.selectionStart === "number" ? focusedEl.selectionStart : null;
+    const cursorEnd        = focusedEl && typeof focusedEl.selectionEnd === "number" ? focusedEl.selectionEnd : null;
+    const scrollY          = window.scrollY;
+
+    // Hidrata o estado canônico
+    currentStaticName = newPayload.static_name;
+    currentInviteCode = newPayload.invite_code;
+    currentUserRole   = newPayload.user_role;
+    lastStateETag     = newPayload.etag || null;
+    hydrateState(newPayload.data || {});
+
+    // Restaura prog inspecionado se ainda existir
+    if (inspectedProgId && state.activeProgs && state.activeProgs.includes(inspectedProgId)) {
+        state.inspectedProgId = inspectedProgId;
+    }
+
+    // Re-render completo
+    renderActiveProgsPanel();
+    renderProgTabsBar();
+    renderRosterTables();
+    renderEquipmentPanel();
+    updateUserPill();
+    applyTheme();
+
+    // Restaura aba ativa sem disparar click (evita SFX + side effects)
+    if (activeTab) {
+        document.querySelectorAll(".tab-btn").forEach(b => {
+            const isTarget = b.dataset.tab === activeTab;
+            b.classList.toggle("active", isTarget);
+            b.setAttribute("aria-selected", isTarget ? "true" : "false");
+        });
+        document.querySelectorAll(".main-content > .tab-pane").forEach(p => {
+            p.hidden = p.id !== `${activeTab}-tab`;
+        });
+    }
+
+    // Tenta restaurar foco e cursor
+    if (focusedId) {
+        const el = document.getElementById(focusedId);
+        if (el) {
+            el.focus();
+            if (cursorStart !== null && typeof el.setSelectionRange === "function") {
+                try { el.setSelectionRange(cursorStart, cursorEnd); } catch (_) {}
+            }
+        }
+    } else if (focusedDataId && focusedTag === "INPUT") {
+        const el = document.querySelector(`input[data-id="${focusedDataId}"]`);
+        if (el) {
+            el.focus();
+            if (cursorStart !== null && typeof el.setSelectionRange === "function") {
+                try { el.setSelectionRange(cursorStart, cursorEnd); } catch (_) {}
+            }
+        }
+    }
+
+    window.scrollTo(0, scrollY);
+}
+
+async function pollServerState() {
+    if (!currentUserId || !currentStaticId) return;
+    // Janela quieta: se o usuário acabou de editar algo, evita reload em cima da edição
+    if (Date.now() - pendingSaveAt < SAVE_QUIET_WINDOW_MS) return;
+    // Se há save pendente em debounce, espera
+    if (saveTimer) return;
+    // Não roda se a aba do navegador está oculta — economiza
+    if (document.hidden) return;
+
+    try {
+        const res = await API.getStateConditional(lastStateETag);
+        if (res.notModified) return; // nada mudou
+        if (!res.payload) return;
+        applyRemoteState(res.payload);
+        showToast("Dados atualizados — alterações de outro membro foram recebidas.", { type: "info", duration: 3500, title: "Sincronizado" });
+    } catch (err) {
+        // Silencioso: não interrompe a sessão. Auth issues serão tratadas no próximo save/load.
+        if (err.status === 401) {
+            stopPolling();
+            return;
+        }
+        console.warn("Polling falhou:", err);
+    }
+}
+
+function startPolling() {
+    stopPolling();
+    pollingTimer = setInterval(pollServerState, POLL_INTERVAL_MS);
+    // Também roda assim que a aba volta a ser visível
+    document.addEventListener("visibilitychange", onVisibilityChange);
+}
+
+function stopPolling() {
+    if (pollingTimer) {
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+    }
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+}
+
+function onVisibilityChange() {
+    if (!document.hidden) {
+        // Dispara um polling imediato quando o usuário volta para a aba
+        pollServerState();
     }
 }
 
@@ -1834,16 +1968,19 @@ function updateUserPill() {
 async function bootstrapAfterAuth() {
     const result = await loadState();
     if (result === "needs_login") {
+        stopPolling();
         showAuthModal();
         return;
     }
     if (result !== "loaded") {
+        stopPolling();
         showAuthModal("Erro ao carregar dados. Tente entrar novamente.");
         return;
     }
     hideAuthModal();
     updateUserPill();
     renderAllAfterLoad();
+    startPolling();
 }
 
 function renderAllAfterLoad() {
@@ -2282,11 +2419,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (btnLogout) {
         btnLogout.addEventListener("click", async () => {
             playSfx('click');
+            stopPolling();
             try { await API.logout(); } catch (_) {}
             currentUser = null;
             currentUserRole = null;
             currentUserId = null;
             currentStaticId = null;
+            lastStateETag = null;
             updateUserPill();
             showAuthModal();
         });
