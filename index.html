@@ -40,8 +40,12 @@
             <div class="header-controls">
                 <div id="user-pill" class="user-pill" hidden>
                     <span class="user-pill-name" id="user-pill-name"></span>
+                    <span class="user-pill-role" id="user-pill-role" hidden></span>
                     <button id="btn-logout" class="ff-btn-small" title="Sair"><img src="assets/icons/dictionary/log_out.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;">Sair</button>
                 </div>
+                <button id="btn-manage-members" class="ff-btn-small" title="Gerenciar membros e cargos" hidden>
+                    <img src="assets/icons/dictionary/free_company.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Membros</span>
+                </button>
                 <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)"
                     aria-label="Alternar Tema">
                     <img src="assets/icons/dictionary/system_configuration.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Tema</span>
@@ -498,6 +502,29 @@
                 </div>
 
                 <p id="auth-error" class="text-danger mt-2" hidden></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST/NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+    <!-- MODAL DE GERENCIAMENTO DE MEMBROS (Admin) -->
+    <div id="modal-members" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
+        <div class="ff-modal" style="max-width: 640px;">
+            <div class="modal-header">
+                <h3>Gerenciamento de Membros e Cargos</h3>
+                <button class="btn-close-modal" data-target="modal-members" aria-label="Fechar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                    Defina o cargo de cada membro da static. Administradores têm poderes plenos, Officers podem
+                    gerenciar conteúdos e jogadores, e Membros podem apenas editar o próprio slot.
+                </p>
+                <div id="members-list-container">
+                    <!-- Preenchido via JS -->
+                </div>
+                <p id="members-error" class="text-danger mt-2" hidden></p>
             </div>
         </div>
     </div>

@@ -250,6 +250,157 @@ body {
     min-height: auto;
 }
 
+/* Badge de cargo no user-pill */
+.user-pill-role {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+.user-pill-role.role-admin {
+    background: linear-gradient(90deg, #b45309, #f59e0b);
+    color: #fff;
+    border-color: #fde047;
+    text-shadow: 0 0 4px rgba(0,0,0,0.5);
+}
+.user-pill-role.role-officer {
+    background: linear-gradient(90deg, #1e40af, #3b82f6);
+    color: #fff;
+    border-color: #93c5fd;
+}
+.user-pill-role.role-member {
+    background: rgba(100, 116, 139, 0.5);
+    color: #cbd5e1;
+    border-color: rgba(255,255,255,0.15);
+}
+
+/* ==========================================================================
+   Toast / Notificações Tematizadas (estilo FFXIV)
+   ========================================================================== */
+.toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+    max-width: 420px;
+}
+.toast {
+    background: linear-gradient(135deg, rgba(4, 16, 34, 0.96) 0%, rgba(8, 28, 56, 0.96) 100%);
+    border: 2px solid var(--clear-blue-bright);
+    border-radius: var(--radius-sm);
+    padding: 14px 18px 12px 18px;
+    color: var(--text-main);
+    font-family: 'Cinzel', serif;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    box-shadow: 0 0 24px rgba(51, 181, 229, 0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+    animation: toast-slide-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    pointer-events: auto;
+    min-width: 280px;
+    position: relative;
+    overflow: hidden;
+}
+.toast::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--gold-bright) 50%, transparent 100%);
+    opacity: 0.7;
+}
+.toast-title {
+    font-weight: 800;
+    color: var(--gold-bright);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+    text-shadow: 0 0 8px rgba(253, 224, 71, 0.45);
+}
+.toast-body {
+    color: #e2e8f0;
+    font-size: 0.88rem;
+    letter-spacing: 0.2px;
+}
+.toast-warning {
+    border-color: #f59e0b;
+    box-shadow: 0 0 24px rgba(245, 158, 11, 0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.toast-warning .toast-title { color: #fcd34d; text-shadow: 0 0 8px rgba(252, 211, 77, 0.55); }
+.toast-warning::before { background: linear-gradient(90deg, transparent, #fbbf24, transparent); }
+
+.toast-error {
+    border-color: #ef4444;
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.toast-error .toast-title { color: #fca5a5; text-shadow: 0 0 8px rgba(252, 165, 165, 0.55); }
+.toast-error::before { background: linear-gradient(90deg, transparent, #ef4444, transparent); }
+
+.toast-success {
+    border-color: var(--color-avail);
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.toast-success .toast-title { color: #6ee7b7; text-shadow: 0 0 8px rgba(110, 231, 183, 0.55); }
+.toast-success::before { background: linear-gradient(90deg, transparent, #10b981, transparent); }
+
+.toast.toast-removing { animation: toast-slide-out 0.3s ease-in forwards; }
+
+@keyframes toast-slide-in {
+    from { opacity: 0; transform: translateX(120%) scale(0.95); }
+    to   { opacity: 1; transform: translateX(0)    scale(1);    }
+}
+@keyframes toast-slide-out {
+    from { opacity: 1; transform: translateX(0)    scale(1);    }
+    to   { opacity: 0; transform: translateX(120%) scale(0.95); }
+}
+
+/* Lista de membros no modal de admin */
+.member-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+}
+.member-row-name {
+    font-weight: 600;
+    color: var(--text-main);
+}
+.member-row-name .you-tag {
+    font-size: 0.7rem;
+    color: var(--gold-bright);
+    margin-left: 6px;
+    font-style: italic;
+}
+.member-row-joined {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+.member-role-select {
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--text-main);
+    border: 1px solid var(--clear-blue-bright);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.member-role-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Lista das statics que o usuário participa (modal de seleção) */
 .my-statics-list {
     display: flex;
