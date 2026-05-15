@@ -6,6 +6,12 @@ from contextlib import contextmanager
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(ROOT_DIR, "data.db"))
 
+# Garante que o diretório do banco existe. Crucial em ambientes como Railway
+# onde um volume é montado em /data e o caminho do banco é /data/data.db.
+_db_dir = os.path.dirname(DB_PATH)
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
+
 # Cargos válidos em ordem hierárquica (maior privilégio primeiro)
 ROLE_ADMIN = "admin"
 ROLE_OFFICER = "officer"
