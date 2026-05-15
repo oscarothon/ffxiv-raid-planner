@@ -12,7 +12,8 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 0B | Limpeza | Remover aba "Estratégias & Macros" | ✅ | Sonnet |
 | — | Bonus  | Ícones nativos do FFXIV no header e botões de ação | ✅ | Sonnet |
 | 1A | Fundação | Sistema de cargos (Admin / Officer / Membro) | ✅ | Opus |
-| 1B | Fundação | Consistência de dados entre contas (sync em tempo real) | ⏳ | Opus |
+| 1B | Fundação | Consistência de dados entre contas (sync via polling com ETag) | ✅ | Opus |
+| —  | Deploy   | Preparação para Railway (volume, env vars, guia) | ✅ | Opus |
 | 2A | Feature | Agendar clicando na data + notificação no dashboard | ⏳ | Sonnet |
 | 2B | Feature | Drag & drop na prioridade de loot | ⏳ | Sonnet |
 | 3  | Polish | Redesign visual da lista de conteúdos | ⏳ | Sonnet |
@@ -67,21 +68,43 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
-## Fase 1B — Consistência de Dados Entre Contas ⏳
+## Fase 1B — Consistência de Dados Entre Contas ✅
 
-**Objetivo:** mudanças feitas por um usuário ficam visíveis para outros sem refresh manual.
+**Branch:** `feature/fase-1b-sync-railway` · **Commit:** `25f5462`
 
-**Plano recomendado (Polling + ETag — baixo custo):**
-- Backend: `GET /api/state` retorna cabeçalho `ETag` baseado em `updated_at` do static. Aceita `If-None-Match` e retorna `304` quando inalterado.
-- Frontend: timer a cada ~30s faz GET com `If-None-Match`. Se `304`, ignora; se mudou, recarrega estado preservando seleções locais (aba ativa, prog inspecionado).
+### Backend
+- `GET /api/state` retorna ETag (`sha1` truncado de `static_id:updated_at:user_id:role`)
+- ETag inclui `role` para invalidar cache quando admin altera o cargo de um membro (bug detectado em teste)
+- Suporte a `If-None-Match` com resposta `304` + `Cache-Control: no-cache, must-revalidate`
+- `PUT /api/state` retorna novo ETag no body — frontend rastreia sem refazer GET
 
-**Alternativa (SSE — mais complexo, ~1s de latência):**
-- Endpoint `/api/state/stream` com `text/event-stream` envia push quando `updated_at` muda
-- Requer ajustes de threading no gunicorn em produção
+### Frontend
+- Polling a cada 30s consulta `/api/state` com `If-None-Match`
+- Hidrate seletivo preserva aba ativa, prog inspecionado, foco em input, cursor e scroll
+- Pausa automática quando a aba do navegador está oculta (`document.hidden`)
+- Dispara polling imediato ao voltar para a aba (`visibilitychange`)
+- Janela quieta de 2s após `saveState()` evita reload em cima de edição
+- Toast "Dados atualizados" notifica recepção de mudanças de outro membro
+- `saveState` armazena novo ETag retornado pelo PUT para evitar reload desnecessário
 
-**Considerações:**
-- Conflitos de escrita simultânea: hoje é last-write-wins. Pode ser aceitável para o uso real (poucos editores ao mesmo tempo).
-- `theme` e `sfx` idealmente seriam per-user, não no blob compartilhado — pequeno débito técnico.
+### Débito técnico aceito
+- Conflitos de escrita simultânea: ainda é last-write-wins (aceitável para o tamanho real do uso)
+- `theme` e `sfx` ainda são per-static (idealmente seriam per-user) — pequeno débito
+- SSE não implementado — polling de 30s é suficiente para o caso de uso atual
+
+---
+
+## Deploy — Preparação para Railway ✅
+
+**Arquivos adicionados:**
+- `railway.json` — configura builder NIXPACKS e startCommand do gunicorn
+- `DEPLOY-RAILWAY.md` — guia passo a passo (volume `/data`, env vars, domínio público, troubleshooting)
+- `server/db.py` cria automaticamente o diretório do banco se não existir (necessário para `/data/data.db` no volume)
+
+**Variáveis de ambiente esperadas em produção:**
+- `SECRET_KEY` — chave forte para assinar cookies (gerar com `secrets.token_urlsafe(48)`)
+- `DATABASE_PATH=/data/data.db` — apontando para o volume persistente
+- `FLASK_ENV=production` — ativa cookies `Secure` (HTTPS-only)
 
 ---
 
@@ -158,7 +181,7 @@ Legenda: ✅ concluído · ⏳ pendente
 0A, 0B (paralelas) ✅
    │
    ▼
-1A ✅ ──→ 1B ⏳ (próxima)
+1A ✅ ──→ 1B ✅ ──→ Deploy Railway ✅
    │
    ├──→ 4 ⏳ (depende de 1A para roles e modal de membros)
    │
@@ -174,7 +197,7 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ## Estado Atual
 
-- **Branch ativa:** `feature/fase-1a-sistema-de-cargos`
-- **Último commit:** `b85aebc` (sistema de cargos completo)
-- **PR a abrir:** https://github.com/oscarothon/ffxiv-raid-planner/pull/new/feature/fase-1a-sistema-de-cargos
-- **Próximo passo recomendado:** abrir PR e mergear na `main`, depois iniciar Fase 1B em nova branch
+- **Branch ativa:** `feature/fase-1b-sync-railway`
+- **Último commit:** `25f5462` (sync via polling + preparação Railway)
+- **PR a abrir:** https://github.com/oscarothon/ffxiv-raid-planner/pull/new/feature/fase-1b-sync-railway
+- **Próximo passo recomendado:** seguir `DEPLOY-RAILWAY.md` para subir o app no Railway, depois mergear o PR e iniciar a próxima fase (4 ou 2A)
