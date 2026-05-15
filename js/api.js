@@ -65,5 +65,8 @@ const API = (() => {
         setMemberRole: (staticId, userId, role) =>
                                              request(`/api/statics/${staticId}/members/${userId}/role`,
                                                      { method: "PUT", body: { role } }),
+        removeMember:  (staticId, userId) =>
+                                             request(`/api/statics/${staticId}/members/${userId}`,
+                                                     { method: "DELETE" }),
     };
 })();

@@ -46,8 +46,12 @@ def _ensure_global_static():
 
 def _attach_user_to_global(user_id):
     """Adiciona o user à static global e marca como ativa.
+
     Se ninguém ainda é admin na global, este usuário é promovido a admin
-    (bootstrap automático)."""
+    (bootstrap automático). A remoção de membros pelo admin agora deleta
+    a conta inteira (em `remove_static_member`), então não há mais
+    necessidade de bloqueio por ban.
+    """
     static_id = _ensure_global_static()
     with db_conn() as conn:
         # Verifica se já existe admin nesta static
@@ -546,6 +550,70 @@ def set_member_role(static_id, user_id):
             (new_role, static_id, user_id),
         )
     return jsonify({"ok": True, "user_id": user_id, "role": new_role})
+
+
+@app.delete("/api/statics/<int:static_id>/members/<int:user_id>")
+@login_required
+def remove_static_member(static_id, user_id):
+    """Remove um membro do static deletando a conta de usuário inteira.
+
+    Admin only. Efeitos:
+    - Deleta a linha do user na tabela `users` (cascade limpa static_members)
+    - Orfaniza o roster slot vinculado a esse user (user_id → null)
+    - Não pode remover o último admin
+    - Não pode auto-deletar (admin precisa pedir a outro admin)
+    """
+    caller_role = get_user_role(static_id, session["user_id"])
+    if caller_role != ROLE_ADMIN:
+        return jsonify({"error": "forbidden", "required_role": "admin"}), 403
+
+    if user_id == session["user_id"]:
+        return jsonify({"error": "cannot_delete_self"}), 400
+
+    if not _assert_member(static_id, user_id):
+        return jsonify({"error": "target_not_a_member"}), 404
+
+    # Proteção: não permite remover o último admin
+    target_role = get_user_role(static_id, user_id)
+    if target_role == ROLE_ADMIN:
+        conn = get_conn()
+        try:
+            cur = conn.execute(
+                "SELECT COUNT(*) AS c FROM static_members WHERE static_id = ? AND role = 'admin'",
+                (static_id,),
+            )
+            if cur.fetchone()["c"] <= 1:
+                return jsonify({"error": "cannot_remove_last_admin"}), 400
+        finally:
+            conn.close()
+
+    # Orfaniza slot no roster e deleta a conta inteira
+    with db_conn() as conn:
+        cur = conn.execute("SELECT data_json FROM statics WHERE id = ?", (static_id,))
+        row = cur.fetchone()
+        try:
+            data = json.loads(row["data_json"] or "{}") if row else {}
+        except (TypeError, ValueError):
+            data = {}
+
+        roster = data.get("roster")
+        slot_orphaned = False
+        if isinstance(roster, list):
+            for p in roster:
+                if isinstance(p, dict) and p.get("user_id") == user_id:
+                    p["user_id"] = None
+                    slot_orphaned = True
+
+        if slot_orphaned:
+            conn.execute(
+                "UPDATE statics SET data_json = ?, updated_at = datetime('now') WHERE id = ?",
+                (json.dumps(data, ensure_ascii=False), static_id),
+            )
+
+        # Deleta a conta — CASCADE limpa static_members automaticamente
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    return jsonify({"ok": True, "deleted_user_id": user_id, "slot_orphaned": slot_orphaned})
 
 
 if __name__ == "__main__":

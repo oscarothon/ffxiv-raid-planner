@@ -16,10 +16,10 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 1A | Fundação | Sistema de cargos (Admin / Officer / Membro) | ✅ | Opus |
 | 1B | Fundação | Consistência de dados entre contas (sync via polling com ETag) | ✅ | Opus |
 | —  | Deploy   | Preparação para Railway (volume, env vars, guia) | ✅ | Opus |
+| 4  | Admin    | Admin pode excluir contas (delete permanente + orfaniza slot) | ✅ | Opus |
 | 2A | Feature | Agendar clicando na data + notificação no dashboard | ⏳ | Sonnet |
 | 2B | Feature | Drag & drop na prioridade de loot | ⏳ | Sonnet |
 | 3  | Polish | Redesign visual da lista de conteúdos | ⏳ | Sonnet |
-| 4  | Admin | Gerenciamento de contas pelo administrador (kick/delete) | ⏳ | Opus |
 
 Legenda: ✅ concluído · ⏳ pendente
 
@@ -150,30 +150,33 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
-## Fase 4 — Gerenciamento de Contas pelo Administrador ⏳
+## Fase 4 — Gerenciamento de Contas pelo Administrador ✅
 
-**Novo escopo:** admin precisa poder remover contas/membros indesejados da static.
+**Branch:** `feature/fase-4-admin-gerenciar-contas`
 
-**Plano:**
+### Backend
+- `DELETE /api/statics/<id>/members/<uid>` deleta a conta inteira (`users` row).
+  Cascade automático limpa `static_members`. Orfaniza o slot do roster
+  vinculado (`user_id → null`).
+- Bloqueios: admin não pode excluir a própria conta; não pode excluir o último admin.
 
-### Nível 1 — Kick (remover do static)
-- Backend: `DELETE /api/statics/<id>/members/<uid>` — admin only
-  - Impede remover último admin
-  - Decisão pendente: orfanizar slot do roster (`user_id → null`) ou removê-lo. Recomendo orfanizar para preservar histórico.
-- Frontend: botão "Remover" ao lado de cada membro no modal de gerenciamento
-- Modal de confirmação tematizado (substituindo `confirm()` do browser)
-- Toast de sucesso/erro
+### Frontend
+- Botão de excluir (ícone `exit_game.png`) ao lado de cada membro no modal admin.
+  Desabilitado para o próprio admin e para o último admin.
+- Modal de confirmação tematizado **genérico** (`showConfirm({title, message, detail, danger, ...})`)
+  com z-index 1500 para sobrepor outros modais (substitui `confirm()` do browser).
+- Toast de feedback verde/vermelho conforme resultado.
+- Polling reage a `401 unauthorized` e `403 not_a_member` chamando `handleKickFromStatic`,
+  que faz logout, limpa estado local e volta para a tela de login.
+- `confirm()` do browser substituído também em "Excluir Jogador" e "Limpar Todos".
+- Polling intervalo reduzido de 30s para 15s; também dispara em `window.focus`
+  além de `visibilitychange`, para detecção mais rápida de mudanças remotas.
 
-### Nível 2 — Deletar conta inteira (opcional)
-- Backend: `DELETE /api/users/<id>` — admin only, **operação destrutiva**
-  - Remove o usuário de todas as statics
-  - Cascade via `ON DELETE CASCADE` já presente
-  - Orfanizar slots do roster que tinham o `user_id` removido
-- Frontend: ação separada com confirmação reforçada (digitar nome do usuário, por exemplo)
-
-**Considerações:**
-- Membro deletando própria conta (right-to-be-forgotten) é uma extensão futura
-- Auditoria: opcional, registrar quem removeu quem
+### Decisão de design
+- Não há mais conceito de "ban list" no banco. Ao remover, a conta é apagada
+  permanentemente — o usuário pode se re-cadastrar com o mesmo username se quiser.
+- O slot do roster fica orfão (`user_id = null`), preservando histórico no
+  planner mas permitindo que qualquer um reivindique o slot depois.
 
 ---
 
@@ -183,9 +186,7 @@ Legenda: ✅ concluído · ⏳ pendente
 0A, 0B (paralelas) ✅
    │
    ▼
-1A ✅ ──→ 1B ✅ ──→ Deploy Railway ✅
-   │
-   ├──→ 4 ⏳ (depende de 1A para roles e modal de membros)
+1A ✅ ──→ 1B ✅ ──→ Deploy Railway ✅ ──→ 4 ✅
    │
    ├──→ 2A ⏳ (depende de 1A para permissões de agendar)
    │
@@ -199,6 +200,6 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ## Estado Atual
 
-- **Branch ativa:** `main` (Fases 0, 1A e 1B já mergeadas)
+- **Branch ativa:** `feature/fase-4-admin-gerenciar-contas` (Fases 0, 1A e 1B já na `main`)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** escolher entre Fase 4 (admin deletar contas), 2A (calendário com clique), 2B (drag & drop loot) ou 3 (redesign cards)
+- **Próximo passo recomendado:** mergear o PR da Fase 4 e escolher entre 2A (calendário com clique), 2B (drag & drop loot) ou 3 (redesign cards)

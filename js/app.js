@@ -165,7 +165,7 @@ let saveTimer = null;
 let lastStateETag = null;
 let pollingTimer = null;
 let pendingSaveAt = 0; // timestamp do último saveState() pendente — evita reload durante edição
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 15000;
 const SAVE_QUIET_WINDOW_MS = 2000; // não recarrega se o user salvou nos últimos 2s
 
 // ==========================================================================
@@ -197,6 +197,68 @@ function roleLabel(r) {
     if (r === 'officer') return 'Officer';
     if (r === 'member')  return 'Membro';
     return 'Visitante';
+}
+
+// ==========================================================================
+// Modal de Confirmação Tematizado (substitui confirm() do browser)
+// ==========================================================================
+/**
+ * Abre um modal tematizado e retorna uma Promise que resolve para true/false.
+ * Uso:
+ *   const ok = await showConfirm({ title, message, detail, confirmText, cancelText, danger });
+ *   if (ok) { ... }
+ */
+function showConfirm(opts = {}) {
+    return new Promise(resolve => {
+        const modal     = document.getElementById("modal-confirm");
+        const titleEl   = document.getElementById("modal-confirm-title");
+        const msgEl     = document.getElementById("modal-confirm-message");
+        const detailEl  = document.getElementById("modal-confirm-detail");
+        const okBtn     = document.getElementById("btn-confirm-ok");
+        const cancelBtn = document.getElementById("btn-confirm-cancel");
+        if (!modal || !okBtn || !cancelBtn) {
+            resolve(window.confirm(opts.message || "Confirmar?"));
+            return;
+        }
+
+        titleEl.textContent = opts.title   || "Confirmar Ação";
+        msgEl.textContent   = opts.message || "Tem certeza?";
+        if (opts.detail) {
+            detailEl.textContent = opts.detail;
+            detailEl.hidden = false;
+        } else {
+            detailEl.hidden = true;
+            detailEl.textContent = "";
+        }
+        okBtn.textContent     = opts.confirmText || "Confirmar";
+        cancelBtn.textContent = opts.cancelText  || "Cancelar";
+        okBtn.className = opts.danger ? "ff-btn-danger" : "ff-btn-action";
+
+        modal.hidden = false;
+
+        function cleanup() {
+            modal.hidden = true;
+            okBtn.removeEventListener("click", onOk);
+            cancelBtn.removeEventListener("click", onCancel);
+            modal.removeEventListener("click", onOverlay);
+            document.removeEventListener("keydown", onKey);
+        }
+        function onOk()      { cleanup(); playSfx('success'); resolve(true); }
+        function onCancel()  { cleanup(); playSfx('click');   resolve(false); }
+        function onOverlay(e) { if (e.target === modal) onCancel(); }
+        function onKey(e) {
+            if (e.key === "Escape") onCancel();
+            else if (e.key === "Enter") onOk();
+        }
+
+        okBtn.addEventListener("click", onOk);
+        cancelBtn.addEventListener("click", onCancel);
+        modal.addEventListener("click", onOverlay);
+        document.addEventListener("keydown", onKey);
+
+        // Foca o botão de cancelar por padrão (ação segura)
+        setTimeout(() => cancelBtn.focus(), 50);
+    });
 }
 
 // ==========================================================================
@@ -438,9 +500,14 @@ async function pollServerState() {
         applyRemoteState(res.payload);
         showToast("Dados atualizados — alterações de outro membro foram recebidas.", { type: "info", duration: 3500, title: "Sincronizado" });
     } catch (err) {
-        // Silencioso: não interrompe a sessão. Auth issues serão tratadas no próximo save/load.
+        // Sessão expirou ou conta foi deletada por admin — em ambos os casos,
+        // o usuário perdeu o acesso e precisa ser levado de volta para o login.
         if (err.status === 401) {
-            stopPolling();
+            await handleKickFromStatic("Sua sessão foi encerrada. Faça login novamente.");
+            return;
+        }
+        if (err.status === 403 && err.data && err.data.error === "not_a_member") {
+            await handleKickFromStatic("Você foi removido desta static por um administrador.");
             return;
         }
         console.warn("Polling falhou:", err);
@@ -450,8 +517,9 @@ async function pollServerState() {
 function startPolling() {
     stopPolling();
     pollingTimer = setInterval(pollServerState, POLL_INTERVAL_MS);
-    // Também roda assim que a aba volta a ser visível
+    // Dispara também quando a aba volta a ser visível ou ganha foco
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onWindowFocus);
 }
 
 function stopPolling() {
@@ -460,13 +528,38 @@ function stopPolling() {
         pollingTimer = null;
     }
     document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("focus", onWindowFocus);
 }
 
 function onVisibilityChange() {
-    if (!document.hidden) {
-        // Dispara um polling imediato quando o usuário volta para a aba
-        pollServerState();
-    }
+    if (!document.hidden) pollServerState();
+}
+function onWindowFocus() {
+    pollServerState();
+}
+
+/**
+ * Limpa toda a sessão local quando o user é removido da static
+ * (por admin ou por auto-kick). Faz logout no backend e volta para a tela de login.
+ */
+async function handleKickFromStatic(message) {
+    stopPolling();
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    showToast(message || "Você não tem mais acesso a esta static.", {
+        type: "warning",
+        title: "Acesso revogado",
+        duration: 6000,
+    });
+    try { await API.logout(); } catch (_) {}
+    currentUser = null;
+    currentUserRole = null;
+    currentUserId = null;
+    currentStaticId = null;
+    lastStateETag = null;
+    updateUserPill();
+    // Fecha modais que possam estar abertos
+    document.querySelectorAll(".ff-modal-overlay").forEach(m => { if (m.id !== "modal-auth") m.hidden = true; });
+    showAuthModal();
 }
 
 // ==========================================================================
@@ -1033,15 +1126,21 @@ function bindRosterTableEvents() {
     });
 
     container.querySelectorAll(".btn-delete-member").forEach(btn => {
-        btn.addEventListener("click", (e) => {
+        btn.addEventListener("click", async (e) => {
             const id = e.currentTarget.dataset.id;
             const target = state.roster.find(p => p.id === id);
-            if (target && confirm(`Deseja realmente excluir o jogador "${target.name || 'Sem Nome'}" do elenco geral?`)) {
-                playSfx('click');
-                state.roster = state.roster.filter(p => p.id !== id);
-                saveState();
-                renderRosterTables();
-            }
+            if (!target) return;
+            const ok = await showConfirm({
+                title: "Excluir Jogador",
+                message: `Deseja realmente excluir o jogador "${target.name || 'Sem Nome'}" do elenco?`,
+                detail: "O slot será removido do roster e da fila de prioridade de loot. Esta ação não pode ser desfeita.",
+                confirmText: "Excluir",
+                danger: true,
+            });
+            if (!ok) return;
+            state.roster = state.roster.filter(p => p.id !== id);
+            saveState();
+            renderRosterTables();
         });
     });
 
@@ -1860,17 +1959,25 @@ function renderMembersList() {
     if (!cont) return;
     cont.innerHTML = "";
 
+    const totalAdmins = cachedMembers.filter(x => x.role === "admin").length;
+
     cachedMembers.forEach(m => {
         const isSelf = m.id === currentUserId;
+        const isLastAdmin = m.role === "admin" && totalAdmins === 1;
         const row = document.createElement("div");
         row.className = "member-row";
-
-        const isLastAdmin = m.role === "admin"
-            && cachedMembers.filter(x => x.role === "admin").length === 1;
 
         const selectDisabled = isSelf && isLastAdmin
             ? `disabled title="Não é possível rebaixar o último administrador"`
             : "";
+
+        // Botão de excluir conta:
+        // - Desabilitado se for o próprio admin (não pode auto-deletar)
+        // - Desabilitado se for o último admin
+        const removeDisabled = (isSelf || isLastAdmin) ? "disabled" : "";
+        let removeTitle = `Excluir a conta de ${m.username} permanentemente`;
+        if (isSelf)            removeTitle = "Você não pode excluir a própria conta";
+        else if (isLastAdmin)  removeTitle = "Não é possível excluir o último administrador";
 
         row.innerHTML = `
             <div>
@@ -1882,6 +1989,9 @@ function renderMembersList() {
                 <option value="officer" ${m.role === 'officer' ? 'selected' : ''}>Officer</option>
                 <option value="member"  ${m.role === 'member'  ? 'selected' : ''}>Membro</option>
             </select>
+            <button type="button" class="btn-member-remove" data-uid="${m.id}" data-username="${m.username}" title="${removeTitle}" ${removeDisabled}>
+                <img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:24px;height:24px;display:block;">
+            </button>
         `;
         cont.appendChild(row);
     });
@@ -1893,10 +2003,8 @@ function renderMembersList() {
             const errEl = document.getElementById("members-error");
             try {
                 await API.setMemberRole(currentStaticId, uid, newRole);
-                // Atualiza cache local
                 const m = cachedMembers.find(x => x.id === uid);
                 if (m) m.role = newRole;
-                // Se foi o próprio user que mudou de cargo, recarrega o estado
                 if (uid === currentUserId) {
                     currentUserRole = newRole;
                     updateUserPill();
@@ -1911,9 +2019,50 @@ function renderMembersList() {
                         : `Falha ao atualizar cargo: ${err.message || err.status}`;
                     errEl.hidden = false;
                 }
-                // Reverte o select visualmente
                 const m = cachedMembers.find(x => x.id === uid);
                 if (m) e.target.value = m.role;
+            }
+        });
+    });
+
+    cont.querySelectorAll(".btn-member-remove").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const uid = parseInt(btn.dataset.uid);
+            const username = btn.dataset.username || "este usuário";
+
+            const confirmed = await showConfirm({
+                title: "Excluir Conta",
+                message: `Excluir permanentemente a conta de ${username}?`,
+                detail: "A conta é apagada do banco de dados. O slot do roster vinculado a essa conta é preservado mas perde o vínculo (vira disponível para qualquer um reivindicar). Esta ação não pode ser desfeita.",
+                confirmText: "Excluir Conta",
+                danger: true,
+            });
+            if (!confirmed) return;
+
+            const errEl = document.getElementById("members-error");
+            try {
+                await API.removeMember(currentStaticId, uid);
+                playSfx('success');
+
+                cachedMembers = cachedMembers.filter(x => x.id !== uid);
+                showToast(`Conta de ${username} excluída.`, { type: "success", title: "Conta removida" });
+                renderMembersList();
+                // Recarrega o estado para refletir o slot orfanizado
+                await bootstrapAfterAuth();
+                // Reabre o modal para o admin continuar trabalhando
+                openMembersModal();
+            } catch (err) {
+                const code = err.data?.error;
+                let msg;
+                if (code === "cannot_remove_last_admin") {
+                    msg = "Não é possível excluir o último administrador da static.";
+                } else if (code === "cannot_delete_self") {
+                    msg = "Você não pode excluir a própria conta.";
+                } else {
+                    msg = `Falha ao excluir conta: ${err.message || err.status}`;
+                }
+                if (errEl) { errEl.textContent = msg; errEl.hidden = false; }
+                showToast(msg, { type: "error" });
             }
         });
     });
@@ -2226,8 +2375,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const btnResetRoster = document.getElementById("btn-reset-roster");
     if (btnResetRoster) {
-        btnResetRoster.addEventListener("click", () => {
-            if (confirm("Tem certeza que deseja apagar todos os jogadores cadastrados no elenco geral?")) {
+        btnResetRoster.addEventListener("click", async () => {
+            const ok = await showConfirm({
+                title: "Limpar Todos os Jogadores",
+                message: "Apagar TODOS os jogadores cadastrados no elenco?",
+                detail: "Esta ação remove o roster inteiro da static, incluindo slots vinculados a contas. Não pode ser desfeita.",
+                confirmText: "Limpar Todos",
+                danger: true,
+            });
+            if (ok) {
                 state.roster = [];
                 saveState();
                 renderRosterTables();
