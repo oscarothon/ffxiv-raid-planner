@@ -2,6 +2,8 @@
 
 Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob em `statics.data_json`.
 
+**Produção:** https://mhigos-raid-planner.up.railway.app (Railway, volume persistente em `/data`)
+
 ---
 
 ## Tabela Resumo
@@ -197,7 +199,6 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ## Estado Atual
 
-- **Branch ativa:** `feature/fase-1b-sync-railway`
-- **Último commit:** `25f5462` (sync via polling + preparação Railway)
-- **PR a abrir:** https://github.com/oscarothon/ffxiv-raid-planner/pull/new/feature/fase-1b-sync-railway
-- **Próximo passo recomendado:** seguir `DEPLOY-RAILWAY.md` para subir o app no Railway, depois mergear o PR e iniciar a próxima fase (4 ou 2A)
+- **Branch ativa:** `main` (Fases 0, 1A e 1B já mergeadas)
+- **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
+- **Próximo passo recomendado:** escolher entre Fase 4 (admin deletar contas), 2A (calendário com clique), 2B (drag & drop loot) ou 3 (redesign cards)
