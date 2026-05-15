@@ -509,6 +509,23 @@
     <!-- TOAST/NOTIFICATION CONTAINER -->
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+    <!-- MODAL DE CONFIRMAÇÃO TEMATIZADO (substitui confirm() do browser) -->
+    <div id="modal-confirm" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
+        <div class="ff-modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 id="modal-confirm-title">Confirmar Ação</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modal-confirm-message" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-main);"></p>
+                <p id="modal-confirm-detail" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;" hidden></p>
+                <div style="display: flex; gap: 10px; margin-top: 18px;">
+                    <button id="btn-confirm-cancel" class="ff-btn-small" style="flex: 1;">Cancelar</button>
+                    <button id="btn-confirm-ok" class="ff-btn-action" style="flex: 1;">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL DE GERENCIAMENTO DE MEMBROS (Admin) -->
     <div id="modal-members" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
         <div class="ff-modal" style="max-width: 640px;">
