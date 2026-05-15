@@ -80,8 +80,6 @@ const DEFAULT_STATE = {
     scheduledProgs: {}, // Mapeia "YYYY-MM-DD" -> "progId" alvo daquele dia
     lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
-    macroText: "/p ⚠️ --- Estratégia de Posições (Clock Positions) ---\n/p [T1] Norte  | [T2] Sul\n/p [H1] Oeste  | [H2] Leste\n/p [M1] NO     | [M2] NE\n/p [R1] SO     | [R2] SE\n/p ⚔️ Bom jogo e foco nas mecânicas!",
-    strategyNotes: "https://www.youtube.com/@hectorhectorson"
 };
 
 const FLEX_POOLS = {
@@ -366,40 +364,6 @@ function initCustomJobsGrid() {
 // ==========================================================================
 // Renderizadores da Interface
 // ==========================================================================
-function renderEncounterOptions() {
-    const selectEncounter = document.getElementById("select-encounter");
-    if (!selectEncounter) return;
-    selectEncounter.innerHTML = "";
-
-    const isRaid = state.contentType === "raid";
-    const list = isRaid ? FFXIV_RAIDS : FFXIV_ULTIMATES;
-
-    list.forEach(item => {
-        const opt = document.createElement("option");
-        opt.value = item.id;
-        opt.textContent = `${item.name} (${item.expansion})`;
-        if (item.id === state.selectedEncounter) opt.selected = true;
-        selectEncounter.appendChild(opt);
-    });
-
-    if (!list.some(i => i.id === state.selectedEncounter) && list.length > 0) {
-        state.selectedEncounter = list[0].id;
-    }
-    updateSelectedContentDetails();
-}
-
-function updateSelectedContentDetails() {
-    const isRaid = state.contentType === "raid";
-    const list = isRaid ? FFXIV_RAIDS : FFXIV_ULTIMATES;
-    const found = list.find(i => i.id === state.selectedEncounter);
-
-    if (found) {
-        const titleEl = document.getElementById("details-title");
-        const expEl = document.getElementById("details-expansion");
-        if (titleEl) titleEl.textContent = found.name;
-        if (expEl) expEl.textContent = `Expansão: ${found.expansion}`;
-    }
-}
 
 // Consolidação de Flex Roles para a Tabela do Roster
 function generateJobsPoolBadgesHtml(player) {
@@ -501,7 +465,7 @@ function renderActiveProgsPanel() {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = `btn-content-type ${ct.id === activeContentTypeId ? 'active' : ''}`;
-            btn.innerHTML = `${ct.icon} ${ct.label}`;
+            btn.innerHTML = ct.label;
             btn.addEventListener("click", () => {
                 playSfx('tab');
                 activeContentTypeId = ct.id;
@@ -612,7 +576,7 @@ function renderRosterTables() {
     }
 
     if (activeMembers.length === 0) {
-        activeTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum jogador na Party Principal desta Raid. Utilize os botões 👆 do banco abaixo para alocar titulares.</td></tr>`;
+        activeTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum jogador na Party Principal desta Raid. Utilize os botões de promoção do banco abaixo para alocar titulares.</td></tr>`;
     } else {
         activeMembers.forEach((player, idx) => {
             const tr = document.createElement("tr");
@@ -657,9 +621,9 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
-                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador">✏️</button>
-                        <button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid">👇</button>
-                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador">❌</button>
+                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>
+                        <button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid"><img src="assets/icons/dictionary/party_member.png" alt="Banco" style="width:28px;height:28px;display:block;"></button>
+                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>
                     </div>
                 </td>
             `;
@@ -696,9 +660,9 @@ function renderRosterTables() {
                 </td>
                 <td>
                     <div style="display: flex; gap: 4px;">
-                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador">✏️</button>
-                        <button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid">👆</button>
-                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador">❌</button>
+                        <button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>
+                        <button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid"><img src="assets/icons/dictionary/party_leader.png" alt="Alocar" style="width:28px;height:28px;display:block;"></button>
+                        <button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>
                     </div>
                 </td>
             `;
@@ -982,14 +946,14 @@ function renderDashboardVisualizer() {
                 </div>
                 <div class="member-info">
                     <div class="member-name" title="${player.name}">${player.name || '<span style="color:#94a3b8;font-style:italic;">Sem Nick</span>'}</div>
-                    <div class="member-ilvl">iLvl: ${player.ilvl} ${player.bis ? '⭐ BiS' : ''}</div>
+                    <div class="member-ilvl">iLvl: ${player.ilvl} ${player.bis ? 'BiS' : ''}</div>
                 </div>
             `;
             container.appendChild(card);
         } else {
             const emptyCard = document.createElement("div");
             emptyCard.className = "member-mini-card empty-slot";
-            emptyCard.innerHTML = `<div class="empty-slot-txt">➕ Vaga Livre ${i + 1}</div>`;
+            emptyCard.innerHTML = `<div class="empty-slot-txt">Vaga Livre ${i + 1}</div>`;
             emptyCard.style.cursor = "pointer";
             emptyCard.addEventListener("click", () => {
                 const rosterTabBtn = document.querySelector(".tab-btn[data-tab='roster']");
@@ -1076,7 +1040,7 @@ function renderScheduleTable() {
         if (playerStatusInProg === "bench" && !renderedBenchHeader) {
             renderedBenchHeader = true;
             const sep = document.createElement("tr");
-            sep.innerHTML = `<td colspan="${numDays + 1}" style="background: rgba(165, 53, 53, 0.15); color: #fca5a5; font-weight: bold; font-size: 0.85rem; padding: 6px 16px; text-align: left;">🛡️ Substitutos (Banco de Reservas desta Raid)</td>`;
+            sep.innerHTML = `<td colspan="${numDays + 1}" style="background: rgba(165, 53, 53, 0.15); color: #fca5a5; font-weight: bold; font-size: 0.85rem; padding: 6px 16px; text-align: left;">Substitutos (Banco de Reservas desta Raid)</td>`;
             tbody.appendChild(sep);
         }
 
@@ -1215,7 +1179,7 @@ function renderQuickSchedule() {
         raidBlock.style.padding = "12px";
         raidBlock.style.marginBottom = "10px";
 
-        const headerHtml = `<div style="font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">🎯 ${progObj.name.split(" (")[0]}</div>`;
+        const headerHtml = `<div style="font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">${progObj.name.split(" (")[0]}</div>`;
 
         if (foundDateKey) {
             const dayNumStr = String(foundDateObj.getDate()).padStart(2, '0');
@@ -1623,16 +1587,9 @@ async function bootstrapAfterAuth() {
 function renderAllAfterLoad() {
     renderActiveProgsPanel();
     renderProgTabsBar();
-    renderEncounterOptions();
     renderRosterTables();
     renderEquipmentPanel();
 
-    const macroTextarea = document.getElementById("macro-textarea");
-    if (macroTextarea) macroTextarea.value = state.macroText || "";
-    const strategyNotesInput = document.getElementById("strategy-notes");
-    if (strategyNotesInput) strategyNotesInput.value = state.strategyNotes || "";
-    const selectContentType = document.getElementById("select-content-type");
-    if (selectContentType) selectContentType.value = state.contentType || "raid";
     const btnSoundToggle = document.getElementById("btn-sound-toggle");
     if (btnSoundToggle) btnSoundToggle.classList.toggle("active", !!state.sfx);
 }
@@ -1803,66 +1760,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    const staticNameInput = document.getElementById("static-name-input");
-    if (staticNameInput) {
-        staticNameInput.value = state.staticName;
-        staticNameInput.addEventListener("input", (e) => {
-            state.staticName = e.target.value;
-            saveState();
-        });
-    }
-
-    const selectContentType = document.getElementById("select-content-type");
-    if (selectContentType) {
-        selectContentType.value = state.contentType;
-        selectContentType.addEventListener("change", (e) => {
-            playSfx('click');
-            state.contentType = e.target.value;
-            renderEncounterOptions();
-            saveState();
-        });
-    }
-
-    const selectEncounter = document.getElementById("select-encounter");
-    if (selectEncounter) {
-        selectEncounter.addEventListener("change", (e) => {
-            playSfx('click');
-            state.selectedEncounter = e.target.value;
-            updateSelectedContentDetails();
-            saveState();
-        });
-    }
-
-    const macroTextarea = document.getElementById("macro-textarea");
-    if (macroTextarea) {
-        macroTextarea.value = state.macroText;
-        macroTextarea.addEventListener("input", (e) => {
-            state.macroText = e.target.value;
-            saveState();
-        });
-    }
-
-    const strategyNotesInput = document.getElementById("strategy-notes");
-    if (strategyNotesInput) {
-        strategyNotesInput.value = state.strategyNotes;
-        strategyNotesInput.addEventListener("input", (e) => {
-            state.strategyNotes = e.target.value;
-            saveState();
-        });
-    }
-
-    const btnCopyMacro = document.getElementById("btn-copy-macro");
-    if (btnCopyMacro) {
-        btnCopyMacro.addEventListener("click", () => {
-            navigator.clipboard.writeText(state.macroText).then(() => {
-                playSfx('success');
-                const originalText = btnCopyMacro.textContent;
-                btnCopyMacro.textContent = "✔️ Copiado!";
-                setTimeout(() => btnCopyMacro.textContent = originalText, 2000);
-            });
-        });
-    }
-
     const btnThemeToggle = document.getElementById("btn-theme-toggle");
     if (btnThemeToggle) {
         btnThemeToggle.addEventListener("click", () => {
@@ -1990,7 +1887,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             navigator.clipboard.writeText(exportTextarea.value).then(() => {
                 playSfx('success');
                 const orig = btnCopyExport.textContent;
-                btnCopyExport.textContent = "✔️ Código Copiado com Sucesso!";
+                btnCopyExport.textContent = "Código Copiado com Sucesso!";
                 setTimeout(() => btnCopyExport.textContent = orig, 2000);
             });
         });

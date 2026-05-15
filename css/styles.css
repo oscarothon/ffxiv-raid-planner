@@ -891,22 +891,20 @@ label {
 }
 
 .btn-table-action {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: var(--text-main);
-    width: 32px; height: 32px;
-    border-radius: var(--radius-sm);
+    background: none;
+    border: none;
+    padding: 0;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: transform 0.15s, opacity 0.15s;
+    opacity: 0.85;
 }
 
 .btn-table-action:hover {
-    border-color: var(--clear-blue-bright);
-    background: rgba(0, 136, 204, 0.3);
-    transform: scale(1.1);
+    transform: scale(1.18);
+    opacity: 1;
 }
 
 /* ==========================================================================

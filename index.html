@@ -40,18 +40,18 @@
             <div class="header-controls">
                 <div id="user-pill" class="user-pill" hidden>
                     <span class="user-pill-name" id="user-pill-name"></span>
-                    <button id="btn-logout" class="ff-btn-small" title="Sair">🚪</button>
+                    <button id="btn-logout" class="ff-btn-small" title="Sair"><img src="assets/icons/dictionary/log_out.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;">Sair</button>
                 </div>
                 <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)"
                     aria-label="Alternar Tema">
-                    <span class="icon">🎨</span> <span class="txt">Tema</span>
+                    <img src="assets/icons/dictionary/system_configuration.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Tema</span>
                 </button>
                 <button id="btn-sound-toggle" class="ff-btn-small active" title="Ativar/Desativar Efeitos Sonoros FFXIV"
                     aria-label="Efeitos Sonoros">
-                    <span class="icon">🔊</span> <span class="txt">SFX</span>
+                    <img src="assets/icons/dictionary/sound_settings.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">SFX</span>
                 </button>
                 <button id="btn-export-import" class="ff-btn-action" title="Exportar ou Importar dados da Static">
-                    💾 Compartilhar / Dados
+                    <img src="assets/icons/dictionary/free_company_chest.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;">Compartilhar / Dados
                 </button>
             </div>
         </header>
@@ -59,19 +59,16 @@
         <!-- Menu Principal Estilo Abas do Jogo -->
         <nav class="ff-tabs" aria-label="Navegação Principal">
             <button class="tab-btn active" data-tab="dashboard" aria-selected="true" aria-controls="dashboard-tab">
-                <span class="tab-icon">👑</span> Visão Geral
+                Visão Geral
             </button>
             <button class="tab-btn" data-tab="roster" aria-selected="false" aria-controls="roster-tab">
-                <span class="tab-icon">🛡️</span> Membros (Roster)
+                Membros (Roster)
             </button>
             <button class="tab-btn" data-tab="equipment" aria-selected="false" aria-controls="equipment-tab">
-                <span class="tab-icon">💎</span> Equipamentos
+                Equipamentos
             </button>
             <button class="tab-btn" data-tab="schedule" aria-selected="false" aria-controls="schedule-tab">
-                <span class="tab-icon">📅</span> Agenda Semanal
-            </button>
-            <button class="tab-btn" data-tab="strategies" aria-selected="false" aria-controls="strategies-tab">
-                <span class="tab-icon">📜</span> Estratégias & Macros
+                Agenda Semanal
             </button>
         </nav>
 
@@ -82,7 +79,7 @@
                 <div class="dashboard-grid">
                     <div class="ff-panel active-progs-panel full-width">
                         <div class="panel-header">
-                            <h2>🎯 Adicionar Conteúdo</h2>
+                            <h2>Adicionar Conteúdo</h2>
                         </div>
                         <div class="panel-body">
                             <p class="section-desc mb-2" style="font-size: 0.8rem;">Gerencie os conteúdos em que o grupo
@@ -105,7 +102,7 @@
                                 </div>
                                 <button id="btn-add-prog" class="ff-btn-crystal-add"
                                     style="align-self: flex-end;" title="Adicionar conteúdo ao grupo">
-                                    <span style="font-size: 1.1rem;">💎</span> Adicionar
+                                    Adicionar
                                 </button>
                             </div>
                         </div>
@@ -142,11 +139,11 @@
             <section id="roster-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="panel-header-action">
                     <h2>Gerenciamento de Elenco (Little Ala Mhigos)</h2>
-                    <button id="btn-reset-roster" class="ff-btn-danger">⚠️ Limpar Todos</button>
+                    <button id="btn-reset-roster" class="ff-btn-danger">Limpar Todos</button>
                 </div>
                 <!-- Barra de Seleção de Luta/Conteúdo na aba de membros -->
                 <div class="roster-prog-tabs-wrapper mb-3" style="background: rgba(0, 136, 204, 0.1); border: 1px solid rgba(51, 181, 229, 0.3); padding: 12px; border-radius: var(--radius-sm);">
-                    <span style="font-size: 0.85rem; color: #33b5e5; font-weight: bold; display: block; margin-bottom: 8px;">⚔️ Conteúdo / Luta Selecionada para Escalação:</span>
+                    <span style="font-size: 0.85rem; color: #33b5e5; font-weight: bold; display: block; margin-bottom: 8px;">Conteúdo / Luta Selecionada para Escalação:</span>
                     <div id="roster-prog-tabs-container" class="prog-tabs-bar" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">
                         <!-- Preenchido via JS sincronizado -->
                     </div>
@@ -156,7 +153,7 @@
                 <!-- Formulário de Cadastro Rápido -->
                 <div class="ff-panel add-member-panel mb-4">
                     <div class="panel-header">
-                        <h2>➕ Cadastrar Novo Jogador</h2>
+                        <h2>Cadastrar Novo Jogador</h2>
                     </div>
                     <div class="panel-body">
                         <div class="add-member-form" style="grid-template-columns: 1.5fr 3fr 1.5fr 1fr;">
@@ -249,7 +246,7 @@
                 <div class="roster-table-container ff-panel">
                     <div class="panel-header"
                         style="background: linear-gradient(180deg, #332222 0%, #1a1111 100%); border-bottom-color: #a53535;">
-                        <h2 style="color: #fca5a5;">🛡️ Banco de Reservas (Substitutos)</h2>
+                        <h2 style="color: #fca5a5;">Banco de Reservas (Substitutos)</h2>
                     </div>
                     <table class="ff-table">
                         <thead>
@@ -301,61 +298,13 @@
                 </div>
             </section>
 
-            <!-- ABA 4: ESTRATÉGIAS & MACROS -->
-            <section id="strategies-tab" class="tab-pane" role="tabpanel" hidden>
-                <div class="strategies-layout">
-                    <div class="ff-panel selector-panel">
-                        <div class="panel-header">
-                            <h2>Seleção de Conteúdo</h2>
-                        </div>
-                        <div class="panel-body">
-                            <div class="form-group">
-                                <label for="select-content-type">Tipo de Conteúdo:</label>
-                                <select id="select-content-type" class="ff-select">
-                                    <option value="raid">Raids (Savage / Normal)</option>
-                                    <option value="ultimate">Ultimate Raids</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="select-encounter">Encontro / Tier:</label>
-                                <select id="select-encounter" class="ff-select">
-                                    <!-- Dinâmico -->
-                                </select>
-                            </div>
-                            <div class="selected-content-details" id="selected-content-details">
-                                <h3 id="details-title">AAC Light-heavyweight (Savage)</h3>
-                                <p class="expansion-tag" id="details-expansion">Expansão: Dawntrail</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="ff-panel macro-panel">
-                        <div class="panel-header">
-                            <h2>Macro do Chat & Estratégia</h2>
-                            <button id="btn-copy-macro" class="ff-btn-small">📋 Copiar Macro</button>
-                        </div>
-                        <div class="panel-body">
-                            <label for="macro-textarea" class="sr-only">Texto da Macro</label>
-                            <textarea id="macro-textarea" class="ff-textarea" rows="10"
-                                placeholder="Cole aqui a macro de posições (ex: /p Clock positions: T1 N, T2 S, H1 W, H2 E...)"></textarea>
-                            <div class="notes-area mt-3">
-                                <label for="strategy-notes">Anotações e Links (Vídeos de Guias):</label>
-                                <input type="text" id="strategy-notes" class="ff-input"
-                                    placeholder="https://youtube.com/watch?v=...">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ABA 5: EQUIPAMENTOS E LOOT -->
+            <!-- ABA 4: EQUIPAMENTOS E LOOT -->
             <section id="equipment-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="equipment-layout">
                     <!-- Seletor Superior de Luta/Conteúdo para Equipamentos -->
                     <div class="ff-panel full-width mb-3" style="background: linear-gradient(90deg, rgba(0, 136, 204, 0.15) 0%, rgba(8, 18, 36, 0.85) 100%); border-color: #33b5e5;">
                         <div class="panel-body" style="padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
                             <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 1.4rem;">💎</span>
                                 <div>
                                     <span style="font-size: 0.75rem; color: #33b5e5; font-weight: 700; text-transform: uppercase; display: block;">Luta / Conteúdo em Foco</span>
                                     <span id="equip-current-prog-label" style="font-weight: 700; color: #fff; font-size: 1.1rem;">Geral</span>
@@ -390,7 +339,7 @@
                                 </div>
                                 <div id="bis-link-wrapper">
                                     <a id="bis-link-anchor" href="https://www.thebalanceffxiv.com/" target="_blank" class="ff-btn-small" style="text-decoration: none; border-color: #33b5e5; color: #33b5e5; font-weight: bold;">
-                                        🔗 BiS do Tier (The Balance)
+                                        BiS do Tier (The Balance)
                                     </a>
                                 </div>
                             </div>
@@ -411,11 +360,11 @@
                         <!-- Painel Lateral de Resumo da Luta & Prioridade de Loot -->
                         <div class="ff-panel fight-summary-panel">
                             <div class="panel-header" style="padding: 12px 16px;">
-                                <h3 style="font-size: 1.05rem; color: var(--gold-bright);">⚔️ Resumo & Prioridade</h3>
+                                <h3 style="font-size: 1.05rem; color: var(--gold-bright);">Resumo & Prioridade</h3>
                             </div>
                             <div class="panel-body" style="padding: 14px;">
                                 <div class="fight-summary-section">
-                                    <h4 class="fight-summary-subtitle">📊 Necessidades da Party</h4>
+                                    <h4 class="fight-summary-subtitle">Necessidades da Party</h4>
                                     <p class="fight-summary-desc">Slots com <strong>Need</strong> declarado pelos titulares desta luta.</p>
                                     <div id="fight-needs-list" class="fight-needs-list">
                                         <!-- Preenchido via JS -->
@@ -423,7 +372,7 @@
                                 </div>
 
                                 <div class="fight-summary-section">
-                                    <h4 class="fight-summary-subtitle">🏆 Fila de Prioridade de Loot</h4>
+                                    <h4 class="fight-summary-subtitle">Fila de Prioridade de Loot</h4>
                                     <p class="fight-summary-desc">Ordem oficial de preferência nos drops desta luta.</p>
                                     <div id="fight-priority-list" class="fight-priority-list">
                                         <!-- Preenchido via JS -->
@@ -464,14 +413,13 @@
 
                 <div id="export-area" class="modal-tab-content">
                     <textarea id="export-textarea" class="ff-textarea" rows="6" readonly></textarea>
-                    <button id="btn-copy-export" class="ff-btn-action mt-2 full-width">📋 Copiar Código JSON</button>
+                    <button id="btn-copy-export" class="ff-btn-action mt-2 full-width">Copiar Código JSON</button>
                 </div>
 
                 <div id="import-area" class="modal-tab-content" hidden>
                     <textarea id="import-textarea" class="ff-textarea" rows="6"
                         placeholder="Cole o código JSON da estática aqui..."></textarea>
-                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">💾 Carregar Dados
-                        Importados</button>
+                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">Carregar Dados Importados</button>
                     <p id="import-error" class="text-danger mt-1" hidden></p>
                 </div>
             </div>
@@ -482,7 +430,7 @@
     <div id="modal-edit-player" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
         <div class="ff-modal" style="max-width: 580px;">
             <div class="modal-header">
-                <h3>✏️ Editar Jogador</h3>
+                <h3>Editar Jogador</h3>
                 <button class="btn-close-modal" data-target="modal-edit-player" aria-label="Fechar">&times;</button>
             </div>
             <div class="modal-body">
@@ -500,7 +448,7 @@
                 </div>
                 <div style="display: flex; gap: 8px; margin-top: 12px;">
                     <button id="btn-edit-player-cancel" class="ff-btn-small" style="flex: 1;">Cancelar</button>
-                    <button id="btn-edit-player-save" class="ff-btn-action" style="flex: 2;">💾 Salvar Alterações</button>
+                    <button id="btn-edit-player-save" class="ff-btn-action" style="flex: 2;">Salvar Alterações</button>
                 </div>
                 <p id="edit-player-error" class="text-danger mt-2" hidden></p>
             </div>
@@ -511,7 +459,7 @@
     <div id="modal-auth" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
         <div class="ff-modal" style="max-width: 460px;">
             <div class="modal-header">
-                <h3 id="auth-modal-title">🛡️ Entrar na Static</h3>
+                <h3 id="auth-modal-title">Entrar na Static</h3>
             </div>
             <div class="modal-body">
                 <div class="modal-tabs">
@@ -531,7 +479,7 @@
                         <label for="login-password">Senha:</label>
                         <input type="password" id="login-password" class="ff-input" autocomplete="current-password">
                     </div>
-                    <button id="btn-auth-login" class="ff-btn-action full-width mt-2">🔐 Entrar</button>
+                    <button id="btn-auth-login" class="ff-btn-action full-width mt-2">Entrar</button>
                 </div>
 
                 <div id="auth-register-area" class="modal-tab-content" hidden>
@@ -546,7 +494,7 @@
                         <label for="reg-password">Senha (mín. 6 caracteres):</label>
                         <input type="password" id="reg-password" class="ff-input" autocomplete="new-password">
                     </div>
-                    <button id="btn-auth-register" class="ff-btn-action full-width mt-2">✨ Criar Conta</button>
+                    <button id="btn-auth-register" class="ff-btn-action full-width mt-2">Criar Conta</button>
                 </div>
 
                 <p id="auth-error" class="text-danger mt-2" hidden></p>
