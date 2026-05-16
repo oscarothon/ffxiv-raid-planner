@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS static_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_static_members_user ON static_members(user_id);
+
+CREATE TABLE IF NOT EXISTS pending_registrations (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    requested_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

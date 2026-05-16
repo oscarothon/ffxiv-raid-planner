@@ -68,5 +68,8 @@ const API = (() => {
         removeMember:  (staticId, userId) =>
                                              request(`/api/statics/${staticId}/members/${userId}`,
                                                      { method: "DELETE" }),
+        listPending:    ()         => request("/api/pending"),
+        approvePending: (id)       => request(`/api/pending/${id}/approve`, { method: "POST" }),
+        rejectPending:  (id)       => request(`/api/pending/${id}/reject`,  { method: "POST" }),
     };
 })();
