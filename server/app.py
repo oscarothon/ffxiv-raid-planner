@@ -366,7 +366,7 @@ def _validate_state_diff(old, new, role, user_id):
         violations.append("staticName(admin_only)")
 
     # Campos officer+ (add/remove direto)
-    for fld in ("activeProgs", "scheduledProgs"):
+    for fld in ("activeProgs", "scheduledProgs", "raidEvents"):
         if old.get(fld) != new.get(fld) and not is_officer:
             violations.append(f"{fld}(officer_only)")
 

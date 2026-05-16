@@ -77,7 +77,8 @@ const DEFAULT_STATE = {
     activeProgs: ["arcadion_lh"],
     inspectedProgId: "arcadion_lh",
     currentMonth: new Date().toISOString().slice(0, 7),
-    scheduledProgs: {}, // Mapeia "YYYY-MM-DD" -> "progId" alvo daquele dia
+    scheduledProgs: {}, // legado — migrado para raidEvents em hydrateState
+    raidEvents: [],    // [{id, progId, date, quorum, createdBy, createdAt, postponedTo, postponedBy, postponedAt}]
     pendingNotifications: [], // [{id, date, progId, createdBy, createdAt}]
     lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
@@ -311,6 +312,24 @@ function hydrateState(parsed) {
         state.currentMonth = new Date().toISOString().slice(0, 7);
     }
     if (!state.scheduledProgs) {
+        state.scheduledProgs = {};
+    }
+    if (!Array.isArray(state.raidEvents)) {
+        state.raidEvents = [];
+    }
+    // Migração: converte scheduledProgs legado → raidEvents (executa uma vez)
+    if (Object.keys(state.scheduledProgs).length > 0 && state.raidEvents.length === 0) {
+        state.raidEvents = Object.entries(state.scheduledProgs).map(([date, progId]) => ({
+            id: `evt_${progId}_${date.replace(/-/g, '')}`,
+            progId,
+            date,
+            quorum: 6,
+            createdBy: null,
+            createdAt: new Date().toISOString(),
+            postponedTo: null,
+            postponedBy: null,
+            postponedAt: null,
+        }));
         state.scheduledProgs = {};
     }
     if (!state.lootPriorities || typeof state.lootPriorities !== "object") {
@@ -1352,7 +1371,69 @@ function renderDashboardVisualizer() {
 }
 
 // ==========================================================================
-// Modal de Agendamento de Dia (Fase 2A)
+// Raid Events — Helpers (Fase 11)
+// ==========================================================================
+
+function getRaidEventForDate(dateKey) {
+    return (state.raidEvents || []).find(e => (e.postponedTo || e.date) === dateKey);
+}
+
+function getRaidEventForProg(progId) {
+    const today = new Date().toISOString().slice(0, 10);
+    return (state.raidEvents || []).find(e =>
+        e.progId === progId && (e.postponedTo || e.date) >= today
+    );
+}
+
+function getAvailCountForDate(dateKey) {
+    return (state.roster || []).filter(p =>
+        p.monthlySchedule && (p.monthlySchedule[dateKey] === "avail" || p.monthlySchedule[dateKey] === "late")
+    ).length;
+}
+
+function upsertRaidEvent(dateKey, progId, quorum) {
+    if (!state.raidEvents) state.raidEvents = [];
+    const existing = state.raidEvents.find(e => (e.postponedTo || e.date) === dateKey && e.progId === progId);
+    if (existing) {
+        existing.quorum = quorum;
+        return existing;
+    }
+    // Remove evento anterior para o mesmo progId (só um evento futuro por prog)
+    state.raidEvents = state.raidEvents.filter(e => e.progId !== progId);
+    const evt = {
+        id: `evt_${progId}_${dateKey.replace(/-/g, '')}`,
+        progId,
+        date: dateKey,
+        quorum,
+        createdBy: currentUserId,
+        createdAt: new Date().toISOString(),
+        postponedTo: null,
+        postponedBy: null,
+        postponedAt: null,
+    };
+    state.raidEvents.push(evt);
+    return evt;
+}
+
+function postponeRaidEvent(dateKey, newDate) {
+    const evt = getRaidEventForDate(dateKey);
+    if (!evt) return;
+    evt.postponedTo  = newDate;
+    evt.postponedBy  = currentUserId;
+    evt.postponedAt  = new Date().toISOString();
+    addScheduleNotification(newDate, evt.progId);
+    removeScheduleNotification(dateKey);
+}
+
+function removeRaidEvent(dateKey) {
+    const evt = getRaidEventForDate(dateKey);
+    if (!evt) return;
+    state.raidEvents = state.raidEvents.filter(e => e.id !== evt.id);
+    removeScheduleNotification(dateKey);
+}
+
+// ==========================================================================
+// Modal de Agendamento de Dia (Fase 2A / 11)
 // ==========================================================================
 
 function openScheduleModal(dateKey) {
@@ -1365,44 +1446,143 @@ function openScheduleModal(dateKey) {
     const label = `${d}/${m}/${y}`;
     title.textContent = `Agendar — ${label}`;
 
-    const current = (state.scheduledProgs || {})[dateKey];
+    const existingEvt = getRaidEventForDate(dateKey);
+    const currentProgId = existingEvt ? existingEvt.progId : null;
+    const currentQuorum = existingEvt ? existingEvt.quorum : 6;
     const progs = state.activeProgs || [];
 
-    let html = `<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">Selecione o conteúdo a ser progredido neste dia.</p>`;
+    let html = `<p class="sched-modal-desc">Selecione o conteúdo e o quorum mínimo de confirmações.</p>`;
+
+    // Seleção de prog
     html += `<div class="sched-prog-options">`;
     progs.forEach(progId => {
-        const pObj = getProgObj(progId);
-        const name = pObj.name.split(" (")[0].split(":")[0];
-        const active = progId === current ? " sched-opt-active" : "";
+        const name = getProgObj(progId).name.split(" (")[0].split(":")[0];
+        const active = progId === currentProgId ? " sched-opt-active" : "";
         html += `<button class="ff-btn-action sched-opt-btn${active}" data-prog="${progId}">${name}</button>`;
     });
     html += `</div>`;
-    if (current) {
-        html += `<button id="btn-sched-clear" class="ff-btn-small" style="margin-top:12px;width:100%;justify-content:center;color:var(--text-muted);">Limpar Agendamento</button>`;
+
+    // Quorum
+    html += `
+        <div class="sched-quorum-row">
+            <label class="sched-quorum-label" for="inp-sched-quorum">Quorum mínimo:</label>
+            <input id="inp-sched-quorum" type="number" min="1" max="8" value="${currentQuorum}" class="ff-input sched-quorum-input">
+            <span class="sched-quorum-hint">players</span>
+        </div>`;
+
+    // Adiamento (só se já existe evento nesse dia)
+    if (existingEvt) {
+        html += `
+        <div class="sched-postpone-row" id="sched-postpone-section">
+            <button id="btn-sched-postpone-toggle" class="ff-btn-small" style="width:100%;justify-content:center;">Adiar para outra data</button>
+            <div id="sched-postpone-form" style="display:none;margin-top:8px;flex-wrap:wrap;gap:8px;align-items:center;">
+                <input type="text" id="inp-sched-new-date" class="ff-input" style="flex:1;" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric">
+                <button id="btn-sched-confirm-postpone" class="ff-btn-action">Confirmar</button>
+            </div>
+        </div>`;
+        html += `<button id="btn-sched-clear" class="ff-btn-small sched-clear-btn">Limpar Agendamento</button>`;
     }
 
     body.innerHTML = html;
 
+    // Auto-máscara DD/MM/AAAA no campo de nova data
+    const dateInputEl = body.querySelector("#inp-sched-new-date");
+    if (dateInputEl) {
+        dateInputEl.addEventListener("input", e => {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+            if (v.length > 4) v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+            else if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+            e.target.value = v;
+        });
+    }
+
+    // Toggle seleção de prog
+    let selectedProg = currentProgId || (progs[0] || null);
     body.querySelectorAll(".sched-opt-btn").forEach(btn => {
         btn.addEventListener("click", () => {
-            const progId = btn.dataset.prog;
-            if (!state.scheduledProgs) state.scheduledProgs = {};
-            state.scheduledProgs[dateKey] = progId;
-            addScheduleNotification(dateKey, progId);
+            body.querySelectorAll(".sched-opt-btn").forEach(b => b.classList.remove("sched-opt-active"));
+            btn.classList.add("sched-opt-active");
+            selectedProg = btn.dataset.prog;
+        });
+    });
+
+    // Confirmar agendamento ao clicar no prog (fecha o modal)
+    body.querySelectorAll(".sched-opt-btn").forEach(btn => {
+        btn.addEventListener("dblclick", confirmSchedule);
+    });
+
+    // Botão confirmar implícito: clique em prog já selecionado
+    body.querySelectorAll(".sched-opt-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            if (btn.dataset.prog === selectedProg && btn.classList.contains("sched-opt-active")) {
+                // segundo clique no mesmo prog = confirmar
+                if (existingEvt && existingEvt.progId === selectedProg) return; // sem mudança
+                confirmSchedule();
+            }
+        });
+    });
+
+    function confirmSchedule() {
+        if (!selectedProg) return;
+        const quorum = parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6;
+        upsertRaidEvent(dateKey, selectedProg, quorum);
+        addScheduleNotification(dateKey, selectedProg);
+        saveState();
+        renderScheduleTable();
+        renderQuickSchedule();
+        renderNotificationBanner();
+        modal.hidden = true;
+        playSfx('success');
+    }
+
+    // Botão "Agendar" explícito (double click em prog ou botão no futuro)
+    // Para UX simples: clicar num prog diferente do atual já define; clicar Confirmar tb funciona
+    // Adicionamos um botão Confirmar se não há evento ainda
+    if (!existingEvt && progs.length > 0) {
+        const confirmBtn = document.createElement("button");
+        confirmBtn.className = "ff-btn-action";
+        confirmBtn.style.cssText = "width:100%;margin-top:12px;justify-content:center;";
+        confirmBtn.textContent = "Confirmar Agendamento";
+        confirmBtn.addEventListener("click", confirmSchedule);
+        body.appendChild(confirmBtn);
+    }
+
+    // Toggle formulário de adiamento
+    const postponeToggle = body.querySelector("#btn-sched-postpone-toggle");
+    if (postponeToggle) {
+        postponeToggle.addEventListener("click", () => {
+            const form = body.querySelector("#sched-postpone-form");
+            if (form) form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+        });
+    }
+
+    // Confirmar adiamento
+    const confirmPostpone = body.querySelector("#btn-sched-confirm-postpone");
+    if (confirmPostpone) {
+        confirmPostpone.addEventListener("click", () => {
+            const raw = body.querySelector("#inp-sched-new-date")?.value || '';
+            const parts = raw.split('/');
+            const newDate = (parts.length === 3 && parts[2].length === 4)
+                ? `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+                : null;
+            const todayIso = new Date().toISOString().slice(0, 10);
+            if (!newDate || newDate < todayIso || newDate === dateKey) return;
+            postponeRaidEvent(dateKey, newDate);
             saveState();
             renderScheduleTable();
             renderQuickSchedule();
             renderNotificationBanner();
             modal.hidden = true;
             playSfx('success');
+            showToast(`Raid adiada para ${raw}`, { type: "info", title: "Adiamento" });
         });
-    });
+    }
 
+    // Limpar agendamento
     const clearBtn = body.querySelector("#btn-sched-clear");
     if (clearBtn) {
         clearBtn.addEventListener("click", () => {
-            delete state.scheduledProgs[dateKey];
-            removeScheduleNotification(dateKey);
+            removeRaidEvent(dateKey);
             saveState();
             renderScheduleTable();
             renderQuickSchedule();
@@ -1518,8 +1698,7 @@ function renderScheduleTable() {
     }
     
     const numDays = new Date(year, month + 1, 0).getDate();
-    const scheduledProgs = state.scheduledProgs || {};
-    
+
     theadRow.innerHTML = `<th class="col-fixed">Jogador</th>`;
     for (let d = 1; d <= numDays; d++) {
         const currDate = new Date(year, month, d);
@@ -1530,24 +1709,26 @@ function renderScheduleTable() {
         const th = document.createElement("th");
         if (isWeekend) th.style.background = "rgba(239, 68, 68, 0.1)";
         
-        const selectedProg = scheduledProgs[dateKey] || (state.activeProgs && state.activeProgs[0]) || "geral";
-        const progOptions = (state.activeProgs || []).map(pId => {
-            const pObj = getProgObj(pId);
-            const shortName = pObj.name.split(" (")[0].split(":")[0];
-            return `<option value="${pId}" ${pId === selectedProg ? 'selected' : ''}>${shortName}</option>`;
-        }).join('');
-
-        const scheduledProgId = scheduledProgs[dateKey];
-        const scheduledProgObj = scheduledProgId ? getProgObj(scheduledProgId) : null;
-        const progLabel = scheduledProgObj
-            ? scheduledProgObj.name.split(" (")[0].split(":")[0]
+        const raidEvt = getRaidEventForDate(dateKey);
+        const scheduledProgId = raidEvt ? raidEvt.progId : null;
+        const progLabel = scheduledProgId
+            ? getProgObj(scheduledProgId).name.split(" (")[0].split(":")[0]
             : "";
         const canSched = canScheduleDate();
-        const thTitle = canSched
-            ? (scheduledProgId ? `Agendado: ${progLabel} — clique para alterar` : "Clique para agendar")
-            : (scheduledProgId ? `Agendado: ${progLabel}` : "");
 
-        if (scheduledProgId) th.classList.add("day-scheduled");
+        if (raidEvt) {
+            const avail = getAvailCountForDate(dateKey);
+            const quorumMet = avail >= raidEvt.quorum;
+            th.classList.add("day-scheduled");
+            if (quorumMet) th.classList.add("day-quorum-met");
+            const quorumTip = `${avail}/${raidEvt.quorum} confirmados`;
+            const thTitle = canSched
+                ? `Agendado: ${progLabel} — ${quorumTip} — clique para alterar`
+                : `Agendado: ${progLabel} — ${quorumTip}`;
+            th.title = thTitle;
+        } else if (canSched) {
+            th.title = "Clique para agendar";
+        }
 
         th.innerHTML = `
             <div class="cell-day-num">${d}</div>
@@ -1555,7 +1736,6 @@ function renderScheduleTable() {
         `;
         if (canSched) {
             th.style.cursor = "pointer";
-            if (thTitle) th.title = thTitle;
             th.addEventListener("click", () => {
                 playSfx('click');
                 openScheduleModal(dateKey);
@@ -1655,65 +1835,66 @@ function renderQuickSchedule() {
 
     const today = new Date();
     today.setHours(0,0,0,0);
+    const todayKey = today.toISOString().slice(0, 10);
 
     const shortWkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-    const scheduledProgs = state.scheduledProgs || {};
 
     state.activeProgs.forEach(progId => {
         const progObj = getProgObj(progId);
         const progTitulares = state.roster.filter(p => getPlayerStatusForProg(p, progId) === "active");
         const progReservas = state.roster.filter(p => getPlayerStatusForProg(p, progId) !== "active");
-        
+
+        // Encontra o raid event futuro para este prog
+        const raidEvt = getRaidEventForProg(progId);
+        const quorum = raidEvt ? raidEvt.quorum : 8;
+
         let foundDateKey = null;
         let foundDateObj = null;
         let confTitulares = [];
         let confReservas = [];
         let hasTitularLate = false;
 
-        // Procura a próxima data agendada com >= 8 jogadores confirmados no total
-        for (let i = 0; i < 45; i++) {
-            const dObj = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
-            const yStr = dObj.getFullYear();
-            const mStr = String(dObj.getMonth() + 1).padStart(2, '0');
-            const dayStr = String(dObj.getDate()).padStart(2, '0');
-            const dateKey = `${yStr}-${mStr}-${dayStr}`;
+        // Procura a data do evento (ou varre 45 dias se não houver evento)
+        const datesToCheck = raidEvt
+            ? [raidEvt.postponedTo || raidEvt.date]
+            : Array.from({ length: 45 }, (_, i) => {
+                const dObj = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+                return `${dObj.getFullYear()}-${String(dObj.getMonth()+1).padStart(2,'0')}-${String(dObj.getDate()).padStart(2,'0')}`;
+            });
 
-            const targetProgForDate = scheduledProgs[dateKey] || state.activeProgs[0];
+        for (const dateKey of datesToCheck) {
+            if (dateKey < todayKey) continue;
+            const dObj = new Date(dateKey + "T00:00:00");
 
-            if (targetProgForDate === progId) {
-                let tConf = [];
-                let rConf = [];
-                let tLate = false;
+            // Se não há raid event, só mostra datas que tenham confirmações
+            const evtForDate = getRaidEventForDate(dateKey);
+            if (!raidEvt && (!evtForDate || evtForDate.progId !== progId)) continue;
 
-                progTitulares.forEach(p => {
-                    const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                    if (sVal === "avail" || sVal === "late") {
-                        tConf.push(p.name || "Sem Nick");
-                        if (sVal === "late") tLate = true;
-                    }
-                });
+            let tConf = [];
+            let rConf = [];
+            let tLate = false;
 
-                progReservas.forEach(p => {
-                    const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                    if (sVal === "avail" || sVal === "late") {
-                        rConf.push(p.name || "Sem Nick");
-                    }
-                });
-
-                // Notifica existência de banco disponível independente de ele ser suficiente
-                // E encontra a data principal quando a soma total dá quórum mínimo de 8
-                if (tConf.length + rConf.length >= 8 || rConf.length > 0) {
-                    // Prioriza a data que atinja >= 8 para exibição do próximo dia de raid real
-                    if (tConf.length + rConf.length >= 8 || !foundDateKey) {
-                        foundDateKey = dateKey;
-                        foundDateObj = dObj;
-                        confTitulares = tConf;
-                        confReservas = rConf;
-                        hasTitularLate = tLate;
-                        if (tConf.length + rConf.length >= 8) break;
-                    }
+            progTitulares.forEach(p => {
+                const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
+                if (sVal === "avail" || sVal === "late") {
+                    tConf.push(p.name || "Sem Nick");
+                    if (sVal === "late") tLate = true;
                 }
-            }
+            });
+
+            progReservas.forEach(p => {
+                const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
+                if (sVal === "avail" || sVal === "late") {
+                    rConf.push(p.name || "Sem Nick");
+                }
+            });
+
+            foundDateKey = dateKey;
+            foundDateObj = dObj;
+            confTitulares = tConf;
+            confReservas = rConf;
+            hasTitularLate = tLate;
+            break;
         }
 
         const raidBlock = document.createElement("div");
@@ -1729,37 +1910,39 @@ function renderQuickSchedule() {
         if (foundDateKey) {
             const dayNumStr = String(foundDateObj.getDate()).padStart(2, '0');
             const monthNumStr = String(foundDateObj.getMonth() + 1).padStart(2, '0');
+            const yearNumStr = String(foundDateObj.getFullYear());
             const wkDayStr = shortWkNames[foundDateObj.getDay()];
-            const dateFormatted = `${wkDayStr}, ${dayNumStr}/${monthNumStr}`;
+            const dateFormatted = `${wkDayStr}, ${dayNumStr}/${monthNumStr}/${yearNumStr}`;
 
             const totalConfCount = confTitulares.length + confReservas.length;
-            let rowBg = totalConfCount >= 8 ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)";
-            let borderCol = totalConfCount >= 8 ? "var(--color-avail)" : "var(--color-late)";
+            const quorumMet = totalConfCount >= quorum;
+            let rowBg    = quorumMet ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)";
+            let borderCol = quorumMet ? "var(--color-avail)"      : "var(--color-late)";
+
+            const quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:${quorumMet ? 'var(--color-avail)' : 'var(--color-late)'};">${totalConfCount}/${quorum}</span>`;
 
             let alertsHtml = "";
-            
-            // Avisos e Sinalizações Detalhadas
-            if (confTitulares.length >= 8 && !hasTitularLate) {
-                alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">✔️ Escalação Titular Completa</div>`;
+            if (quorumMet && !hasTitularLate) {
+                alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">Quorum atingido</div>`;
             } else {
-                if (confTitulares.length < 8) {
-                    const ausentes = progTitulares.length - confTitulares.length;
-                    alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">⚠️ Desfalques Titulares (${ausentes} Ausentes)</div>`;
+                const faltam = quorum - totalConfCount;
+                if (faltam > 0) {
+                    alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Faltam ${faltam} confirmação(ões) para o quorum</div>`;
                 }
                 if (hasTitularLate) {
-                    alertsHtml += `<div style="background: rgba(234, 179, 8, 0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">⏳ Atenção: Titulares com status Talvez / Atraso</div>`;
+                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Atenção: há titulares com status "Talvez / Atraso"</div>`;
                 }
             }
-
-            // Existência de Banco Disponível
             if (confReservas.length > 0) {
-                alertsHtml += `<div style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">🛡️ Banco Disponível: ${confReservas.join(", ")}</div>`;
+                alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
             }
 
-            // Listagem de Nicks Confirmados
+            const postponedNote = raidEvt && raidEvt.postponedTo
+                ? `<span style="font-size:0.72rem;color:var(--color-late);margin-left:6px;">(Adiado)</span>` : "";
+
             const nicksListHtml = `
                 <div style="font-size: 0.8rem; color: var(--text-main); margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
-                    <span style="color: var(--text-muted);">Confirmados:</span> 
+                    <span style="color: var(--text-muted);">Confirmados:</span>
                     <span style="color: var(--color-avail); font-weight: 600;">${confTitulares.join(", ") || "Nenhum Titular"}</span>
                     ${confReservas.length > 0 ? ` | <span style="color: #fca5a5; font-weight: 600;">Reservas: ${confReservas.join(", ")}</span>` : ''}
                 </div>
@@ -1769,19 +1952,20 @@ function renderQuickSchedule() {
                 ${headerHtml}
                 <div style="display: flex; flex-direction: column; gap: 4px; border-left: 3px solid ${borderCol}; padding-left: 10px; background: ${rowBg}; padding: 8px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; font-size: 0.9rem;">📅 Próxima Sessão: ${dateFormatted}</span>
-                        <span style="font-size: 0.8rem; color: var(--text-muted);">(${totalConfCount} Confirmados no Dia)</span>
+                        <span style="font-weight: 600; font-size: 0.9rem;">Proxima Sessao: ${dateFormatted}${postponedNote}</span>
+                        ${quorumBadge}
                     </div>
                     <div style="margin-top: 2px;">${alertsHtml}</div>
                     ${nicksListHtml}
                 </div>
             `;
         } else {
+            const noEvtMsg = raidEvt
+                ? `Evento agendado para ${(raidEvt.postponedTo || raidEvt.date).split("-").reverse().join("/")} — sem confirmações ainda.`
+                : "Nenhuma data de raid agendada para este conteúdo.";
             raidBlock.innerHTML = `
                 ${headerHtml}
-                <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">
-                    Nenhuma data confirmada ou reservas agendados encontrados na agenda para esta Raid.
-                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">${noEvtMsg}</div>
             `;
         }
 
