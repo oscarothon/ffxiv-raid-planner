@@ -26,7 +26,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ✅ | Sonnet |
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
 | 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
-| 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ⏳ | Sonnet |
+| 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ✅ | Sonnet |
 | 10 | Mobile   | Responsividade completa (mobile, tablet, ultrawide) | ⏳ | Sonnet |
 
 Legenda: ✅ concluído · ⏳ pendente
@@ -367,20 +367,35 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ---
 
-## Fase 3 — Redesign Visual da Lista de Conteúdos ⏳
+## Fase 3 — Redesign Visual da Lista de Conteúdos ✅
 
-**Objetivo:** transformar os chips simples em cards animados com identidade visual mais forte.
+**Branch:** `feature/fase-3-redesign-cards`
 
-**Plano:**
-- Em `renderActiveProgsPanel`, substituir chips por cards contendo:
-  - Ícone/imagem do conteúdo (incluindo customs criados na Fase 8)
-  - Nome + tier + expansão
-  - Indicador de progresso ou status (placeholder por enquanto)
-  - Botão de remover integrado (não flutuante)
-- CSS: `@keyframes fadeInUp` na entrada, `transition` no hover (elevação/brilho).
-- Seletor "Adicionar conteúdo" vira um botão `+` que expande uma grade visual de cards disponíveis.
+### HTML (`index.html`)
+- `<div id="active-progs-list">` agora é uma `.prog-cards-grid` (auto-fill, minmax 260px).
+- Bloco antigo `add-prog-controls-enhanced` (tipo + select + botão "Adicionar") removido.
+- Novo `<div id="content-picker-panel">` inline, oculto por padrão, com header + tabs + grid de cards selecionáveis.
 
-**Modelo:** Sonnet. Pode depender da Fase 8 para incluir ícones de customs.
+### JS (`js/app.js`)
+- `renderActiveProgsPanel` reescrito: cria um `.prog-card` por prog ativo via `buildProgCard()` + um `.prog-card-add` (botão "+") no fim quando o usuário pode gerenciar.
+- `buildProgCard(progId, canManage)` monta o card com:
+  - Ícone nativo do FFXIV mapeado por `getProgTypeMeta(progId)` (Savage → `instanced_raid.png`, Ultimate → `ultimate_raids.png`, Custom Full → `raid.png`, Light → `variant_criterion_dungeons.png`, Dynamic → `event_participant.png`).
+  - Pill colorido por tipo (gold-bright / coral / amber / teal / violet).
+  - Nome do conteúdo + meta (expansão · partySize jogadores).
+  - Status do próximo `raidEvent`: data (`Sex, 22/05`) + `X/Y confirmados` ou `X confirmado(s)` para dynamic. Sem evento → "Sem agendamento" com dot cinza.
+- `toggleContentPicker()` / `closeContentPicker()` controlam o painel inline. Estado em `contentPickerOpen`.
+- `renderContentPicker()` desenha tabs por `CONTENT_TYPES` e a grade de cards disponíveis. Click direto no card adiciona o prog (sem botão "Adicionar" separado). Cards já em uso ficam `disabled` com pill "Em uso".
+- Remoção mantida com o mesmo fluxo: filtra `activeProgs`, ajusta `inspectedProgId`, `saveState` + re-render.
+
+### CSS (`css/styles.css`)
+- Nova seção "Fase 3 — Cards de Conteúdos Ativos + Picker" com variáveis de cor por tipo (`--type-savage`, `--type-ultimate`, `--type-full`, `--type-light`, `--type-dynamic`).
+- `@keyframes cardFadeInUp` aplicado na entrada de cada card.
+- Hover dos cards: `translateY(-2px)` + glow gold + border-color shift.
+- Card "Adicionar": borda tracejada que pulsa para gold no hover/aberto, com `+` grande centralizado.
+- Picker inline: tabs em pills, grid auto-fill (minmax 180px), cards menores com ícone + nome + expansão + tag "Em uso" quando aplicável.
+- Responsividade: grids viram 1-col em < 600px, picker grid vira 2-col.
+
+**Modelo:** Sonnet.
 
 ---
 
@@ -417,7 +432,7 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    ├──→ 2A ✅ ──→ 11 ⏳ (Raid Events — evolui scheduledProgs)
    │              └──→ 12 ⏳ (Telegram — depende de raid events)
    │
-   ├──→ 8 ✅ ──→ 3 ⏳ (tipos customizáveis ⇒ redesign cards)
+   ├──→ 8 ✅ ──→ 3 ✅ (tipos customizáveis ⇒ redesign cards)
    ├──→ 9 ⏳ (cadastro com aprovação — auth)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
 ```
@@ -440,6 +455,6 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `feature/fase-8-conteudos-customizaveis` (pronta para PR/merge)
+- **Branch ativa:** `feature/fase-3-redesign-cards` (pronta para PR/merge)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** Fase 3 (Redesign visual da lista de conteúdos) — depende da Fase 8 para incluir customs nos cards
+- **Próximo passo recomendado:** Fase 12 (Integração Telegram) — depende da Fase 11 estar estável em prod (✅) OU Fase 10 (Responsividade Mobile) como polish final

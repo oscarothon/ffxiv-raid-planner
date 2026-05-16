@@ -2690,3 +2690,376 @@ label {
         grid-template-columns: 1fr;
     }
 }
+
+/* ==========================================================================
+   Fase 3 — Cards de Conteúdos Ativos + Picker
+   ========================================================================== */
+
+/* Cores por tipo de conteúdo (usadas em pill, borda, gradiente de fundo do ícone) */
+:root {
+    --type-savage:   var(--gold-bright);
+    --type-ultimate: #e17a47;
+    --type-full:     #fbbf24;
+    --type-light:    #5eead4;
+    --type-dynamic:  #a78bfa;
+}
+
+/* Grade de cards */
+.prog-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.prog-cards-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9rem;
+    padding: 18px;
+    text-align: center;
+    background: rgba(0,0,0,0.25);
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: var(--radius-sm);
+}
+
+/* Card de prog ativo */
+.prog-card {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: linear-gradient(135deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.25) 100%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius-sm);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    animation: cardFadeInUp 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.prog-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent, var(--type-savage));
+}
+.prog-card-type-savage   { --accent: var(--type-savage); }
+.prog-card-type-ultimate { --accent: var(--type-ultimate); }
+.prog-card-type-full     { --accent: var(--type-full); }
+.prog-card-type-light    { --accent: var(--type-light); }
+.prog-card-type-dynamic  { --accent: var(--type-dynamic); }
+
+.prog-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(253, 224, 71, 0.35);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45), 0 0 12px rgba(253,224,71,0.08);
+}
+
+.prog-card-icon {
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), rgba(0,0,0,0.35) 70%);
+    border: 1px solid rgba(255,255,255,0.06);
+    overflow: hidden;
+}
+.prog-card-icon img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+
+.prog-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.prog-card-row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+.prog-card-pill {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.4);
+    color: var(--accent, var(--type-savage));
+    border: 1px solid currentColor;
+}
+.prog-card-pill.type-savage   { color: var(--type-savage); }
+.prog-card-pill.type-ultimate { color: var(--type-ultimate); }
+.prog-card-pill.type-full     { color: var(--type-full); }
+.prog-card-pill.type-light    { color: var(--type-light); }
+.prog-card-pill.type-dynamic  { color: var(--type-dynamic); }
+
+.prog-card-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+.prog-card-remove:hover {
+    color: #ef4444;
+    background: rgba(239,68,68,0.1);
+}
+
+.prog-card-name {
+    font-family: var(--font-title), 'Cinzel', serif;
+    font-size: 1rem;
+    line-height: 1.2;
+    color: var(--text-main);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prog-card-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+.prog-card-meta span + span::before {
+    content: "·";
+    margin-right: 8px;
+    color: rgba(255,255,255,0.2);
+}
+
+.prog-card-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.prog-card-status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+}
+.status-dot.status-idle    { background: #6b7280; color: #6b7280; box-shadow: none; }
+.status-dot.status-pending { background: var(--color-late); color: var(--color-late); }
+.status-dot.status-ok      { background: var(--color-avail); color: var(--color-avail); }
+.status-dot.status-info    { background: #60a5fa; color: #60a5fa; }
+
+/* Card de "Adicionar conteúdo" */
+.prog-card.prog-card-add {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border: 1.5px dashed rgba(253, 224, 71, 0.35);
+    background: rgba(0,0,0,0.15);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--font-title), 'Cinzel', serif;
+    font-size: 0.88rem;
+    letter-spacing: 0.5px;
+    min-height: 96px;
+    transition: border-color 0.18s, color 0.18s, background 0.18s, transform 0.18s;
+}
+.prog-card.prog-card-add::before { display: none; }
+.prog-card.prog-card-add:hover {
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    background: rgba(253, 224, 71, 0.06);
+    transform: translateY(-2px);
+}
+.prog-card.prog-card-add.is-open {
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    background: rgba(253, 224, 71, 0.1);
+}
+.prog-card-add-icon {
+    font-size: 1.8rem;
+    line-height: 1;
+    font-weight: 300;
+}
+.prog-card-add-label {
+    font-weight: 600;
+}
+
+@keyframes cardFadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Picker panel inline */
+.content-picker-panel {
+    background: linear-gradient(135deg, rgba(0,68,136,0.18) 0%, rgba(0,0,0,0.35) 100%);
+    border: 1px solid rgba(51,181,229,0.25);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    margin-bottom: 16px;
+    animation: cardFadeInUp 0.28s ease-out both;
+}
+.content-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.content-picker-title {
+    font-family: var(--font-title), 'Cinzel', serif;
+    font-size: 0.95rem;
+    color: var(--gold-bright);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.content-picker-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+.content-picker-close:hover {
+    color: var(--text-main);
+    background: rgba(255,255,255,0.06);
+}
+
+.content-picker-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.content-picker-tab {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(51,181,229,0.3);
+    color: var(--text-muted);
+    font-family: var(--font-title), 'Cinzel', serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 18px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    letter-spacing: 0.4px;
+}
+.content-picker-tab:hover {
+    border-color: var(--clear-blue-bright);
+    color: var(--text-main);
+}
+.content-picker-tab.active {
+    background: linear-gradient(135deg, rgba(0,136,204,0.4) 0%, rgba(0,68,136,0.5) 100%);
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    font-weight: 700;
+}
+
+.content-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+.content-picker-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 24px 12px;
+    font-size: 0.85rem;
+}
+
+.content-picker-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.16s, border-color 0.16s, background 0.16s;
+    position: relative;
+    color: var(--text-main);
+}
+.content-picker-card:hover:not(:disabled) {
+    transform: translateY(-2px);
+    border-color: var(--gold-bright);
+    background: rgba(253, 224, 71, 0.06);
+}
+.content-picker-card:disabled,
+.content-picker-card.is-active {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+.content-picker-card-icon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    margin-bottom: 2px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5));
+}
+.content-picker-card-name {
+    font-family: var(--font-title), 'Cinzel', serif;
+    font-size: 0.86rem;
+    color: var(--text-main);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+.content-picker-card-meta {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+.content-picker-card-tag {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--color-avail);
+    border: 1px solid currentColor;
+    padding: 1px 6px;
+    border-radius: 8px;
+}
+
+@media (max-width: 600px) {
+    .prog-cards-grid {
+        grid-template-columns: 1fr;
+    }
+    .content-picker-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
