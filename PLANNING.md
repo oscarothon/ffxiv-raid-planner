@@ -20,7 +20,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 5  | Bugfixes | Correções pontuais (tooltip, layout do slot, atualização silenciosa) | ✅ | Sonnet |
 | 6  | Limpeza  | Remover botão e fluxo "Compartilhar / Dados" | ✅ | Sonnet |
 | 2A | Feature  | Agendar clicando na data + notificação no dashboard | ✅ | Sonnet |
-| 2B | Feature  | Drag & drop na prioridade de loot | ⏳ | Sonnet |
+| 2B | Feature  | Drag & drop na prioridade de loot | ✅ | Sonnet |
 | 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ✅ | Sonnet |
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ⏳ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ⏳ | Opus |

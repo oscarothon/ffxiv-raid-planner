@@ -2029,6 +2029,7 @@ function renderFightSummaryAndPriorities() {
     }
 
     const canReorder = canManageContent();
+    let draggedId = null;
 
     priorityOrder.forEach((memberId, idx) => {
         const player = state.roster.find(p => p.id === memberId);
@@ -2037,32 +2038,65 @@ function renderFightSummaryAndPriorities() {
         const assignedJob = getAssignedJobForProg(player, activeProgId);
         const row = document.createElement("div");
         row.className = `priority-row rank-${idx + 1}`;
-        const controlsHtml = canReorder ? `
-            <div class="priority-controls">
-                <button type="button" class="btn-priority-move btn-priority-up" data-id="${player.id}" title="Subir na fila" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                <button type="button" class="btn-priority-move btn-priority-down" data-id="${player.id}" title="Descer na fila" ${idx === priorityOrder.length - 1 ? 'disabled' : ''}>▼</button>
-            </div>` : '';
+        if (canReorder) {
+            row.draggable = true;
+            row.dataset.id = player.id;
+        }
         row.innerHTML = `
             <span class="priority-rank">${idx + 1}</span>
             <span class="priority-name" title="${player.name || 'Sem Nick'}">${player.name || '<em>Sem Nick</em>'}</span>
             <span class="priority-job-sigla">${assignedJob}</span>
-            ${controlsHtml}
+            ${canReorder ? '<span class="priority-drag-handle" title="Arraste para reordenar">⠿</span>' : ''}
         `;
         priorityCont.appendChild(row);
     });
 
-    priorityCont.querySelectorAll(".btn-priority-up").forEach(btn => {
-        btn.addEventListener("click", () => {
-            playSfx('click');
-            moveLootPriority(activeProgId, btn.dataset.id, -1);
+    if (canReorder) {
+        priorityCont.querySelectorAll(".priority-row[draggable]").forEach(row => {
+            row.addEventListener("dragstart", e => {
+                draggedId = row.dataset.id;
+                row.classList.add("dragging");
+                e.dataTransfer.effectAllowed = "move";
+            });
+
+            row.addEventListener("dragend", () => {
+                draggedId = null;
+                row.classList.remove("dragging");
+                priorityCont.querySelectorAll(".priority-row").forEach(r => r.classList.remove("drag-over"));
+            });
+
+            row.addEventListener("dragover", e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (row.dataset.id === draggedId) return;
+                priorityCont.querySelectorAll(".priority-row").forEach(r => r.classList.remove("drag-over"));
+                row.classList.add("drag-over");
+            });
+
+            row.addEventListener("dragleave", () => {
+                row.classList.remove("drag-over");
+            });
+
+            row.addEventListener("drop", e => {
+                e.preventDefault();
+                row.classList.remove("drag-over");
+                if (!draggedId || row.dataset.id === draggedId) return;
+
+                const list = syncLootPriorityWithActiveRoster(activeProgId);
+                const fromIdx = list.indexOf(draggedId);
+                const toIdx   = list.indexOf(row.dataset.id);
+                if (fromIdx === -1 || toIdx === -1) return;
+
+                list.splice(fromIdx, 1);
+                list.splice(toIdx, 0, draggedId);
+                state.lootPriorities[activeProgId] = list;
+
+                playSfx('success');
+                saveState();
+                renderFightSummaryAndPriorities();
+            });
         });
-    });
-    priorityCont.querySelectorAll(".btn-priority-down").forEach(btn => {
-        btn.addEventListener("click", () => {
-            playSfx('click');
-            moveLootPriority(activeProgId, btn.dataset.id, +1);
-        });
-    });
+    }
 }
 
 function updateDashboardStats() {
