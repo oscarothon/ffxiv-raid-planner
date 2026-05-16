@@ -78,6 +78,7 @@ const DEFAULT_STATE = {
     inspectedProgId: "arcadion_lh",
     currentMonth: new Date().toISOString().slice(0, 7),
     scheduledProgs: {}, // Mapeia "YYYY-MM-DD" -> "progId" alvo daquele dia
+    pendingNotifications: [], // [{id, date, progId, createdBy, createdAt}]
     lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
 };
@@ -452,6 +453,7 @@ function applyRemoteState(newPayload) {
     renderProgTabsBar();
     renderRosterTables();
     renderEquipmentPanel();
+    renderNotificationBanner();
     updateUserPill();
     applyTheme();
 
@@ -1051,6 +1053,7 @@ function renderRosterTables() {
     bindRosterTableEvents();
     renderDashboardVisualizer();
     renderScheduleTable();
+    renderNotificationBanner();
     updateDashboardStats();
     renderEquipmentPanel();
 }
@@ -1348,6 +1351,150 @@ function renderDashboardVisualizer() {
     }
 }
 
+// ==========================================================================
+// Modal de Agendamento de Dia (Fase 2A)
+// ==========================================================================
+
+function openScheduleModal(dateKey) {
+    const modal = document.getElementById("modal-schedule-date");
+    const title = document.getElementById("modal-sched-title");
+    const body  = document.getElementById("modal-sched-body");
+    if (!modal || !title || !body) return;
+
+    const [y, m, d] = dateKey.split("-");
+    const label = `${d}/${m}/${y}`;
+    title.textContent = `Agendar — ${label}`;
+
+    const current = (state.scheduledProgs || {})[dateKey];
+    const progs = state.activeProgs || [];
+
+    let html = `<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">Selecione o conteúdo a ser progredido neste dia.</p>`;
+    html += `<div class="sched-prog-options">`;
+    progs.forEach(progId => {
+        const pObj = getProgObj(progId);
+        const name = pObj.name.split(" (")[0].split(":")[0];
+        const active = progId === current ? " sched-opt-active" : "";
+        html += `<button class="ff-btn-action sched-opt-btn${active}" data-prog="${progId}">${name}</button>`;
+    });
+    html += `</div>`;
+    if (current) {
+        html += `<button id="btn-sched-clear" class="ff-btn-small" style="margin-top:12px;width:100%;justify-content:center;color:var(--text-muted);">Limpar Agendamento</button>`;
+    }
+
+    body.innerHTML = html;
+
+    body.querySelectorAll(".sched-opt-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const progId = btn.dataset.prog;
+            if (!state.scheduledProgs) state.scheduledProgs = {};
+            state.scheduledProgs[dateKey] = progId;
+            addScheduleNotification(dateKey, progId);
+            saveState();
+            renderScheduleTable();
+            renderQuickSchedule();
+            renderNotificationBanner();
+            modal.hidden = true;
+            playSfx('success');
+        });
+    });
+
+    const clearBtn = body.querySelector("#btn-sched-clear");
+    if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+            delete state.scheduledProgs[dateKey];
+            removeScheduleNotification(dateKey);
+            saveState();
+            renderScheduleTable();
+            renderQuickSchedule();
+            renderNotificationBanner();
+            modal.hidden = true;
+            playSfx('click');
+        });
+    }
+
+    modal.hidden = false;
+}
+
+function addScheduleNotification(dateKey, progId) {
+    if (!state.pendingNotifications) state.pendingNotifications = [];
+    // Substitui notificação existente para o mesmo dia
+    state.pendingNotifications = state.pendingNotifications.filter(n => n.date !== dateKey);
+    state.pendingNotifications.push({
+        id: `${dateKey}-${Date.now()}`,
+        date: dateKey,
+        progId,
+        createdBy: currentUserId,
+        createdAt: new Date().toISOString(),
+    });
+}
+
+function removeScheduleNotification(dateKey) {
+    if (!state.pendingNotifications) return;
+    state.pendingNotifications = state.pendingNotifications.filter(n => n.date !== dateKey);
+}
+
+function getSeenNotificationIds() {
+    try {
+        return JSON.parse(localStorage.getItem("ffxiv-seen-notifs") || "[]");
+    } catch { return []; }
+}
+
+function markNotificationSeen(id) {
+    const seen = getSeenNotificationIds();
+    if (!seen.includes(id)) seen.push(id);
+    localStorage.setItem("ffxiv-seen-notifs", JSON.stringify(seen));
+}
+
+function renderNotificationBanner() {
+    const container = document.getElementById("notif-banner-container");
+    if (!container) return;
+
+    const seen = getSeenNotificationIds();
+    const unseen = (state.pendingNotifications || []).filter(n => !seen.includes(n.id));
+
+    if (unseen.length === 0) {
+        container.hidden = true;
+        container.innerHTML = "";
+        return;
+    }
+
+    const monthNames = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+
+    const items = unseen.map(n => {
+        const [y, m, d] = n.date.split("-");
+        const progObj = getProgObj(n.progId);
+        const progName = progObj.name.split(" (")[0].split(":")[0];
+        const dateLabel = `${d} de ${monthNames[parseInt(m, 10) - 1]}`;
+        return `<div class="notif-item" data-id="${n.id}" data-date="${n.date}">
+            <span class="notif-item-text">Raid agendada: <strong>${progName}</strong> em <strong>${dateLabel}</strong> — marque sua disponibilidade.</span>
+            <div class="notif-item-actions">
+                <button class="ff-btn-action btn-notif-avail" data-id="${n.id}">Marcar Disponibilidade</button>
+                <button class="ff-btn-small btn-notif-dismiss" data-id="${n.id}">Dispensar</button>
+            </div>
+        </div>`;
+    }).join("");
+
+    container.innerHTML = `<div class="notif-banner">${items}</div>`;
+    container.hidden = false;
+
+    container.querySelectorAll(".btn-notif-dismiss").forEach(btn => {
+        btn.addEventListener("click", () => {
+            markNotificationSeen(btn.dataset.id);
+            renderNotificationBanner();
+        });
+    });
+
+    container.querySelectorAll(".btn-notif-avail").forEach(btn => {
+        btn.addEventListener("click", () => {
+            markNotificationSeen(btn.dataset.id);
+            renderNotificationBanner();
+            // Navega para a aba do calendário
+            const calTab = document.querySelector(".tab-btn[data-tab='schedule']");
+            if (calTab) calTab.click();
+        });
+    });
+}
+
 // Renderiza o Calendário Mensal com Seletor de Raid alvo por Dia
 function renderScheduleTable() {
     const theadRow = document.getElementById("calendar-thead-row");
@@ -1390,18 +1537,30 @@ function renderScheduleTable() {
             return `<option value="${pId}" ${pId === selectedProg ? 'selected' : ''}>${shortName}</option>`;
         }).join('');
 
-        const scheduleDisabled = canScheduleDate() ? "" : "disabled";
-        const selectTitle = canScheduleDate()
-            ? "Raid Alvo do Dia"
-            : "Apenas Officers ou Administradores podem agendar dias";
+        const scheduledProgId = scheduledProgs[dateKey];
+        const scheduledProgObj = scheduledProgId ? getProgObj(scheduledProgId) : null;
+        const progLabel = scheduledProgObj
+            ? scheduledProgObj.name.split(" (")[0].split(":")[0]
+            : "";
+        const canSched = canScheduleDate();
+        const thTitle = canSched
+            ? (scheduledProgId ? `Agendado: ${progLabel} — clique para alterar` : "Clique para agendar")
+            : (scheduledProgId ? `Agendado: ${progLabel}` : "");
+
+        if (scheduledProgId) th.classList.add("day-scheduled");
 
         th.innerHTML = `
             <div class="cell-day-num">${d}</div>
             <div class="cell-day-wk">${wkDay}</div>
-            <select class="ff-select sel-day-target-prog" data-date="${dateKey}" title="${selectTitle}" style="font-size:0.65rem; padding:1px 2px; width:100%; margin-top:4px; background:rgba(0,0,0,0.6); border:1px solid #475569; color:var(--gold-muted);" ${scheduleDisabled}>
-                ${progOptions}
-            </select>
         `;
+        if (canSched) {
+            th.style.cursor = "pointer";
+            if (thTitle) th.title = thTitle;
+            th.addEventListener("click", () => {
+                playSfx('click');
+                openScheduleModal(dateKey);
+            });
+        }
         theadRow.appendChild(th);
     }
     
@@ -1478,16 +1637,6 @@ function renderScheduleTable() {
             tr.appendChild(tdDay);
         }
         tbody.appendChild(tr);
-    });
-
-    theadRow.querySelectorAll(".sel-day-target-prog").forEach(sel => {
-        sel.addEventListener("change", (e) => {
-            playSfx('click');
-            if (!state.scheduledProgs) state.scheduledProgs = {};
-            state.scheduledProgs[e.target.dataset.date] = e.target.value;
-            saveState();
-            renderQuickSchedule();
-        });
     });
 
     renderQuickSchedule();
