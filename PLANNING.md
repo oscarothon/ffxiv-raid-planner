@@ -23,7 +23,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 2B | Feature  | Drag & drop na prioridade de loot | ✅ | Sonnet |
 | 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ✅ | Sonnet |
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ⏳ | Opus |
-| 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ⏳ | Opus |
+| 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ✅ | Sonnet |
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
 | 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ⏳ | Sonnet |
@@ -261,7 +261,7 @@ Adicionar `state.customContents: []` ao estado da static. Cada item:
 
 ---
 
-## Fase 9 — Cadastro com Aprovação ⏳
+## Fase 9 — Cadastro com Aprovação ✅
 
 **Objetivo:** evitar que qualquer pessoa com o link entre direto na static — cadastro vira solicitação que officer/admin precisa aprovar. Solicitações expiram em 24h.
 
