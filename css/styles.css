@@ -2525,3 +2525,168 @@ label {
         text-align: center;
     }
 }
+
+/* ==========================================================================
+   Fase 8 — Modal Gerenciamento de Conteúdos Customizados
+   ========================================================================== */
+.content-create-form {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-crystal);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    margin-bottom: 8px;
+}
+.content-form-title {
+    font-size: 1rem;
+    color: var(--gold-bright);
+    margin: 0 0 10px 0;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.5px;
+}
+.content-form-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+}
+.content-create-form .form-group {
+    margin-bottom: 10px;
+}
+.content-create-form label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+.content-create-form label .required {
+    color: var(--color-late);
+}
+.content-party-modes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.content-party-mode {
+    cursor: pointer;
+    display: block;
+}
+.content-party-mode input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.content-party-mode-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    text-align: left;
+}
+.content-party-mode-card strong {
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-family: 'Cinzel', serif;
+}
+.content-party-mode-card .content-party-mode-desc {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+.content-party-mode:hover .content-party-mode-card {
+    border-color: var(--border-crystal);
+    transform: translateY(-1px);
+}
+.content-party-mode input[type="radio"]:checked + .content-party-mode-card {
+    border-color: var(--gold-bright);
+    background: rgba(212, 175, 55, 0.08);
+}
+.content-party-mode input[type="radio"]:checked + .content-party-mode-card strong {
+    color: var(--gold-bright);
+}
+.content-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.content-manager-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.content-manager-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-left: 3px solid var(--gold-bright);
+    border-radius: var(--radius-sm);
+}
+.content-manager-row.mode-light {
+    border-left-color: #5eead4;
+}
+.content-manager-row.mode-dynamic {
+    border-left-color: #a78bfa;
+}
+.content-manager-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+.content-manager-row-name {
+    font-weight: 600;
+    color: var(--text-main);
+    font-size: 0.95rem;
+}
+.content-manager-row-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.content-manager-row-meta .pill {
+    background: rgba(212, 175, 55, 0.15);
+    color: var(--gold-bright);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.7rem;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+.content-manager-row-meta .pill.mode-light  { background: rgba(94, 234, 212, 0.15); color: #5eead4; }
+.content-manager-row-meta .pill.mode-dynamic{ background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
+.content-manager-row.in-use {
+    opacity: 0.95;
+}
+.content-manager-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 24px 12px;
+    font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+    .content-form-grid {
+        grid-template-columns: 1fr;
+    }
+    .content-party-modes {
+        grid-template-columns: 1fr;
+    }
+}
