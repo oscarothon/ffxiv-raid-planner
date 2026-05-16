@@ -89,26 +89,20 @@
                         <div class="panel-body">
                             <p class="section-desc mb-2" style="font-size: 0.8rem;">Gerencie os conteúdos em que o grupo
                                 está progredindo simultaneamente.</p>
-                            <div id="active-progs-list" class="active-progs-container">
-                                <!-- Chips dinâmicos dos progs ativos -->
+                            <div id="active-progs-list" class="prog-cards-grid">
+                                <!-- Cards dinâmicos: progs ativos + card "+" no fim -->
                             </div>
-                            <div class="add-prog-controls-enhanced">
-                                <div style="width: 100%; margin-bottom: 8px;">
-                                    <span style="font-size: 0.75rem; color: var(--border-crystal); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Tipo de Conteúdo:</span>
-                                    <div class="content-type-selector" id="content-type-selector">
-                                        <!-- Preenchido via JS usando CONTENT_TYPES -->
-                                    </div>
+                            <div id="content-picker-panel" class="content-picker-panel" hidden>
+                                <div class="content-picker-header">
+                                    <span class="content-picker-title">Adicionar conteúdo</span>
+                                    <button class="content-picker-close" id="btn-content-picker-close" title="Fechar">&times;</button>
                                 </div>
-                                <div class="form-group" style="flex: 1; min-width: 200px; margin-bottom: 0;">
-                                    <label for="select-add-content" style="font-size: 0.75rem;">Selecionar Conteúdo:</label>
-                                    <select id="select-add-content" class="ff-select">
-                                        <option value="">-- Selecione --</option>
-                                    </select>
+                                <div class="content-picker-tabs" id="content-picker-tabs">
+                                    <!-- Tabs por tipo (Savage / Ultimate / Customizados) -->
                                 </div>
-                                <button id="btn-add-prog" class="ff-btn-crystal-add"
-                                    style="align-self: flex-end;" title="Adicionar conteúdo ao grupo">
-                                    Adicionar
-                                </button>
+                                <div class="content-picker-grid" id="content-picker-grid">
+                                    <!-- Grade de cards de conteúdos disponíveis -->
+                                </div>
                             </div>
                         </div>
                     </div>

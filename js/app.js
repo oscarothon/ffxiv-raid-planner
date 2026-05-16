@@ -806,98 +806,240 @@ function generateJobsPoolBadgesHtml(player) {
 
 const ROLE_WEIGHTS = { tank: 1, healer: 2, melee: 3, ranged: 4, caster: 5 };
 
+// Fase 3 — Mapeia o tipo do prog para um ícone nativo do FFXIV (assets/icons/dictionary)
+function getProgTypeMeta(progId) {
+    const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
+    const customObj = getCustomContent(progId);
+    if (customObj) {
+        const mode = getPartyMode(progId);
+        if (mode === "dynamic") {
+            return { label: "Dynamic", key: "dynamic", icon: "assets/icons/dictionary/event_participant.png" };
+        }
+        if (mode === "light") {
+            return { label: "Light", key: "light", icon: "assets/icons/dictionary/variant_criterion_dungeons.png" };
+        }
+        return { label: "Custom", key: "full", icon: "assets/icons/dictionary/raid.png" };
+    }
+    if (isUlt) {
+        return { label: "Ultimate", key: "ultimate", icon: "assets/icons/dictionary/ultimate_raids.png" };
+    }
+    return { label: "Savage", key: "savage", icon: "assets/icons/dictionary/instanced_raid.png" };
+}
+
+let contentPickerOpen = false;
+
 function renderActiveProgsPanel() {
     const container = document.getElementById("active-progs-list");
+    if (!container) return;
 
     const canManage = canManageContent();
+    container.innerHTML = "";
 
-    if (container) {
-        container.innerHTML = "";
-        if (!state.activeProgs || state.activeProgs.length === 0) {
-            container.innerHTML = `<span style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">Nenhum conteúdo em progresso cadastrado.${canManage ? ' Utilize os seletores abaixo.' : ''}</span>`;
+    const progs = state.activeProgs || [];
+
+    if (progs.length === 0 && !canManage) {
+        container.innerHTML = `<div class="prog-cards-empty">Nenhum conteúdo em progresso cadastrado.</div>`;
+    } else {
+        progs.forEach(progId => container.appendChild(buildProgCard(progId, canManage)));
+        if (canManage) container.appendChild(buildAddCard());
+    }
+
+    // Picker fica oculto para non-managers
+    const panel = document.getElementById("content-picker-panel");
+    if (panel) {
+        if (!canManage) {
+            panel.hidden = true;
+            contentPickerOpen = false;
+        } else if (contentPickerOpen) {
+            renderContentPicker();
+        }
+    }
+}
+
+function buildProgCard(progId, canManage) {
+    const progObj = getProgObj(progId);
+    const meta = getProgTypeMeta(progId);
+    const mode = getPartyMode(progId);
+    const partySize = getPartySize(progId);
+    const dynamic = mode === "dynamic";
+    const fullName = progObj.name || progId;
+    const shortName = fullName.split(" (")[0];
+    const expansion = progObj.expansion || "";
+
+    // Status: próximo raid event
+    const raidEvt = getRaidEventForProg(progId);
+    let statusDot = "status-idle";
+    let statusText = "Sem agendamento";
+    if (raidEvt) {
+        const date = raidEvt.postponedTo || raidEvt.date;
+        const [y, m, d] = date.split("-");
+        const dObj = new Date(date + "T00:00:00");
+        const wkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+        const dateStr = `${wkNames[dObj.getDay()]}, ${d}/${m}`;
+        const avail = getAvailCountForDate(date);
+        if (dynamic) {
+            statusDot = "status-info";
+            statusText = `${dateStr} · ${avail} confirmado${avail === 1 ? '' : 's'}`;
         } else {
-            state.activeProgs.forEach(progId => {
-                const progObj = getProgObj(progId);
-                const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
-                const customObj = getCustomContent(progId);
-                let typeLabel, typeColor;
-                if (customObj) {
-                    const mode = getPartyMode(progId);
-                    if (mode === "dynamic")     { typeLabel = "Dynamic"; typeColor = "#a78bfa"; }
-                    else if (mode === "light")  { typeLabel = "Light";   typeColor = "#5eead4"; }
-                    else                        { typeLabel = "Custom";  typeColor = "#fbbf24"; }
-                } else if (isUlt) {
-                    typeLabel = "Ultimate"; typeColor = "#e17a47";
-                } else {
-                    typeLabel = "Savage";   typeColor = "var(--gold-bright)";
-                }
-                const chip = document.createElement("div");
-                chip.className = "prog-chip";
-                const closeBtn = canManage
-                    ? `<button class="prog-chip-close" data-id="${progId}" title="Remover Progresso">&times;</button>`
-                    : "";
-                chip.innerHTML = `
-                    <span class="prog-chip-type" style="color: ${typeColor}">${typeLabel}</span>
-                    <span style="font-weight: 600;">${progObj.name.split(" (")[0].split(":")[0]}</span>
-                    ${closeBtn}
-                `;
-                container.appendChild(chip);
-            });
-
-            container.querySelectorAll(".prog-chip-close").forEach(btn => {
-                btn.addEventListener("click", (e) => {
-                    playSfx('click');
-                    const idToRemove = e.currentTarget.dataset.id;
-                    state.activeProgs = state.activeProgs.filter(id => id !== idToRemove);
-                    if (state.inspectedProgId === idToRemove) {
-                        state.inspectedProgId = state.activeProgs.length > 0 ? state.activeProgs[0] : "geral";
-                    }
-                    saveState();
-                    renderActiveProgsPanel();
-                    renderProgTabsBar();
-                    renderRosterTables();
-                });
-            });
+            const quorum = raidEvt.quorum || partySize;
+            const met = avail >= quorum;
+            statusDot = met ? "status-ok" : "status-pending";
+            statusText = `${dateStr} · ${avail}/${quorum} confirmados`;
         }
     }
 
-    // Esconde a área de adicionar conteúdo para members
-    const addControls = document.querySelector(".add-prog-controls-enhanced");
-    if (addControls) addControls.style.display = canManage ? "" : "none";
+    const card = document.createElement("div");
+    card.className = `prog-card prog-card-type-${meta.key}`;
+    card.dataset.progId = progId;
+    card.innerHTML = `
+        <div class="prog-card-icon" aria-hidden="true">
+            <img src="${meta.icon}" alt="" onerror="this.style.display='none'">
+        </div>
+        <div class="prog-card-body">
+            <div class="prog-card-row-top">
+                <span class="prog-card-pill type-${meta.key}">${meta.label}</span>
+                ${canManage ? `<button class="prog-card-remove" type="button" title="Remover conteúdo">&times;</button>` : ''}
+            </div>
+            <h3 class="prog-card-name" title="${escapeHtml(fullName)}">${escapeHtml(shortName)}</h3>
+            <div class="prog-card-meta">
+                ${expansion ? `<span>${escapeHtml(expansion)}</span>` : ''}
+                <span>${partySize} jogadores</span>
+            </div>
+            <div class="prog-card-status">
+                <span class="status-dot ${statusDot}"></span>
+                <span class="prog-card-status-text">${escapeHtml(statusText)}</span>
+            </div>
+        </div>
+    `;
 
-    // Render content type buttons
-    const typeSelector = document.getElementById("content-type-selector");
-    if (typeSelector) {
-        typeSelector.innerHTML = "";
-        CONTENT_TYPES.forEach(ct => {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = `btn-content-type ${ct.id === activeContentTypeId ? 'active' : ''}`;
-            btn.innerHTML = ct.label;
-            btn.addEventListener("click", () => {
-                playSfx('tab');
-                activeContentTypeId = ct.id;
-                renderActiveProgsPanel();
-            });
-            typeSelector.appendChild(btn);
+    if (canManage) {
+        card.querySelector(".prog-card-remove").addEventListener("click", (e) => {
+            e.stopPropagation();
+            playSfx('click');
+            state.activeProgs = state.activeProgs.filter(id => id !== progId);
+            if (state.inspectedProgId === progId) {
+                state.inspectedProgId = state.activeProgs[0] || "geral";
+            }
+            saveState();
+            renderActiveProgsPanel();
+            renderProgTabsBar();
+            renderRosterTables();
         });
     }
+    return card;
+}
 
-    // Populate unified content select
-    const selContent = document.getElementById("select-add-content");
-    if (selContent) {
-        selContent.innerHTML = '<option value="">-- Selecione --</option>';
-        const currentType = CONTENT_TYPES.find(ct => ct.id === activeContentTypeId);
-        if (currentType) {
-            currentType.getList().forEach(item => {
-                const opt = document.createElement("option");
-                opt.value = item.id;
-                opt.textContent = `${item.name} (${item.expansion})`;
-                if (state.activeProgs && state.activeProgs.includes(item.id)) opt.disabled = true;
-                selContent.appendChild(opt);
+function buildAddCard() {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `prog-card prog-card-add ${contentPickerOpen ? 'is-open' : ''}`;
+    card.innerHTML = `
+        <span class="prog-card-add-icon">+</span>
+        <span class="prog-card-add-label">Adicionar conteúdo</span>
+    `;
+    card.addEventListener("click", () => {
+        playSfx('click');
+        toggleContentPicker();
+    });
+    return card;
+}
+
+function toggleContentPicker() {
+    contentPickerOpen = !contentPickerOpen;
+    const panel = document.getElementById("content-picker-panel");
+    if (panel) panel.hidden = !contentPickerOpen;
+    renderActiveProgsPanel();
+}
+
+function closeContentPicker() {
+    contentPickerOpen = false;
+    const panel = document.getElementById("content-picker-panel");
+    if (panel) panel.hidden = true;
+    renderActiveProgsPanel();
+}
+
+function renderContentPicker() {
+    const panel = document.getElementById("content-picker-panel");
+    if (!panel || panel.hidden) return;
+
+    const tabsCont = document.getElementById("content-picker-tabs");
+    const gridCont = document.getElementById("content-picker-grid");
+    if (!tabsCont || !gridCont) return;
+
+    tabsCont.innerHTML = "";
+    CONTENT_TYPES.forEach(ct => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `content-picker-tab ${ct.id === activeContentTypeId ? 'active' : ''}`;
+        btn.textContent = ct.label;
+        btn.addEventListener("click", () => {
+            playSfx('tab');
+            activeContentTypeId = ct.id;
+            renderContentPicker();
+        });
+        tabsCont.appendChild(btn);
+    });
+
+    gridCont.innerHTML = "";
+    const currentType = CONTENT_TYPES.find(ct => ct.id === activeContentTypeId);
+    if (!currentType) return;
+
+    const items = currentType.getList();
+    if (items.length === 0) {
+        gridCont.innerHTML = `<div class="content-picker-empty">${
+            activeContentTypeId === "custom"
+                ? 'Nenhum conteúdo customizado cadastrado. Use o botão "Conteúdos" no topo da página para criar.'
+                : 'Nenhum item disponível.'
+        }</div>`;
+        return;
+    }
+
+    items.forEach(item => {
+        const isActive = (state.activeProgs || []).includes(item.id);
+        let iconPath;
+        if (activeContentTypeId === "raid")          iconPath = "assets/icons/dictionary/instanced_raid.png";
+        else if (activeContentTypeId === "ultimate") iconPath = "assets/icons/dictionary/ultimate_raids.png";
+        else {
+            const m = (item.partyMode === "light" || item.partyMode === "dynamic") ? item.partyMode : "full";
+            iconPath = m === "dynamic" ? "assets/icons/dictionary/event_participant.png"
+                     : m === "light"   ? "assets/icons/dictionary/variant_criterion_dungeons.png"
+                                       : "assets/icons/dictionary/raid.png";
+        }
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `content-picker-card${isActive ? ' is-active' : ''}`;
+        card.disabled = isActive;
+        card.title = isActive ? "Já adicionado" : `Adicionar ${item.name}`;
+        const shortName = (item.name || item.id).split(" (")[0];
+        card.innerHTML = `
+            <img class="content-picker-card-icon" src="${iconPath}" alt="" onerror="this.style.display='none'">
+            <span class="content-picker-card-name">${escapeHtml(shortName)}</span>
+            ${item.expansion ? `<span class="content-picker-card-meta">${escapeHtml(item.expansion)}</span>` : ''}
+            ${isActive ? `<span class="content-picker-card-tag">Em uso</span>` : ''}
+        `;
+        if (!isActive) {
+            card.addEventListener("click", () => {
+                playSfx('success');
+                if (!state.activeProgs) state.activeProgs = [];
+                state.activeProgs.push(item.id);
+                // Sincroniza statusByProg do roster para o novo prog (mesma lógica do antigo btn-add-prog)
+                state.roster.forEach(player => {
+                    if (!player.statusByProg) player.statusByProg = {};
+                    if (!player.statusByProg[item.id]) {
+                        player.statusByProg[item.id] = player.status === "bench" ? "bench" : "active";
+                    }
+                });
+                if (!state.inspectedProgId || state.inspectedProgId === "geral") {
+                    state.inspectedProgId = item.id;
+                }
+                saveState();
+                renderActiveProgsPanel();
+                renderProgTabsBar();
+                renderRosterTables();
             });
         }
-    }
+        gridCont.appendChild(card);
+    });
 }
 
 function renderProgTabsBar() {
@@ -3007,29 +3149,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    const btnAddProg = document.getElementById("btn-add-prog");
-    if (btnAddProg) {
-        btnAddProg.addEventListener("click", () => {
-            const selContent = document.getElementById("select-add-content");
-            if (!selContent || !selContent.value) return;
-            const selectedId = selContent.value;
-            if (state.activeProgs && state.activeProgs.includes(selectedId)) {
-                showToast("Este conteúdo já está na lista de progressos ativos.", { type: "warning", title: "Já cadastrado" });
-                return;
-            }
-            playSfx('success');
-            if (!state.activeProgs) state.activeProgs = [];
-            state.activeProgs.push(selectedId);
-            state.roster.forEach(player => {
-                if (!player.statusByProg) player.statusByProg = {};
-                if (!player.statusByProg[selectedId]) {
-                    player.statusByProg[selectedId] = player.status === "bench" ? "bench" : "active";
-                }
-            });
-            saveState();
-            renderActiveProgsPanel();
-            renderProgTabsBar();
-            renderRosterTables();
+    // Fase 3 — Botão de fechar o picker de conteúdo
+    const btnPickerClose = document.getElementById("btn-content-picker-close");
+    if (btnPickerClose) {
+        btnPickerClose.addEventListener("click", () => {
+            playSfx('click');
+            closeContentPicker();
         });
     }
 
