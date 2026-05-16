@@ -1986,11 +1986,58 @@ label {
 .calendar-table th.day-scheduled .cell-day-num {
     color: var(--gold-bright);
 }
+.calendar-table th.day-quorum-met {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+}
+.calendar-table th.day-quorum-met .cell-day-num {
+    color: var(--color-avail);
+}
 .calendar-table th[style*="cursor: pointer"]:hover {
     background: rgba(0, 136, 204, 0.1);
 }
 .calendar-table th.day-scheduled[style*="cursor: pointer"]:hover {
     background: rgba(212, 175, 55, 0.2);
+}
+
+/* Modal de agendamento */
+.sched-modal-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+.sched-quorum-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+}
+.sched-quorum-label {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.sched-quorum-input {
+    width: 64px;
+    text-align: center;
+    padding: 4px 6px;
+}
+.sched-quorum-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.sched-postpone-row {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+}
+.sched-clear-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+    color: var(--text-muted);
 }
 
 /* Opções de prog no modal de agendamento */

@@ -24,6 +24,8 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ✅ | Sonnet |
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ⏳ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ⏳ | Opus |
+| 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
+| 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ⏳ | Sonnet |
 | 10 | Mobile   | Responsividade completa (mobile, tablet, ultrawide) | ⏳ | Sonnet |
 
@@ -294,6 +296,82 @@ CREATE TABLE pending_registrations (
 
 ---
 
+## Fase 11 — Raid Events ✅
+
+**Objetivo:** evoluir o agendamento simples (Fase 2A) para um modelo de "evento formal de raid" — com data definida pelo criador do conteúdo, quorum configurável e possibilidade de adiamento.
+
+### Modelo de dados
+Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
+```json
+{
+  "id": "evt_arcadion_20260522",
+  "progId": "arcadion_lh",
+  "date": "2026-05-22",
+  "quorum": 6,
+  "createdBy": "user_id",
+  "createdAt": "2026-05-15T20:00:00Z",
+  "postponedTo": null,
+  "postponedBy": null,
+  "postponedAt": null
+}
+```
+- Um prog pode ter no máximo um evento futuro ativo.
+- Adiamento não apaga o evento — atualiza `postponedTo` + `postponedBy` + `postponedAt` e envia nova notificação.
+
+### Backend (`server/app.py`)
+- Validar `raidEvents` no `PUT /api/state`: officer+ cria/edita/adia; member só lê.
+- `_validate_state_diff` ganha entrada para `raidEvents`.
+
+### Frontend (`js/app.js`, `index.html`)
+- Modal de agendamento (Fase 2A) ganha campo de quorum (número mínimo de players confirmados).
+- Calendário: dias com evento mostram chip com nome do prog + indicador de quorum (`4/6`).
+- Ao atingir quorum (N jogadores com "avail" naquela data), exibe badge verde na célula.
+- Officers+ podem adiar: abre modal com campo de nova data. Gera nova notificação `pendingNotifications`.
+- `renderQuickSchedule` usa `raidEvents` em vez de `scheduledProgs`.
+- Migração suave: carregar `scheduledProgs` antigo e converter para `raidEvents` em `hydrateState`.
+
+**Modelo:** Opus (mudança de modelo de dados + lógica de quorum).
+
+---
+
+## Fase 12 — Integração Telegram ⏳
+
+**Objetivo:** notificar jogadores via bot do Telegram em três cenários: quorum atingido para um raid event, lembrete de evento próximo (X horas antes) e lembrete individual para jogadores que ainda não marcaram disponibilidade.
+
+### Configuração
+- Env var: `TELEGRAM_BOT_TOKEN` (Railway secret).
+- Env var: `TELEGRAM_NOTIFY_HOURS_BEFORE=24` (padrão 24h).
+- Env var: `TELEGRAM_QUORUM_NOTIFY=true`.
+
+### Vinculação de conta
+- Nova coluna `telegram_chat_id TEXT` em `users`.
+- Fluxo: user clica "Conectar Telegram" no perfil → backend gera código temporário (6 dígitos, TTL 10 min) → user manda `/start XXXXXX` ao bot → bot confirma e salva `chat_id`.
+- Desvinculação: botão "Desconectar" apaga `telegram_chat_id`.
+
+### Backend (`server/`)
+- `server/telegram.py` — helper com `send_message(chat_id, text)` via `requests` (HTTP simples, sem biblioteca pesada).
+- `GET /api/telegram/link-code` — gera e retorna código temporário para o usuário logado.
+- `POST /api/telegram/webhook` — recebe updates do Telegram; processa `/start <code>` vinculando a conta.
+- Webhook registrado em produção via `POST https://api.telegram.org/bot<TOKEN>/setWebhook`.
+- **Notificações disparadas por eventos**, não por cron:
+  - **Quorum atingido**: `PUT /api/state` já checa se o novo `avail` completou o quorum → dispara imediatamente.
+  - **Lembrete de evento próximo**: checado a cada `GET /api/state` de qualquer usuário; se há evento em ≤ `TELEGRAM_NOTIFY_HOURS_BEFORE` horas e o lembrete ainda não foi enviado, dispara e marca `reminderSent: true` no evento.
+  - **Lembrete individual**: mesma lógica — se usuário com `telegram_chat_id` não tem marcação para um evento próximo, notifica na próxima requisição autenticada desse usuário.
+
+### Frontend (`js/app.js`, `index.html`)
+- Seção "Telegram" no modal de perfil/conta do usuário.
+- Estado: "Não conectado / Conectar" → mostra código e instrução → "Conectado ✓ / Desconectar".
+- Toast de confirmação ao vincular com sucesso.
+
+### Decisões de design
+- Sem APScheduler — notificações são piggyback em requisições existentes (sem background thread).
+- Sem OAuth — fluxo de código simples é suficiente para grupo pequeno.
+- Mensagens em português, tom informal.
+
+**Modelo:** Opus (backend multi-arquivo + segurança do webhook).
+
+---
+
 ## Fase 3 — Redesign Visual da Lista de Conteúdos ⏳
 
 **Objetivo:** transformar os chips simples em cards animados com identidade visual mais forte.
@@ -339,11 +417,11 @@ CREATE TABLE pending_registrations (
    ▼
 1A ✅ ──→ 1B ✅ ──→ Deploy Railway ✅ ──→ 4 ✅
    │
-   ├──→ 5 ⏳ (bugfixes — independente, prioritário)
-   ├──→ 6 ⏳ (remover Compartilhar/Dados — quick win)
-   ├──→ 7 ⏳ (botão Tema + dark mode)
-   ├──→ 2A ⏳ (calendário com clique + notif)
-   ├──→ 2B ⏳ (drag & drop loot)
+   ├──→ 5 ✅  6 ✅  7 ✅  2A ✅  2B ✅ (concluídos)
+   │
+   ├──→ 2A ✅ ──→ 11 ⏳ (Raid Events — evolui scheduledProgs)
+   │              └──→ 12 ⏳ (Telegram — depende de raid events)
+   │
    ├──→ 8 ⏳ ──→ 3 ⏳ (tipos customizáveis ⇒ redesign cards)
    ├──→ 9 ⏳ (cadastro com aprovação — auth)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
@@ -353,15 +431,13 @@ CREATE TABLE pending_registrations (
 
 ## Sugestão de ordem de execução
 
-1. **Fase 5 (Bugfixes)** — quick wins, melhora UX imediatamente
-2. **Fase 6 (Remover Compartilhar/Dados)** — quick win
-3. **Fase 7 (Tema escuro)** — autocontido, melhora visual
-4. **Fase 2A (Calendário com clique + notif)** — feature mais pedida
-5. **Fase 2B (Drag & drop loot)** — feature rápida
-6. **Fase 8 (Tipos customizáveis)** — refator grande, abre porta para Fase 3
-7. **Fase 9 (Cadastro com aprovação)** — segurança/governança
-8. **Fase 3 (Redesign cards)** — polish com benefício da Fase 8
-9. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe
+1. ~~Fases 5, 6, 7, 2A, 2B~~ ✅ concluídas
+2. **Fase 11 (Raid Events)** — evolui o agendamento, base para Telegram
+3. **Fase 9 (Cadastro com aprovação)** — segurança antes de crescer o grupo
+4. **Fase 12 (Telegram)** — depende da Fase 11 estar estável em prod
+5. **Fase 8 (Tipos customizáveis)** — refator grande, abre porta para Fase 3
+6. **Fase 3 (Redesign cards)** — polish com benefício da Fase 8
+7. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe
 
 Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
@@ -369,6 +445,6 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `feature/fase-4-admin-gerenciar-contas` (PR aberto, aguardando merge)
+- **Branch ativa:** `main` (todas as fases concluídas mergeadas)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** mergear o PR da Fase 4 e iniciar a Fase 5 (Bugfixes) — escolha do usuário pode redefinir
+- **Próximo passo recomendado:** Fase 11 (Raid Events) — evolui o agendamento existente e é pré-requisito para o Telegram
