@@ -46,17 +46,15 @@
                 <button id="btn-manage-members" class="ff-btn-small" title="Gerenciar membros e cargos" hidden>
                     <img src="assets/icons/dictionary/free_company.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Membros</span>
                 </button>
-                <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Dark/Classic Blue)"
+                <button id="btn-theme-toggle" class="ff-btn-small" title="Alternar Tema (Crystal Blue / Classic Dark / Darkness)"
                     aria-label="Alternar Tema">
-                    <img src="assets/icons/dictionary/system_configuration.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Tema</span>
+                    <img src="assets/icons/dictionary/system_configuration.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">Crystal Blue</span>
                 </button>
                 <button id="btn-sound-toggle" class="ff-btn-small active" title="Ativar/Desativar Efeitos Sonoros FFXIV"
                     aria-label="Efeitos Sonoros">
                     <img src="assets/icons/dictionary/sound_settings.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"><span class="txt">SFX</span>
                 </button>
-                <button id="btn-export-import" class="ff-btn-action" title="Exportar ou Importar dados da Static">
-                    <img src="assets/icons/dictionary/free_company_chest.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;">Compartilhar / Dados
-                </button>
+
             </div>
         </header>
 
@@ -397,37 +395,6 @@
                 Square Enix.</p>
             <p class="subtext">Versão 1.0 &bull; Armazenamento Local Seguro Ativado</p>
         </footer>
-    </div>
-
-    <!-- MODAL DE EXPORTAÇÃO / IMPORTAÇÃO -->
-    <div id="modal-share" class="ff-modal-overlay" hidden aria-modal="true" role="dialog">
-        <div class="ff-modal">
-            <div class="modal-header">
-                <h3>Dados da Static & Compartilhamento</h3>
-                <button class="btn-close-modal" aria-label="Fechar Modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p>Você pode copiar o código JSON abaixo para enviar aos membros do seu grupo ou colar um código
-                    recebido para atualizar seu painel local.</p>
-
-                <div class="modal-tabs">
-                    <button class="modal-tab-btn active" id="btn-show-export">Exportar</button>
-                    <button class="modal-tab-btn" id="btn-show-import">Importar</button>
-                </div>
-
-                <div id="export-area" class="modal-tab-content">
-                    <textarea id="export-textarea" class="ff-textarea" rows="6" readonly></textarea>
-                    <button id="btn-copy-export" class="ff-btn-action mt-2 full-width">Copiar Código JSON</button>
-                </div>
-
-                <div id="import-area" class="modal-tab-content" hidden>
-                    <textarea id="import-textarea" class="ff-textarea" rows="6"
-                        placeholder="Cole o código JSON da estática aqui..."></textarea>
-                    <button id="btn-save-import" class="ff-btn-action mt-2 full-width">Carregar Dados Importados</button>
-                    <p id="import-error" class="text-danger mt-1" hidden></p>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- MODAL DE EDIÇÃO DE JOGADOR -->

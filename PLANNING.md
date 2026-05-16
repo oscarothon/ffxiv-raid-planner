@@ -17,11 +17,11 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 1B | Fundação | Consistência de dados entre contas (sync via polling com ETag) | ✅ | Opus |
 | —  | Deploy   | Preparação para Railway (volume, env vars, guia) | ✅ | Opus |
 | 4  | Admin    | Admin exclui contas (delete permanente + orfaniza slot) | ✅ | Opus |
-| 5  | Bugfixes | Correções pontuais (tooltip, layout do slot, atualização silenciosa) | ⏳ | Sonnet |
-| 6  | Limpeza  | Remover botão e fluxo "Compartilhar / Dados" | ⏳ | Sonnet |
+| 5  | Bugfixes | Correções pontuais (tooltip, layout do slot, atualização silenciosa) | ✅ | Sonnet |
+| 6  | Limpeza  | Remover botão e fluxo "Compartilhar / Dados" | ✅ | Sonnet |
 | 2A | Feature  | Agendar clicando na data + notificação no dashboard | ⏳ | Sonnet |
 | 2B | Feature  | Drag & drop na prioridade de loot | ⏳ | Sonnet |
-| 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ⏳ | Sonnet |
+| 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ✅ | Sonnet |
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ⏳ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ⏳ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ⏳ | Sonnet |
@@ -130,7 +130,7 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
-## Fase 5 — Bugfixes ⏳
+## Fase 5 — Bugfixes ✅
 
 **Objetivo:** correções pontuais reportadas em produção.
 

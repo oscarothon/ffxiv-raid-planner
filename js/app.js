@@ -12,7 +12,7 @@ const GEAR_SLOTS = [
     { id: "feet",      name: "Pés",        itemName: "The Emperor's New Boots",     icon: "🥾", group: "armor",     iconUrl: `${EMP_ICON_BASE}/boots.png` },
     { id: "earrings",  name: "Brincos",    itemName: "The Emperor's New Earrings",  icon: "✨", group: "accessory", iconUrl: `${EMP_ICON_BASE}/earrings.png` },
     { id: "necklace",  name: "Colar",      itemName: "The Emperor's New Necklace",  icon: "📿", group: "accessory", iconUrl: `${EMP_ICON_BASE}/necklace.png` },
-    { id: "bracelets", name: "Braceletes", itemName: "The Emperor's New Bracelet",  icon: "⭕", group: "accessory", iconUrl: `${EMP_ICON_BASE}/bracelet.png` },
+    { id: "bracelets", name: "Bracelete", itemName: "The Emperor's New Bracelet",  icon: "⭕", group: "accessory", iconUrl: `${EMP_ICON_BASE}/bracelet.png` },
     { id: "ring1",     name: "Anel 1",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${EMP_ICON_BASE}/ring.png` },
     { id: "ring2",     name: "Anel 2",     itemName: "The Emperor's New Ring",      icon: "💍", group: "accessory", iconUrl: `${EMP_ICON_BASE}/ring.png` }
 ];
@@ -403,10 +403,15 @@ function saveState() {
 }
 
 function applyTheme() {
-    if (state.theme === 'classic') {
-        document.body.classList.add('theme-classic');
-    } else {
-        document.body.classList.remove('theme-classic');
+    document.body.classList.remove('theme-classic', 'theme-darkness');
+    if (state.theme === 'classic')   document.body.classList.add('theme-classic');
+    else if (state.theme === 'darkness') document.body.classList.add('theme-darkness');
+
+    const btn = document.getElementById('btn-theme-toggle');
+    if (btn) {
+        const labels = { dark: 'Crystal Blue', classic: 'Classic Dark', darkness: 'Darkness' };
+        const span = btn.querySelector('.txt');
+        if (span) span.textContent = labels[state.theme] || 'Tema';
     }
 }
 
@@ -497,8 +502,24 @@ async function pollServerState() {
         const res = await API.getStateConditional(lastStateETag);
         if (res.notModified) return; // nada mudou
         if (!res.payload) return;
+        const prevRole        = currentUserRole;
+        const prevStaticName  = currentStaticName;
+        const prevActiveProgs = JSON.stringify(state.activeProgs || []);
+        const prevScheduled   = JSON.stringify(state.scheduledProgs || {});
+        const prevLoot        = JSON.stringify(state.lootPriorities || {});
+
         applyRemoteState(res.payload);
-        showToast("Dados atualizados — alterações de outro membro foram recebidas.", { type: "info", duration: 3500, title: "Sincronizado" });
+
+        const significantChange =
+            currentUserRole   !== prevRole        ||
+            currentStaticName !== prevStaticName  ||
+            JSON.stringify(state.activeProgs    || []) !== prevActiveProgs ||
+            JSON.stringify(state.scheduledProgs || {}) !== prevScheduled   ||
+            JSON.stringify(state.lootPriorities || {}) !== prevLoot;
+
+        if (significantChange) {
+            showToast("Dados atualizados — alterações de outro membro foram recebidas.", { type: "info", duration: 3500, title: "Sincronizado" });
+        }
     } catch (err) {
         // Sessão expirou ou conta foi deletada por admin — em ambos os casos,
         // o usuário perdeu o acesso e precisa ser levado de volta para o login.
@@ -1717,7 +1738,7 @@ function renderEquipmentPanel() {
                 <div class="gear-slot-row" data-slot="${slot.id}">
                     <div class="gear-row-icon-wrap">${iconHtml}</div>
                     <div class="gear-row-body">
-                        <span class="gear-row-slotname" title="${slot.itemName || slot.name}">${slot.name}</span>
+                        <span class="gear-row-slotname">${slot.name}</span>
                         <div class="loot-pref-controls">
                             <button type="button" class="btn-loot-pref need ${currPref === 'need' ? 'active' : ''}" title="Need (Necessidade)" data-pref="need" data-slot="${slot.id}" ${lootDisabledAttr}>🎲</button>
                             <button type="button" class="btn-loot-pref greed ${currPref === 'greed' ? 'active' : ''}" title="Greed (Cobiça)" data-pref="greed" data-slot="${slot.id}" ${lootDisabledAttr}>🪙</button>
@@ -2330,7 +2351,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (btnThemeToggle) {
         btnThemeToggle.addEventListener("click", () => {
             playSfx('click');
-            state.theme = state.theme === 'dark' ? 'classic' : 'dark';
+            const themes = ['dark', 'classic', 'darkness'];
+            const idx = themes.indexOf(state.theme);
+            state.theme = themes[(idx + 1) % themes.length];
             applyTheme();
             saveState();
         });
@@ -2388,111 +2411,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 saveState();
                 renderRosterTables();
                 playSfx('success');
-            }
-        });
-    }
-
-    const modalShare = document.getElementById("modal-share");
-    const btnExportImport = document.getElementById("btn-export-import");
-    const btnCloseModal = document.querySelector(".btn-close-modal");
-    
-    const btnShowExport = document.getElementById("btn-show-export");
-    const btnShowImport = document.getElementById("btn-show-import");
-    const exportArea = document.getElementById("export-area");
-    const importArea = document.getElementById("import-area");
-    
-    const exportTextarea = document.getElementById("export-textarea");
-    const importTextarea = document.getElementById("import-textarea");
-    const importError = document.getElementById("import-error");
-
-    if (btnExportImport && modalShare) {
-        btnExportImport.addEventListener("click", () => {
-            playSfx('click');
-            modalShare.hidden = false;
-            if (exportTextarea) exportTextarea.value = JSON.stringify(state, null, 2);
-        });
-    }
-
-    if (btnCloseModal && modalShare) {
-        btnCloseModal.addEventListener("click", () => {
-            playSfx('click');
-            modalShare.hidden = true;
-            if (importError) importError.hidden = true;
-        });
-    }
-
-    if (modalShare) {
-        modalShare.addEventListener("click", (e) => {
-            if (e.target === modalShare) {
-                modalShare.hidden = true;
-                if (importError) importError.hidden = true;
-            }
-        });
-    }
-
-    if (btnShowExport && exportArea && importArea) {
-        btnShowExport.addEventListener("click", () => {
-            playSfx('click');
-            btnShowExport.classList.add("active");
-            if (btnShowImport) btnShowImport.classList.remove("active");
-            exportArea.hidden = false;
-            importArea.hidden = true;
-            if (exportTextarea) exportTextarea.value = JSON.stringify(state, null, 2);
-        });
-    }
-
-    if (btnShowImport && exportArea && importArea) {
-        btnShowImport.addEventListener("click", () => {
-            playSfx('click');
-            btnShowImport.classList.add("active");
-            if (btnShowExport) btnShowExport.classList.remove("active");
-            importArea.hidden = false;
-            exportArea.hidden = true;
-            if (importError) importError.hidden = true;
-            if (importTextarea) importTextarea.value = "";
-        });
-    }
-
-    const btnCopyExport = document.getElementById("btn-copy-export");
-    if (btnCopyExport && exportTextarea) {
-        btnCopyExport.addEventListener("click", () => {
-            exportTextarea.select();
-            navigator.clipboard.writeText(exportTextarea.value).then(() => {
-                playSfx('success');
-                const orig = btnCopyExport.textContent;
-                btnCopyExport.textContent = "Código Copiado com Sucesso!";
-                setTimeout(() => btnCopyExport.textContent = orig, 2000);
-            });
-        });
-    }
-
-    const btnSaveImport = document.getElementById("btn-save-import");
-    if (btnSaveImport && importTextarea) {
-        btnSaveImport.addEventListener("click", () => {
-            try {
-                const importedData = JSON.parse(importTextarea.value);
-                if (importedData && Array.isArray(importedData.roster)) {
-                    state = { ...DEFAULT_STATE, ...importedData };
-                    saveState();
-
-                    renderActiveProgsPanel();
-                    renderProgTabsBar();
-                    renderRosterTables();
-                    renderEquipmentPanel();
-                    applyTheme();
-
-                    playSfx('success');
-                    if (modalShare) modalShare.hidden = true;
-                    if (importError) importError.hidden = true;
-                    showToast("Dados do elenco carregados com sucesso.", { type: "success" });
-                } else {
-                    throw new Error("Formato JSON inválido para o Roster.");
-                }
-            } catch (err) {
-                if (importError) {
-                    importError.textContent = "Erro ao importar: Código JSON corrompido ou incompatível.";
-                    importError.hidden = false;
-                }
             }
         });
     }
