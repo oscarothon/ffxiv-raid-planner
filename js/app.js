@@ -530,6 +530,7 @@ async function pollServerState() {
         const prevLoot        = JSON.stringify(state.lootPriorities || {});
 
         applyRemoteState(res.payload);
+        if (isOfficer()) refreshPendingBadge();
 
         const significantChange =
             currentUserRole   !== prevRole        ||
@@ -2328,6 +2329,7 @@ async function openMembersModal() {
     try {
         cachedMembers = await API.listMembers(currentStaticId);
         renderMembersList();
+        if (isOfficer()) await renderPendingSection(cont);
     } catch (err) {
         cont.innerHTML = "";
         if (errEl) {
@@ -2340,6 +2342,86 @@ async function openMembersModal() {
 function closeMembersModal() {
     const modal = document.getElementById("modal-members");
     if (modal) modal.hidden = true;
+}
+
+async function refreshPendingBadge() {
+    const badge = document.getElementById("pending-badge");
+    if (!badge || !isOfficer()) return;
+    try {
+        const list = await API.listPending();
+        if (list.length > 0) {
+            badge.textContent = list.length;
+            badge.hidden = false;
+        } else {
+            badge.hidden = true;
+        }
+    } catch (_) {
+        badge.hidden = true;
+    }
+}
+
+async function renderPendingSection(cont) {
+    let pending = [];
+    try { pending = await API.listPending(); } catch (_) { return; }
+    if (pending.length === 0) return;
+
+    const section = document.createElement("div");
+    section.className = "pending-section";
+    section.innerHTML = `<div class="pending-section-title">Solicitacoes Pendentes (${pending.length})</div>`;
+
+    pending.forEach(p => {
+        const row = document.createElement("div");
+        row.className = "pending-row";
+        row.dataset.id = p.id;
+        const age = p.hours_ago <= 0 ? "agora mesmo" : `${p.hours_ago}h atrás`;
+        row.innerHTML = `
+            <div>
+                <span class="pending-username">${p.username}</span>
+                <span class="pending-age">${age}</span>
+            </div>
+            <div class="pending-actions">
+                <button class="ff-btn-action pending-approve" data-id="${p.id}" data-name="${p.username}">Aprovar</button>
+                <button class="ff-btn-small pending-reject" data-id="${p.id}" data-name="${p.username}">Rejeitar</button>
+            </div>
+        `;
+        section.appendChild(row);
+    });
+
+    cont.prepend(section);
+
+    section.querySelectorAll(".pending-approve").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const id = parseInt(btn.dataset.id);
+            const name = btn.dataset.name;
+            try {
+                await API.approvePending(id);
+                playSfx('success');
+                showToast(`${name} aprovado e adicionado como membro.`, { type: "success", title: "Aprovado" });
+                refreshPendingBadge();
+                btn.closest(".pending-row").remove();
+                if (!section.querySelector(".pending-row")) section.remove();
+            } catch (err) {
+                showToast(err.message, { type: "error" });
+            }
+        });
+    });
+
+    section.querySelectorAll(".pending-reject").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const id = parseInt(btn.dataset.id);
+            const name = btn.dataset.name;
+            try {
+                await API.rejectPending(id);
+                playSfx('click');
+                showToast(`Solicitação de ${name} rejeitada.`, { type: "info", title: "Rejeitado" });
+                refreshPendingBadge();
+                btn.closest(".pending-row").remove();
+                if (!section.querySelector(".pending-row")) section.remove();
+            } catch (err) {
+                showToast(err.message, { type: "error" });
+            }
+        });
+    });
 }
 
 function renderMembersList() {
@@ -2827,7 +2909,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             const u = document.getElementById("reg-username").value.trim();
             const p = document.getElementById("reg-password").value;
             try {
-                currentUser = await API.register(u, p);
+                const res = await API.register(u, p);
+                if (res && res.status === "pending") {
+                    playSfx('tab');
+                    document.getElementById("btn-show-login")?.click();
+                    const authErr = document.getElementById("auth-error");
+                    if (authErr) {
+                        authErr.textContent = "Solicitação enviada! Aguarde aprovação de um officer.";
+                        authErr.style.color = "var(--color-avail)";
+                        authErr.hidden = false;
+                    }
+                    return;
+                }
+                currentUser = res;
                 playSfx('success');
                 await bootstrapAfterAuth();
             } catch (err) {

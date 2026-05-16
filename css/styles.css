@@ -385,6 +385,69 @@ body {
 }
 
 /* Lista de membros no modal de admin */
+/* Badge de pendentes no botão Membros */
+#pending-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-late);
+    color: #000;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    min-width: 18px;
+    padding: 1px 5px;
+    margin-left: 5px;
+    line-height: 1.4;
+}
+
+/* Seção de solicitações pendentes no modal de membros */
+.pending-section {
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.pending-section-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--color-late);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+.pending-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(245, 158, 11, 0.07);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+}
+.pending-username {
+    font-weight: 600;
+    color: var(--text-main);
+    margin-right: 8px;
+}
+.pending-age {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+.pending-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.pending-reject {
+    color: var(--text-muted);
+}
+.pending-reject:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
 .member-row {
     display: grid;
     grid-template-columns: 1fr auto auto;

@@ -92,21 +92,40 @@ def register():
         return jsonify({"error": "Senha deve ter pelo menos 6 caracteres."}), 400
 
     pwd_hash = generate_password_hash(password)
-    try:
-        with db_conn() as conn:
+    static_id = _ensure_global_static()
+
+    with db_conn() as conn:
+        # Verifica unicidade em ambas as tabelas
+        if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            return jsonify({"error": "Nome de usuário já cadastrado."}), 409
+        if conn.execute("SELECT 1 FROM pending_registrations WHERE username = ?", (username,)).fetchone():
+            return jsonify({"error": "Já existe uma solicitação pendente para este nome de usuário."}), 409
+
+        # Bootstrap: se não há admin na static, auto-aprova o primeiro cadastro
+        has_admin = conn.execute(
+            "SELECT 1 FROM static_members WHERE static_id = ? AND role = 'admin' LIMIT 1",
+            (static_id,)
+        ).fetchone() is not None
+
+        if not has_admin:
             cur = conn.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                 (username, pwd_hash),
             )
             user_id = cur.lastrowid
-    except sqlite3.IntegrityError:
-        return jsonify({"error": "Nome de usuário já cadastrado."}), 409
+        else:
+            conn.execute(
+                "INSERT INTO pending_registrations (username, password_hash) VALUES (?, ?)",
+                (username, pwd_hash),
+            )
+            return jsonify({"status": "pending",
+                            "message": "Solicitação enviada. Aguarde aprovação de um officer."}), 202
 
-    static_id = _attach_user_to_global(user_id)
+    active_static_id = _attach_user_to_global(user_id)
     session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
-    return jsonify({"id": user_id, "username": username, "active_static_id": static_id})
+    return jsonify({"id": user_id, "username": username, "active_static_id": active_static_id})
 
 
 @app.post("/api/login")
@@ -117,6 +136,10 @@ def login():
 
     conn = get_conn()
     try:
+        # Verifica se está aguardando aprovação
+        if conn.execute("SELECT 1 FROM pending_registrations WHERE username = ?", (username,)).fetchone():
+            return jsonify({"error": "Sua conta ainda aguarda aprovação de um officer."}), 403
+
         cur = conn.execute("SELECT * FROM users WHERE username = ?", (username,))
         row = cur.fetchone()
         if not row or not check_password_hash(row["password_hash"], password):
@@ -140,6 +163,68 @@ def login():
 @app.post("/api/logout")
 def logout():
     session.clear()
+    return jsonify({"ok": True})
+
+
+# ---------- Cadastros pendentes ----------
+def _cleanup_expired_pending(conn):
+    conn.execute(
+        "DELETE FROM pending_registrations WHERE requested_at < datetime('now', '-24 hours')"
+    )
+
+
+@app.get("/api/pending")
+@login_required
+def list_pending():
+    user = current_user()
+    static_id = user["active_static_id"] or _ensure_global_static()
+    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+        return jsonify({"error": "Acesso negado."}), 403
+    with db_conn() as conn:
+        _cleanup_expired_pending(conn)
+        cur = conn.execute(
+            """SELECT id, username, requested_at,
+               CAST((julianday('now') - julianday(requested_at)) * 24 AS INTEGER) AS hours_ago
+               FROM pending_registrations ORDER BY requested_at ASC"""
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    return jsonify(rows)
+
+
+@app.post("/api/pending/<int:pending_id>/approve")
+@login_required
+def approve_pending(pending_id):
+    user = current_user()
+    static_id = user["active_static_id"] or _ensure_global_static()
+    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+        return jsonify({"error": "Acesso negado."}), 403
+    with db_conn() as conn:
+        cur = conn.execute("SELECT * FROM pending_registrations WHERE id = ?", (pending_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Solicitação não encontrada."}), 404
+        try:
+            cur2 = conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (row["username"], row["password_hash"]),
+            )
+            new_user_id = cur2.lastrowid
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Nome de usuário já existe em users."}), 409
+        conn.execute("DELETE FROM pending_registrations WHERE id = ?", (pending_id,))
+    _attach_user_to_global(new_user_id)
+    return jsonify({"ok": True, "username": row["username"]})
+
+
+@app.post("/api/pending/<int:pending_id>/reject")
+@login_required
+def reject_pending(pending_id):
+    user = current_user()
+    static_id = user["active_static_id"] or _ensure_global_static()
+    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+        return jsonify({"error": "Acesso negado."}), 403
+    with db_conn() as conn:
+        conn.execute("DELETE FROM pending_registrations WHERE id = ?", (pending_id,))
     return jsonify({"ok": True})
 
 
