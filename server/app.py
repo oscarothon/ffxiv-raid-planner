@@ -178,7 +178,7 @@ def _cleanup_expired_pending(conn):
 def list_pending():
     user = current_user()
     static_id = user["active_static_id"] or _ensure_global_static()
-    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+    if not role_at_least(get_user_role(static_id, user["id"]), ROLE_OFFICER):
         return jsonify({"error": "Acesso negado."}), 403
     with db_conn() as conn:
         _cleanup_expired_pending(conn)
@@ -196,7 +196,7 @@ def list_pending():
 def approve_pending(pending_id):
     user = current_user()
     static_id = user["active_static_id"] or _ensure_global_static()
-    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+    if not role_at_least(get_user_role(static_id, user["id"]), ROLE_OFFICER):
         return jsonify({"error": "Acesso negado."}), 403
     with db_conn() as conn:
         cur = conn.execute("SELECT * FROM pending_registrations WHERE id = ?", (pending_id,))
@@ -221,7 +221,7 @@ def approve_pending(pending_id):
 def reject_pending(pending_id):
     user = current_user()
     static_id = user["active_static_id"] or _ensure_global_static()
-    if not role_at_least(static_id, user["id"], ROLE_OFFICER):
+    if not role_at_least(get_user_role(static_id, user["id"]), ROLE_OFFICER):
         return jsonify({"error": "Acesso negado."}), 403
     with db_conn() as conn:
         conn.execute("DELETE FROM pending_registrations WHERE id = ?", (pending_id,))
