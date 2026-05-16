@@ -82,6 +82,7 @@ const FFXIV_RAIDS = [
 
 // Tipos de conteúdo suportados — extensível para futuros conteúdos
 const CONTENT_TYPES = [
-    { id: "raid",     label: "Savage",   icon: "⚔️", getList: () => FFXIV_RAIDS },
-    { id: "ultimate", label: "Ultimate", icon: "🌀", getList: () => FFXIV_ULTIMATES }
+    { id: "raid",     label: "Savage",       icon: "⚔️", getList: () => FFXIV_RAIDS },
+    { id: "ultimate", label: "Ultimate",     icon: "🌀", getList: () => FFXIV_ULTIMATES },
+    { id: "custom",   label: "Customizados", icon: "✨", getList: () => (typeof state !== "undefined" && Array.isArray(state.customContents) ? state.customContents : []) }
 ];

@@ -82,6 +82,7 @@ const DEFAULT_STATE = {
     pendingNotifications: [], // [{id, date, progId, createdBy, createdAt}]
     lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
+    customContents: [], // [{id, name, partyMode: "full"|"light"|"dynamic", expansion, iconUrl}] — Fase 8
 };
 
 const FLEX_POOLS = {
@@ -334,6 +335,9 @@ function hydrateState(parsed) {
     }
     if (!state.lootPriorities || typeof state.lootPriorities !== "object") {
         state.lootPriorities = {};
+    }
+    if (!Array.isArray(state.customContents)) {
+        state.customContents = [];
     }
 
     state.roster = state.roster.map(player => {
@@ -650,8 +654,40 @@ function setPlayerStatusForProg(player, progId, statusVal) {
 
 function getProgObj(progId) {
     if (progId === "geral") return { id: "geral", name: "Geral Padrão", expansion: "Todas" };
-    const allTargets = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES];
+    const customs = Array.isArray(state.customContents) ? state.customContents : [];
+    const allTargets = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...customs];
     return allTargets.find(t => t.id === progId) || { id: progId, name: progId, expansion: "" };
+}
+
+// Fase 8 — Modo de party do conteúdo
+// Hardcoded (Savage/Ultimate) sempre é "full" (8 titulares).
+// Customs definem "full" | "light" | "dynamic" via state.customContents.
+function getCustomContent(progId) {
+    if (!progId) return null;
+    const customs = Array.isArray(state.customContents) ? state.customContents : [];
+    return customs.find(c => c.id === progId) || null;
+}
+
+function getPartyMode(progId) {
+    if (!progId || progId === "geral") return "full";
+    const c = getCustomContent(progId);
+    if (!c) return "full"; // hardcoded raids/ultimates
+    const m = c.partyMode;
+    return (m === "light" || m === "dynamic") ? m : "full";
+}
+
+function getPartySize(progId) {
+    const mode = getPartyMode(progId);
+    if (mode === "light") return 4;
+    return 8; // full e dynamic compartilham cap de 8
+}
+
+function isDynamicProg(progId) {
+    return getPartyMode(progId) === "dynamic";
+}
+
+function isCustomProg(progId) {
+    return !!getCustomContent(progId);
 }
 
 // ==========================================================================
@@ -783,13 +819,25 @@ function renderActiveProgsPanel() {
             state.activeProgs.forEach(progId => {
                 const progObj = getProgObj(progId);
                 const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
+                const customObj = getCustomContent(progId);
+                let typeLabel, typeColor;
+                if (customObj) {
+                    const mode = getPartyMode(progId);
+                    if (mode === "dynamic")     { typeLabel = "Dynamic"; typeColor = "#a78bfa"; }
+                    else if (mode === "light")  { typeLabel = "Light";   typeColor = "#5eead4"; }
+                    else                        { typeLabel = "Custom";  typeColor = "#fbbf24"; }
+                } else if (isUlt) {
+                    typeLabel = "Ultimate"; typeColor = "#e17a47";
+                } else {
+                    typeLabel = "Savage";   typeColor = "var(--gold-bright)";
+                }
                 const chip = document.createElement("div");
                 chip.className = "prog-chip";
                 const closeBtn = canManage
                     ? `<button class="prog-chip-close" data-id="${progId}" title="Remover Progresso">&times;</button>`
                     : "";
                 chip.innerHTML = `
-                    <span class="prog-chip-type" style="color: ${isUlt ? '#e17a47' : 'var(--gold-bright)'}">${isUlt ? 'Ultimate' : 'Savage'}</span>
+                    <span class="prog-chip-type" style="color: ${typeColor}">${typeLabel}</span>
                     <span style="font-weight: 600;">${progObj.name.split(" (")[0].split(":")[0]}</span>
                     ${closeBtn}
                 `;
@@ -947,9 +995,10 @@ function renderRosterTables() {
 
     const benchMembers = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) !== "active");
 
+    const partySize = getPartySize(activeProgId);
     if (activeCountText) {
-        activeCountText.textContent = `${activeMembers.length} / 8`;
-        activeCountText.style.color = activeMembers.length === 8 ? "var(--color-avail)" : "var(--gold-bright)";
+        activeCountText.textContent = `${activeMembers.length} / ${partySize}`;
+        activeCountText.style.color = activeMembers.length >= partySize ? "var(--color-avail)" : "var(--gold-bright)";
     }
 
     if (activeMembers.length === 0) {
@@ -1154,8 +1203,11 @@ function bindRosterTableEvents() {
         btn.addEventListener("click", (e) => {
             const activeProgId = state.inspectedProgId || "geral";
             const activeCount = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active").length;
-            if (activeCount >= 8) {
-                showToast("A Party Principal desta Raid já atingiu o limite máximo de 8 jogadores. Mova alguém para o banco primeiro.", { type: "warning", title: "Party Cheia" });
+            const partySize = getPartySize(activeProgId);
+            // Modo dynamic: sem cap rígido e sem aviso de party cheia.
+            if (!isDynamicProg(activeProgId) && activeCount >= partySize) {
+                const label = getPartyMode(activeProgId) === "light" ? "Light Party" : "Party Principal";
+                showToast(`${label} desta Raid já atingiu o limite máximo de ${partySize} jogadores. Mova alguém para o banco primeiro.`, { type: "warning", title: "Party Cheia" });
                 return;
             }
             playSfx('success');
@@ -1336,7 +1388,8 @@ function renderDashboardVisualizer() {
             return weightA - weightB;
         });
 
-    for (let i = 0; i < 8; i++) {
+    const partySize = getPartySize(activeProgId);
+    for (let i = 0; i < partySize; i++) {
         const player = activeMembers[i];
 
         if (player) {
@@ -1452,7 +1505,7 @@ function openScheduleModal(dateKey) {
     const currentQuorum = existingEvt ? existingEvt.quorum : 6;
     const progs = state.activeProgs || [];
 
-    let html = `<p class="sched-modal-desc">Selecione o conteúdo e o quorum mínimo de confirmações.</p>`;
+    let html = `<p class="sched-modal-desc" id="sched-modal-desc">Selecione o conteúdo e o quorum mínimo de confirmações.</p>`;
 
     // Seleção de prog
     html += `<div class="sched-prog-options">`;
@@ -1463,11 +1516,13 @@ function openScheduleModal(dateKey) {
     });
     html += `</div>`;
 
-    // Quorum
+    // Quorum (max e visibilidade ajustados conforme o prog selecionado)
+    const initialMax = getPartySize(currentProgId || progs[0] || "geral");
+    const initialQuorum = Math.min(currentQuorum, initialMax);
     html += `
-        <div class="sched-quorum-row">
+        <div class="sched-quorum-row" id="sched-quorum-row">
             <label class="sched-quorum-label" for="inp-sched-quorum">Quorum mínimo:</label>
-            <input id="inp-sched-quorum" type="number" min="1" max="8" value="${currentQuorum}" class="ff-input sched-quorum-input">
+            <input id="inp-sched-quorum" type="number" min="1" max="${initialMax}" value="${initialQuorum}" class="ff-input sched-quorum-input">
             <span class="sched-quorum-hint">players</span>
         </div>`;
 
@@ -1497,13 +1552,34 @@ function openScheduleModal(dateKey) {
         });
     }
 
+    // Ajusta a UI de quorum conforme o partyMode do prog selecionado
+    function refreshQuorumUI(progId) {
+        const row = body.querySelector("#sched-quorum-row");
+        const desc = body.querySelector("#sched-modal-desc");
+        const input = body.querySelector("#inp-sched-quorum");
+        if (!row || !input) return;
+        if (isDynamicProg(progId)) {
+            row.style.display = "none";
+            if (desc) desc.textContent = "Evento aberto: notifica os jogadores quando vai acontecer. Sem quorum mínimo.";
+            return;
+        }
+        row.style.display = "";
+        if (desc) desc.textContent = "Selecione o conteúdo e o quorum mínimo de confirmações.";
+        const max = getPartySize(progId);
+        input.max = max;
+        const v = parseInt(input.value, 10) || max;
+        if (v > max) input.value = max;
+    }
+
     // Toggle seleção de prog
     let selectedProg = currentProgId || (progs[0] || null);
+    refreshQuorumUI(selectedProg);
     body.querySelectorAll(".sched-opt-btn").forEach(btn => {
         btn.addEventListener("click", () => {
             body.querySelectorAll(".sched-opt-btn").forEach(b => b.classList.remove("sched-opt-active"));
             btn.classList.add("sched-opt-active");
             selectedProg = btn.dataset.prog;
+            refreshQuorumUI(selectedProg);
         });
     });
 
@@ -1525,7 +1601,10 @@ function openScheduleModal(dateKey) {
 
     function confirmSchedule() {
         if (!selectedProg) return;
-        const quorum = parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6;
+        // Modo dynamic: quorum não se aplica; gravamos 0 para sinalizar.
+        const quorum = isDynamicProg(selectedProg)
+            ? 0
+            : (parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6);
         upsertRaidEvent(dateKey, selectedProg, quorum);
         addScheduleNotification(dateKey, selectedProg);
         saveState();
@@ -1719,14 +1798,19 @@ function renderScheduleTable() {
 
         if (raidEvt) {
             const avail = getAvailCountForDate(dateKey);
-            const quorumMet = avail >= raidEvt.quorum;
+            const dynamicEvt = isDynamicProg(raidEvt.progId);
             th.classList.add("day-scheduled");
-            if (quorumMet) th.classList.add("day-quorum-met");
-            const quorumTip = `${avail}/${raidEvt.quorum} confirmados`;
-            const thTitle = canSched
-                ? `Agendado: ${progLabel} — ${quorumTip} — clique para alterar`
-                : `Agendado: ${progLabel} — ${quorumTip}`;
-            th.title = thTitle;
+            let tip;
+            if (dynamicEvt) {
+                tip = `${avail} confirmado(s)`;
+            } else {
+                const quorumMet = avail >= raidEvt.quorum;
+                if (quorumMet) th.classList.add("day-quorum-met");
+                tip = `${avail}/${raidEvt.quorum} confirmados`;
+            }
+            th.title = canSched
+                ? `Agendado: ${progLabel} — ${tip} — clique para alterar`
+                : `Agendado: ${progLabel} — ${tip}`;
         } else if (canSched) {
             th.title = "Clique para agendar";
         }
@@ -1763,10 +1847,12 @@ function renderScheduleTable() {
     });
 
     let renderedBenchHeader = false;
+    const dynamicInspected = isDynamicProg(activeProgId);
 
     sortedRoster.forEach(player => {
         const playerStatusInProg = getPlayerStatusForProg(player, activeProgId);
-        if (playerStatusInProg === "bench" && !renderedBenchHeader) {
+        // Em dynamic, não há split titular/banco — todos são participantes.
+        if (!dynamicInspected && playerStatusInProg === "bench" && !renderedBenchHeader) {
             renderedBenchHeader = true;
             const sep = document.createElement("tr");
             sep.innerHTML = `<td colspan="${numDays + 1}" style="background: rgba(165, 53, 53, 0.15); color: #fca5a5; font-weight: bold; font-size: 0.85rem; padding: 6px 16px; text-align: left;">Substitutos (Banco de Reservas desta Raid)</td>`;
@@ -1779,7 +1865,7 @@ function renderScheduleTable() {
         const tdName = document.createElement("td");
         tdName.className = "col-fixed";
         tdName.style.fontWeight = "600";
-        const statusTag = playerStatusInProg === "bench" ? `<span style="font-size:0.7rem;color:#fca5a5;">(Reserva)</span>` : '';
+        const statusTag = (!dynamicInspected && playerStatusInProg === "bench") ? `<span style="font-size:0.7rem;color:#fca5a5;">(Reserva)</span>` : '';
         tdName.innerHTML = `${player.name || '<span style="font-style:italic;color:#94a3b8;">Sem Nick</span>'} ${statusTag}`;
         tr.appendChild(tdName);
 
@@ -1847,7 +1933,9 @@ function renderQuickSchedule() {
 
         // Encontra o raid event futuro para este prog
         const raidEvt = getRaidEventForProg(progId);
-        const quorum = raidEvt ? raidEvt.quorum : 8;
+        const dynamicMode = isDynamicProg(progId);
+        const defaultQuorum = dynamicMode ? 0 : getPartySize(progId);
+        const quorum = raidEvt ? (raidEvt.quorum || defaultQuorum) : defaultQuorum;
 
         let foundDateKey = null;
         let foundDateObj = null;
@@ -1916,32 +2004,48 @@ function renderQuickSchedule() {
             const dateFormatted = `${wkDayStr}, ${dayNumStr}/${monthNumStr}/${yearNumStr}`;
 
             const totalConfCount = confTitulares.length + confReservas.length;
-            const quorumMet = totalConfCount >= quorum;
-            let rowBg    = quorumMet ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)";
-            let borderCol = quorumMet ? "var(--color-avail)"      : "var(--color-late)";
+            const quorumMet = !dynamicMode && totalConfCount >= quorum;
 
-            const quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:${quorumMet ? 'var(--color-avail)' : 'var(--color-late)'};">${totalConfCount}/${quorum}</span>`;
-
-            let alertsHtml = "";
-            if (quorumMet && !hasTitularLate) {
-                alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">Quorum atingido</div>`;
+            let rowBg, borderCol, quorumBadge, alertsHtml = "";
+            if (dynamicMode) {
+                // Evento dinâmico: só informa data + confirmados. Sem alertas de quorum/banco/atrasos.
+                rowBg = "rgba(99, 102, 241, 0.1)";
+                borderCol = "var(--gold-bright)";
+                quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:var(--gold-bright);">${totalConfCount} confirmado(s)</span>`;
             } else {
-                const faltam = quorum - totalConfCount;
-                if (faltam > 0) {
-                    alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Faltam ${faltam} confirmação(ões) para o quorum</div>`;
+                rowBg    = quorumMet ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)";
+                borderCol = quorumMet ? "var(--color-avail)"      : "var(--color-late)";
+                quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:${quorumMet ? 'var(--color-avail)' : 'var(--color-late)'};">${totalConfCount}/${quorum}</span>`;
+
+                if (quorumMet && !hasTitularLate) {
+                    alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">Quorum atingido</div>`;
+                } else {
+                    const faltam = quorum - totalConfCount;
+                    if (faltam > 0) {
+                        alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Faltam ${faltam} confirmação(ões) para o quorum</div>`;
+                    }
+                    if (hasTitularLate) {
+                        alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Atenção: há titulares com status "Talvez / Atraso"</div>`;
+                    }
                 }
-                if (hasTitularLate) {
-                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Atenção: há titulares com status "Talvez / Atraso"</div>`;
+                if (confReservas.length > 0) {
+                    alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
                 }
-            }
-            if (confReservas.length > 0) {
-                alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
             }
 
             const postponedNote = raidEvt && raidEvt.postponedTo
                 ? `<span style="font-size:0.72rem;color:var(--color-late);margin-left:6px;">(Adiado)</span>` : "";
 
-            const nicksListHtml = `
+            // Em modo dynamic, todos os confirmados aparecem juntos (sem split Titular/Reserva).
+            const allConfirmed = [...confTitulares, ...confReservas];
+            const nicksListHtml = dynamicMode
+                ? `
+                <div style="font-size: 0.8rem; color: var(--text-main); margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+                    <span style="color: var(--text-muted);">Confirmados:</span>
+                    <span style="color: var(--gold-bright); font-weight: 600;">${allConfirmed.join(", ") || "Nenhuma confirmação ainda"}</span>
+                </div>
+            `
+                : `
                 <div style="font-size: 0.8rem; color: var(--text-main); margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
                     <span style="color: var(--text-muted);">Confirmados:</span>
                     <span style="color: var(--color-avail); font-weight: 600;">${confTitulares.join(", ") || "Nenhum Titular"}</span>
@@ -2344,6 +2448,157 @@ function closeMembersModal() {
     if (modal) modal.hidden = true;
 }
 
+// ==========================================================================
+// Modal de Gerenciamento de Conteúdos Customizados (Fase 8)
+// ==========================================================================
+
+function openContentManagerModal() {
+    if (!canManageContent()) return;
+    const modal = document.getElementById("modal-content-manager");
+    if (!modal) return;
+    const errEl = document.getElementById("cc-form-error");
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+    // Limpa o form
+    const nameEl = document.getElementById("inp-cc-name");
+    const expEl  = document.getElementById("inp-cc-expansion");
+    if (nameEl) nameEl.value = "";
+    if (expEl)  expEl.value  = "";
+    const fullRadio = modal.querySelector('input[name="cc-party-mode"][value="full"]');
+    if (fullRadio) fullRadio.checked = true;
+    renderContentManagerList();
+    modal.hidden = false;
+    playSfx('tab');
+}
+
+function closeContentManagerModal() {
+    const modal = document.getElementById("modal-content-manager");
+    if (modal) modal.hidden = true;
+}
+
+function renderContentManagerList() {
+    const cont = document.getElementById("content-manager-list");
+    if (!cont) return;
+    const list = Array.isArray(state.customContents) ? state.customContents : [];
+    cont.innerHTML = "";
+    if (list.length === 0) {
+        cont.innerHTML = `<div class="content-manager-empty">Nenhum conteúdo customizado cadastrado ainda.</div>`;
+        return;
+    }
+    const modeLabel = { full: "Full Party", light: "Light Party", dynamic: "Dynamic" };
+    list.forEach(c => {
+        const mode = (c.partyMode === "light" || c.partyMode === "dynamic") ? c.partyMode : "full";
+        const partySize = mode === "light" ? 4 : 8;
+        const inUse = (state.activeProgs || []).includes(c.id);
+        const row = document.createElement("div");
+        row.className = `content-manager-row mode-${mode}${inUse ? ' in-use' : ''}`;
+        row.innerHTML = `
+            <div class="content-manager-row-info">
+                <span class="content-manager-row-name">${escapeHtml(c.name || c.id)}</span>
+                <div class="content-manager-row-meta">
+                    <span class="pill mode-${mode}">${modeLabel[mode]} · ${partySize}</span>
+                    ${c.expansion ? `<span>${escapeHtml(c.expansion)}</span>` : ''}
+                    ${inUse ? `<span style="color: var(--color-avail);">Em uso</span>` : ''}
+                </div>
+            </div>
+            <button class="ff-btn-small btn-cc-delete" data-id="${c.id}" title="Remover conteúdo">
+                <img src="assets/icons/dictionary/exit_game.png" alt="Remover" style="width:18px;height:18px;">
+            </button>
+        `;
+        cont.appendChild(row);
+    });
+
+    cont.querySelectorAll(".btn-cc-delete").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const c = (state.customContents || []).find(x => x.id === id);
+            if (!c) return;
+            const inUse = (state.activeProgs || []).includes(id);
+            const ok = await showConfirm({
+                title: "Remover conteúdo",
+                message: `Deseja remover o conteúdo "${c.name}"?`,
+                detail: inUse
+                    ? "Este conteúdo está ativo. Ao remover, ele também será desativado e o agendamento futuro será apagado."
+                    : "Esta ação não pode ser desfeita.",
+                danger: true,
+                confirmText: "Remover",
+            });
+            if (!ok) return;
+            state.customContents = (state.customContents || []).filter(x => x.id !== id);
+            state.activeProgs    = (state.activeProgs || []).filter(pid => pid !== id);
+            state.raidEvents     = (state.raidEvents || []).filter(e => e.progId !== id);
+            state.pendingNotifications = (state.pendingNotifications || []).filter(n => n.progId !== id);
+            if (state.inspectedProgId === id) {
+                state.inspectedProgId = state.activeProgs[0] || "geral";
+            }
+            saveState();
+            renderContentManagerList();
+            renderActiveProgsPanel();
+            renderProgTabsBar();
+            renderRosterTables();
+            playSfx('click');
+        });
+    });
+}
+
+function handleCreateCustomContent() {
+    const errEl = document.getElementById("cc-form-error");
+    const showErr = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = false; } };
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+
+    const nameEl = document.getElementById("inp-cc-name");
+    const expEl  = document.getElementById("inp-cc-expansion");
+    const modeEl = document.querySelector('input[name="cc-party-mode"]:checked');
+
+    const name = (nameEl?.value || "").trim();
+    const expansion = (expEl?.value || "").trim();
+    const partyMode = modeEl?.value || "full";
+
+    if (!name) { showErr("Informe um nome para o conteúdo."); return; }
+    if (name.length > 80) { showErr("Nome muito longo (máx 80 caracteres)."); return; }
+    if (!["full", "light", "dynamic"].includes(partyMode)) { showErr("Modo de party inválido."); return; }
+
+    // Gera id determinístico e único
+    let baseId = "custom_" + (name.toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40) || "custom");
+    let id = baseId;
+    const existingIds = new Set([
+        ...FFXIV_RAIDS.map(r => r.id),
+        ...FFXIV_ULTIMATES.map(u => u.id),
+        ...(state.customContents || []).map(c => c.id),
+    ]);
+    let suffix = 1;
+    while (existingIds.has(id)) {
+        id = `${baseId}_${suffix++}`;
+    }
+
+    const newContent = { id, name, partyMode };
+    if (expansion) newContent.expansion = expansion;
+
+    if (!Array.isArray(state.customContents)) state.customContents = [];
+    state.customContents.push(newContent);
+    saveState();
+
+    if (nameEl) nameEl.value = "";
+    if (expEl)  expEl.value  = "";
+    const fullRadio = document.querySelector('input[name="cc-party-mode"][value="full"]');
+    if (fullRadio) fullRadio.checked = true;
+
+    renderContentManagerList();
+    renderActiveProgsPanel();
+    playSfx('success');
+    showToast(`Conteúdo "${name}" criado.`, { type: "success", title: "Conteúdo adicionado" });
+}
+
+// Escape simples para conteúdo dinâmico em innerHTML
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
+}
+
 async function refreshPendingBadge() {
     const badge = document.getElementById("pending-badge");
     if (!badge || !isOfficer()) return;
@@ -2579,6 +2834,10 @@ function updateUserPill() {
     const btnManage = document.getElementById("btn-manage-members");
     if (btnManage) btnManage.hidden = !canManageRoles();
 
+    // Mostra/esconde botão de gerenciar conteúdos customizados (officer+)
+    const btnContents = document.getElementById("btn-manage-contents");
+    if (btnContents) btnContents.hidden = !canManageContent();
+
     // Mostra/esconde botão de "Limpar Todos" baseado em admin
     const btnResetRoster = document.getElementById("btn-reset-roster");
     if (btnResetRoster) btnResetRoster.hidden = !canManageStatic();
@@ -2678,8 +2937,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             if (statusVal === "active") {
                 const activeCount = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active").length;
-                if (activeCount >= 8) {
-                    showToast("Party Principal já está completa com 8 jogadores. O novo jogador entrará como Reserva neste conteúdo.", { type: "warning", title: "Party Cheia" });
+                const partySize = getPartySize(activeProgId);
+                // Modo dynamic: sem cap, jogador novo entra direto como ativo.
+                if (!isDynamicProg(activeProgId) && activeCount >= partySize) {
+                    const label = getPartyMode(activeProgId) === "light" ? "Light Party" : "Party Principal";
+                    showToast(`${label} já está completa com ${partySize} jogadores. O novo jogador entrará como Reserva neste conteúdo.`, { type: "warning", title: "Party Cheia" });
                     finalStatusForProg = "bench";
                 }
             }
@@ -2975,6 +3237,25 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
+    // ----- Modal de Gerenciamento de Conteúdos (Officer+) — Fase 8 -----
+    const btnManageContents = document.getElementById("btn-manage-contents");
+    if (btnManageContents) {
+        btnManageContents.addEventListener("click", () => {
+            playSfx('click');
+            openContentManagerModal();
+        });
+    }
+    const btnCreateContent = document.getElementById("btn-cc-create");
+    if (btnCreateContent) {
+        btnCreateContent.addEventListener("click", handleCreateCustomContent);
+    }
+    const inpCcName = document.getElementById("inp-cc-name");
+    if (inpCcName) {
+        inpCcName.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); handleCreateCustomContent(); }
+        });
+    }
+
     // Fechar qualquer modal via data-target="modal-xxx" no .btn-close-modal
     document.querySelectorAll(".btn-close-modal[data-target]").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -2990,6 +3271,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (modalMembers) {
         modalMembers.addEventListener("click", (e) => {
             if (e.target === modalMembers) modalMembers.hidden = true;
+        });
+    }
+    const modalContentMgr = document.getElementById("modal-content-manager");
+    if (modalContentMgr) {
+        modalContentMgr.addEventListener("click", (e) => {
+            if (e.target === modalContentMgr) modalContentMgr.hidden = true;
         });
     }
 

@@ -22,7 +22,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 2A | Feature  | Agendar clicando na data + notificação no dashboard | ✅ | Sonnet |
 | 2B | Feature  | Drag & drop na prioridade de loot | ✅ | Sonnet |
 | 7  | Tema     | Consertar botão "Tema" + adicionar tema "Warrior of Darkness" (roxo escuro) | ✅ | Sonnet |
-| 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ⏳ | Opus |
+| 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ✅ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ✅ | Sonnet |
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
 | 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
@@ -216,48 +216,43 @@ Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
-## Fase 8 — Tipos de Conteúdo Customizáveis ⏳
+## Fase 8 — Tipos de Conteúdo Customizáveis ✅
 
-**Objetivo:** sair da lista hardcoded de raids/ultimates e permitir que admin/officer crie tipos de conteúdo arbitrários com diferentes tamanhos de party.
-
-**Plano:**
+**Branch:** `feature/fase-8-conteudos-customizaveis`
 
 ### Modelo de dados
-Adicionar `state.customContents: []` ao estado da static. Cada item:
-```json
-{
-  "id": "criterion_skydeep",
-  "name": "Skydeep Cenote (Criterion)",
-  "category": "criterion",       // raid | ultimate | criterion | relic | custom | ...
-  "expansion": "Dawntrail",
-  "partySize": 4,                // 1..8 ou "dynamic"
-  "minPlayers": 1,               // só se partySize === "dynamic"
-  "maxPlayers": 8,               // só se partySize === "dynamic"
-  "iconUrl": "assets/icons/..."  // opcional
-}
-```
+- Nova chave `state.customContents: []` no estado da static. Cada item: `{ id, name, partyMode: "full"|"light"|"dynamic", expansion?, iconUrl? }`.
+- `partyMode` derivado em 3 presets fixos em vez de número livre:
+  - **Full Party** — 8 jogadores, com titulares + banco + quorum (idêntico ao Savage/Ultimate)
+  - **Light Party** — 4 jogadores, com titulares + banco + quorum
+  - **Dynamic Party** — até 8 jogadores, evento aberto, sem quorum/banco-substituir/avisos
+- Hardcoded (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`) sempre são `full`.
 
 ### Backend (`server/app.py`)
-- Validação no `PUT /api/state` para `customContents`: admin/officer pode mexer; member não.
-- `_validate_state_diff` ganha entrada para essa chave.
+- `_validate_state_diff` aceita `customContents` no mesmo loop officer+ (`activeProgs`, `scheduledProgs`, `raidEvents`, `customContents`). Member não pode mexer.
 
 ### Frontend (`js/app.js`, `js/data.js`)
-- `getProgObj(progId)` busca primeiro nos hardcoded (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`) e depois em `state.customContents`.
-- Em `renderActiveProgsPanel`, o dropdown "Selecionar Conteúdo" inclui os customs do mesmo `category` selecionado.
-- Limite de Party Principal deixa de ser hardcoded em `8` — vira `getPartySize(progId)` que retorna o limite do conteúdo (8 para raid/ultimate, 4 para light party, dinâmico para custom).
-- Onde o número 8 está hardcoded (vários lugares em `renderRosterTables`, `renderDashboardVisualizer`, validação de "party cheia"), substituir por `getPartySize()`.
-- O `renderDashboardVisualizer` renderiza N slots em vez de 8 fixos.
+- `DEFAULT_STATE.customContents = []` + migração em `hydrateState`.
+- `CONTENT_TYPES` ganha entrada `custom` que lê dinamicamente de `state.customContents`.
+- `getProgObj(progId)` busca em `[...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...state.customContents]`.
+- Novos helpers: `getCustomContent`, `getPartyMode`, `getPartySize`, `isDynamicProg`, `isCustomProg`.
+- Cap dinâmico em `renderRosterTables` (`X / partySize`), `renderDashboardVisualizer` (N slots), `btn-move-active` (toast com label correto), cadastro de jogador, modal de agendamento (`max` do input de quorum).
+- Modo `dynamic` no `renderQuickSchedule`: oculta quorum badge, "Faltam X confirmações", "Banco disponível", "titulares com Talvez/Atraso". Mostra apenas `X confirmado(s)` + lista flat de confirmados.
+- Modo `dynamic` no calendário (`renderScheduleTable`): sem separador "Substitutos (Banco de Reservas)", sem tag "(Reserva)" no nome do jogador, sem classe `day-quorum-met` no TH.
+- Chip de prog em `renderActiveProgsPanel`: customs mostram pill colorido (Full / Light / Dynamic / Custom) em vez de só Savage/Ultimate.
 
 ### UI nova
-- Botão "Configurações da Static" (admin/officer) ou ampliar o modal Membros para incluir uma aba "Conteúdos".
-- Formulário para criar tipo: nome, categoria, expansão, tamanho de party (radio: 8 Full / 4 Light / Dinâmico), min/max players (se dinâmico), upload ou URL de ícone.
-- Lista de conteúdos customizados com botão remover.
+- Botão `Conteúdos` no header (officer+) → modal `modal-content-manager`.
+- Formulário: nome (obrigatório), expansão (opcional), modo de party (3 cards de radio).
+- Lista de conteúdos cadastrados com pill colorido por modo, marca "Em uso" se está em `activeProgs`, botão remover com `showConfirm`.
+- Remover faz cascata: limpa de `activeProgs`, `raidEvents` e `pendingNotifications` do prog.
 
-### Compatibilidade
-- Conteúdos hardcoded continuam funcionando como Full Party (8).
-- Estados antigos sem `customContents` carregam vazio.
+### Decisões de design
+- Removido o conceito de "partySize numérico livre" do plano original — 3 presets cobrem todos os formatos reais (Savage 8, Light/Criterion 4, evento aberto).
+- Dynamic Party é semanticamente um "evento aberto": notifica data, players confirmam, sem quorum nem promoção titular/banco.
+- Sem `iconUrl` ou `category` no schema por ora — adicionável depois sem migração.
 
-**Modelo:** Opus (refator amplo, tocam muitos pontos do frontend).
+**Modelo:** Opus.
 
 ---
 
@@ -422,7 +417,7 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    ├──→ 2A ✅ ──→ 11 ⏳ (Raid Events — evolui scheduledProgs)
    │              └──→ 12 ⏳ (Telegram — depende de raid events)
    │
-   ├──→ 8 ⏳ ──→ 3 ⏳ (tipos customizáveis ⇒ redesign cards)
+   ├──→ 8 ✅ ──→ 3 ⏳ (tipos customizáveis ⇒ redesign cards)
    ├──→ 9 ⏳ (cadastro com aprovação — auth)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
 ```
@@ -445,6 +440,6 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `main` (todas as fases concluídas mergeadas)
+- **Branch ativa:** `feature/fase-8-conteudos-customizaveis` (pronta para PR/merge)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** Fase 11 (Raid Events) — evolui o agendamento existente e é pré-requisito para o Telegram
+- **Próximo passo recomendado:** Fase 3 (Redesign visual da lista de conteúdos) — depende da Fase 8 para incluir customs nos cards
