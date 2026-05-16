@@ -27,6 +27,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
 | 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ✅ | Sonnet |
+| 13 | Bugfixes | SFX vazando entre clientes + sync de classe em tempo-real | ⏳ | Sonnet |
 | 10 | Mobile   | Responsividade completa (mobile, tablet, ultrawide) | ⏳ | Sonnet |
 
 Legenda: ✅ concluído · ⏳ pendente
@@ -399,6 +400,29 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ---
 
+## Fase 13 — Bugfixes (Round 2) ⏳
+
+**Objetivo:** dois bugs reportados em produção após Fase 8/3.
+
+### B4 — SFX (efeito sonoro de clique) toca para todos os clientes
+- **Sintoma:** quando dois jogadores estão no site simultaneamente, o cliente A escuta os "cliques" disparados pelas ações do cliente B (navegação, edição, etc.). O som de UI está vazando entre sessões.
+- **Hipótese:** o `applyRemoteState` (chamado pelo polling quando detecta mudança) está disparando re-renders que invocam `playSfx()` indiretamente — provavelmente porque algum handler de UI (`addEventListener("click")` ou similar) está sendo executado por mutação programática do DOM, OU porque uma chamada explícita a `playSfx` está dentro de uma função de render.
+- **Investigação inicial:** grep por `playSfx` dentro dos `render*Panel`/`render*Table`. Também checar se `applyRemoteState` (ou `hydrateState`) chama alguma função que terminaria em `playSfx`. Buscar `dispatchEvent` que possa simular cliques.
+- **Fix esperado:** garantir que `playSfx` só é chamado em handlers de input do usuário (`addEventListener("click", ...)` etc.), nunca dentro de renders ou no path de sync. Se houver uma flag global `isApplyingRemoteState`, usar para suprimir o som durante essa janela.
+
+### B5 — Seleção de classe (job da pool) não reflete em tempo-real entre clientes
+- **Sintoma:** quando o jogador clica num job da própria pool (`.direct-pool-job-btn`) para definir como classe ativa para o prog atual, a mudança aparece na própria tela mas demora a refletir no cliente de outro membro da static.
+- **Hipótese:** o polling consulta `/api/state` com ETag a cada 15s, e o `applyRemoteState` faz hidrate seletivo preservando foco/cursor. Pode ser:
+  1. O ETag não invalida quando só `assignedJobsByProg` muda (improvável — o ETag inclui `updated_at`).
+  2. A janela quieta de 2s pós-`saveState()` está bloqueando o reload em cima de edição contínua e a UI não reidrata até o próximo ciclo.
+  3. O re-render do roster preserva o estado anterior do botão para não destruir o foco — e nunca lê o novo `assignedJob`.
+- **Investigação inicial:** logar `lastStateETag` antes e depois da mudança; verificar se `renderRosterTables` é chamada com o estado novo após o polling; confirmar se `getAssignedJobForProg(player, progId)` retorna o valor atualizado para outros clientes.
+- **Fix esperado:** ou disparar polling imediato após `saveState` para forçar invalidação rápida (já existe debounce de 2s — talvez reduzir), ou garantir que mudanças em `assignedJobsByProg` invalidam corretamente o cache de render. Possivelmente revisar a heurística de preservação de foco para não esconder mudanças em badges não-focadas.
+
+**Modelo:** Sonnet (bugs pontuais, sem refator amplo).
+
+---
+
 ## Fase 10 — Responsividade Mobile ⏳
 
 **Objetivo:** o site funcionar bem em telas pequenas (celular) e médias (tablet), mantendo a estética FFXIV.
@@ -433,7 +457,8 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    │              └──→ 12 ⏳ (Telegram — depende de raid events)
    │
    ├──→ 8 ✅ ──→ 3 ✅ (tipos customizáveis ⇒ redesign cards)
-   ├──→ 9 ⏳ (cadastro com aprovação — auth)
+   ├──→ 9 ✅ (cadastro com aprovação — auth)
+   ├──→ 13 ⏳ (bugfixes round 2 — SFX entre clientes + sync de classe)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
 ```
 
@@ -441,13 +466,10 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ## Sugestão de ordem de execução
 
-1. ~~Fases 5, 6, 7, 2A, 2B~~ ✅ concluídas
-2. **Fase 11 (Raid Events)** — evolui o agendamento, base para Telegram
-3. **Fase 9 (Cadastro com aprovação)** — segurança antes de crescer o grupo
-4. **Fase 12 (Telegram)** — depende da Fase 11 estar estável em prod
-5. **Fase 8 (Tipos customizáveis)** — refator grande, abre porta para Fase 3
-6. **Fase 3 (Redesign cards)** — polish com benefício da Fase 8
-7. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe
+1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3~~ ✅ concluídas
+2. **Fase 13 (Bugfixes Round 2)** — SFX vazando entre clientes + sync de classe em tempo-real (alto valor, baixo risco)
+3. **Fase 12 (Telegram)** — depende da Fase 11 estar estável em prod (✅)
+4. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe
 
 Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
@@ -457,4 +479,4 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 - **Branch ativa:** `feature/fase-3-redesign-cards` (pronta para PR/merge)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** Fase 12 (Integração Telegram) — depende da Fase 11 estar estável em prod (✅) OU Fase 10 (Responsividade Mobile) como polish final
+- **Próximo passo recomendado:** Fase 13 (Bugfixes Round 2) — dois bugs pontuais reportados em produção: SFX vazando entre clientes e mudança de classe sem reflexão em tempo-real
