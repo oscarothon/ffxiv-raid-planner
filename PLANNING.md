@@ -25,9 +25,10 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ✅ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ✅ | Sonnet |
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
-| 12 | Feature  | Integração Telegram — bot de notificações individual e de grupo | ⏳ | Opus |
+| 12 | Feature  | Integração Telegram — bot de grupo: alertas de evento, lembretes 24h e no dia | ⏳ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ✅ | Sonnet |
-| 13 | Bugfixes | SFX vazando entre clientes + sync de classe em tempo-real | ⏳ | Sonnet |
+| 13 | Bugfixes | SFX vazando entre clientes + sync de classe em tempo-real | ✅ | Sonnet |
+| 14 | Feature  | Conteúdo Limited Job (Blue Mage / Beastmaster) — classes travadas por conteúdo | ⏳ | Opus |
 | 10 | Mobile   | Responsividade completa (mobile, tablet, ultrawide) | ⏳ | Sonnet |
 
 Legenda: ✅ concluído · ⏳ pendente
@@ -332,37 +333,42 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ## Fase 12 — Integração Telegram ⏳
 
-**Objetivo:** notificar jogadores via bot do Telegram em três cenários: quorum atingido para um raid event, lembrete de evento próximo (X horas antes) e lembrete individual para jogadores que ainda não marcaram disponibilidade.
+**Objetivo:** adicionar o bot a um grupo de Telegram da static; o bot alerta o grupo quando um Raid Event é criado (com link do site para os players marcarem disponibilidade), envia lembrete 24 h antes do evento e outro no dia do evento.
 
 ### Configuração
 - Env var: `TELEGRAM_BOT_TOKEN` (Railway secret).
-- Env var: `TELEGRAM_NOTIFY_HOURS_BEFORE=24` (padrão 24h).
-- Env var: `TELEGRAM_QUORUM_NOTIFY=true`.
+- Env var: `TELEGRAM_GROUP_CHAT_ID` — chat_id do grupo onde o bot foi adicionado (configurado pelo admin via comando ou painel).
 
-### Vinculação de conta
-- Nova coluna `telegram_chat_id TEXT` em `users`.
-- Fluxo: user clica "Conectar Telegram" no perfil → backend gera código temporário (6 dígitos, TTL 10 min) → user manda `/start XXXXXX` ao bot → bot confirma e salva `chat_id`.
-- Desvinculação: botão "Desconectar" apaga `telegram_chat_id`.
+### Vinculação do grupo
+- Admin adiciona o bot ao grupo do Telegram da static.
+- Bot detecta a entrada no grupo (update `my_chat_member`) ou recebe `/start` no grupo e salva o `chat_id` do grupo na tabela de configurações da static (`static_settings` ou coluna em `statics`).
+- Painel de configuração no frontend (admin only): mostra status "Bot vinculado ao grupo ✓" ou instruções para vincular.
 
 ### Backend (`server/`)
-- `server/telegram.py` — helper com `send_message(chat_id, text)` via `requests` (HTTP simples, sem biblioteca pesada).
-- `GET /api/telegram/link-code` — gera e retorna código temporário para o usuário logado.
-- `POST /api/telegram/webhook` — recebe updates do Telegram; processa `/start <code>` vinculando a conta.
+- `server/telegram.py` — helper `send_group_message(text)` via `requests` (HTTP simples, sem biblioteca pesada). Lê `TELEGRAM_GROUP_CHAT_ID` da env ou da DB.
+- `POST /api/telegram/webhook` — recebe updates do Telegram; processa `/start` no grupo para vincular `chat_id`, responde com confirmação.
 - Webhook registrado em produção via `POST https://api.telegram.org/bot<TOKEN>/setWebhook`.
-- **Notificações disparadas por eventos**, não por cron:
-  - **Quorum atingido**: `PUT /api/state` já checa se o novo `avail` completou o quorum → dispara imediatamente.
-  - **Lembrete de evento próximo**: checado a cada `GET /api/state` de qualquer usuário; se há evento em ≤ `TELEGRAM_NOTIFY_HOURS_BEFORE` horas e o lembrete ainda não foi enviado, dispara e marca `reminderSent: true` no evento.
-  - **Lembrete individual**: mesma lógica — se usuário com `telegram_chat_id` não tem marcação para um evento próximo, notifica na próxima requisição autenticada desse usuário.
+- **Notificações disparadas em três momentos:**
+  1. **Evento criado** (`PUT /api/state` com novo item em `raidEvents`): dispara imediatamente → mensagem no grupo com nome do prog, data e link do site para marcar disponibilidade.
+  2. **Lembrete 24 h antes**: checado a cada `GET /api/state` de qualquer usuário; se há evento com `date == amanhã` e `reminder24hSent` não está marcado → dispara e marca no evento.
+  3. **Lembrete no dia**: mesma lógica, checa `date == hoje` e `reminderTodaySent` → dispara e marca.
+- Campos adicionados ao modelo de `raidEvents`: `reminder24hSent: bool`, `reminderTodaySent: bool`.
+- Fallback: se `TELEGRAM_GROUP_CHAT_ID` não estiver configurado, notificações são silenciosamente ignoradas (sem erro).
+
+### Mensagens (português, tom informal)
+- **Evento criado:** `"📅 Raid agendada! [Nome do Prog] em [dia da semana], [data]. Acesse [link] e marque se vai ou não. Confirmados até agora: 0/[quorum]"`
+- **Lembrete 24 h:** `"⏰ Lembrete: [Nome do Prog] é amanhã ([data])! Confirmados: X/Y. Ainda não marcou? Acesse [link]"`
+- **Lembrete no dia:** `"⚔️ É hoje! [Nome do Prog] — [data]. Confirmados: X/Y. Boa raid!"`
 
 ### Frontend (`js/app.js`, `index.html`)
-- Seção "Telegram" no modal de perfil/conta do usuário.
-- Estado: "Não conectado / Conectar" → mostra código e instrução → "Conectado ✓ / Desconectar".
-- Toast de confirmação ao vincular com sucesso.
+- Seção "Telegram" no modal de configuração (admin only): mostra chat_id vinculado ou botão/instrução para vincular.
+- Toast de confirmação quando o webhook recebe o `/start` do grupo com sucesso.
 
 ### Decisões de design
-- Sem APScheduler — notificações são piggyback em requisições existentes (sem background thread).
-- Sem OAuth — fluxo de código simples é suficiente para grupo pequeno.
-- Mensagens em português, tom informal.
+- Foco em notificações de GRUPO — DMs individuais fora de escopo por ora.
+- Sem APScheduler — lembretes são piggyback em requisições existentes (sem background thread).
+- Sem OAuth — fluxo de `/start` no grupo é suficiente para grupo pequeno.
+- Link do site: `https://mhigos-raid-planner.up.railway.app` (fixo ou configurável).
 
 **Modelo:** Opus (backend multi-arquivo + segurança do webhook).
 
@@ -400,26 +406,58 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ---
 
-## Fase 13 — Bugfixes (Round 2) ⏳
+## Fase 13 — Bugfixes (Round 2) ✅
 
-**Objetivo:** dois bugs reportados em produção após Fase 8/3.
+**Branch:** `feature/fase-13-bugfixes-round-2` · **Commit:** `6ea694f`
 
-### B4 — SFX (efeito sonoro de clique) toca para todos os clientes
-- **Sintoma:** quando dois jogadores estão no site simultaneamente, o cliente A escuta os "cliques" disparados pelas ações do cliente B (navegação, edição, etc.). O som de UI está vazando entre sessões.
-- **Hipótese:** o `applyRemoteState` (chamado pelo polling quando detecta mudança) está disparando re-renders que invocam `playSfx()` indiretamente — provavelmente porque algum handler de UI (`addEventListener("click")` ou similar) está sendo executado por mutação programática do DOM, OU porque uma chamada explícita a `playSfx` está dentro de uma função de render.
-- **Investigação inicial:** grep por `playSfx` dentro dos `render*Panel`/`render*Table`. Também checar se `applyRemoteState` (ou `hydrateState`) chama alguma função que terminaria em `playSfx`. Buscar `dispatchEvent` que possa simular cliques.
-- **Fix esperado:** garantir que `playSfx` só é chamado em handlers de input do usuário (`addEventListener("click", ...)` etc.), nunca dentro de renders ou no path de sync. Se houver uma flag global `isApplyingRemoteState`, usar para suprimir o som durante essa janela.
+### B4 — SFX vazando entre clientes
+- **Causa raiz:** `state.sfx` era parte do estado persistido no servidor e sincronizado via polling. Quando qualquer membro habilitava o som, o próximo sync copiava `sfx: true` para todos os outros clientes via `hydrateState`, fazendo-os ouvir sons das próprias interações sem terem escolhido isso.
+- **Fix:** introduzido `localSfxEnabled` lido do `localStorage` (preferência por usuário, por navegador). `playSfx` consulta `localSfxEnabled` em vez de `state.sfx`. O botão de som atualiza apenas o localStorage — removida a chamada a `saveState()`. O campo `sfx` permanece no banco por compatibilidade, mas não é mais consultado pelo sistema de áudio.
 
-### B5 — Seleção de classe (job da pool) não reflete em tempo-real entre clientes
-- **Sintoma:** quando o jogador clica num job da própria pool (`.direct-pool-job-btn`) para definir como classe ativa para o prog atual, a mudança aparece na própria tela mas demora a refletir no cliente de outro membro da static.
-- **Hipótese:** o polling consulta `/api/state` com ETag a cada 15s, e o `applyRemoteState` faz hidrate seletivo preservando foco/cursor. Pode ser:
-  1. O ETag não invalida quando só `assignedJobsByProg` muda (improvável — o ETag inclui `updated_at`).
-  2. A janela quieta de 2s pós-`saveState()` está bloqueando o reload em cima de edição contínua e a UI não reidrata até o próximo ciclo.
-  3. O re-render do roster preserva o estado anterior do botão para não destruir o foco — e nunca lê o novo `assignedJob`.
-- **Investigação inicial:** logar `lastStateETag` antes e depois da mudança; verificar se `renderRosterTables` é chamada com o estado novo após o polling; confirmar se `getAssignedJobForProg(player, progId)` retorna o valor atualizado para outros clientes.
-- **Fix esperado:** ou disparar polling imediato após `saveState` para forçar invalidação rápida (já existe debounce de 2s — talvez reduzir), ou garantir que mudanças em `assignedJobsByProg` invalidam corretamente o cache de render. Possivelmente revisar a heurística de preservação de foco para não esconder mudanças em badges não-focadas.
+### B5 — Classe atribuída demora a refletir para outros clientes
+- **Causa raiz:** `POLL_INTERVAL_MS = 15 000 ms` — mudanças em `assignedJobsByProg` levavam até 15 s para aparecer nos outros clientes. O render em si estava correto (lê do estado hidratado), o gargalo era apenas o intervalo de polling.
+- **Fix:** `POLL_INTERVAL_MS` reduzido de 15 000 ms para 5 000 ms. Mudanças agora refletem em ≤ 5 s. Impacto de requisições irrelevante para grupos de até 8 jogadores (maioria retorna 304 Not Modified).
 
-**Modelo:** Sonnet (bugs pontuais, sem refator amplo).
+**Modelo:** Sonnet.
+
+---
+
+## Fase 14 — Conteúdo Limited Job (Blue Mage / Beastmaster) ⏳
+
+**Objetivo:** adicionar uma categoria de conteúdo "Limited Job" para raids e eventos em que todos os jogadores são obrigados a jogar uma classe específica (Blue Mage hoje; Beastmaster no futuro). No contexto desse prog, o job atribuído de cada player é travado automaticamente na classe limitada — sem seleção manual.
+
+### Modelo de dados
+- Novo `partyMode: "limited"` (além de `"full"`, `"light"`, `"dynamic"`).
+- Campo adicional em conteúdos custom: `limitedJobId: "BLU" | "BST"` (obrigatório quando `partyMode === "limited"`).
+- Conteúdos hardcoded de Limited Job (pré-definidos, não customizáveis):
+  - `blue_mage_raid` → nome "Blue Mage", `limitedJobId: "BLU"`, `partySize: 8`
+  - (futuro) `beastmaster_raid` → nome "Beastmaster", `limitedJobId: "BST"`, `partySize: 8`
+
+### Jobs adicionados ao catálogo (`js/data.js`)
+- `BLU` — Blue Mage: ícone nativo do jogo (`assets/jobs/blu.png`), role `limited`, cor distinta (azul turquesa).
+- `BST` — Beastmaster: ícone nativo (`assets/jobs/bst.png`, a ser adicionado quando o job for lançado), role `limited`.
+
+### Frontend (`js/app.js`, `js/data.js`)
+- `CONTENT_TYPES` ganha entrada `"limited"` que lista os conteúdos de limited job.
+- Nova tab "Limited Jobs" no content picker, com card por conteúdo (ícone BLU/BST, nome, tag "8 jogadores").
+- `getProgTypeMeta(progId)` retorna meta para limited: ícone do job limitado, pill colorida em azul turquesa.
+- `getAssignedJobForProg(player, progId)` para progs `limited`: retorna `getLimitedJob(progId)` direto, ignorando `assignedJobsByProg`.
+- `renderRosterTables` para limited: substitui os pool badges por um único badge do job limitado (sem `direct-pool-job-btn` — não há seleção). Exibe tooltip "Job travado para este conteúdo".
+- `isDynamicProg`, `isLimitedProg(progId)` — novo helper que checa `partyMode === "limited"`.
+- `setAssignedJobForProg` é no-op para progs limited (não salva nada — o job é sempre o limitado).
+
+### CSS (`css/styles.css`)
+- Nova variável `--type-limited` (azul turquesa, ex: `#06b6d4`).
+- Pill "Limited" no card de prog.
+- Badge de job travado com ícone de cadeado ou outline diferenciado.
+
+### Decisões de design
+- Progs limited hardcoded (não customizáveis pelo officer) — a lista cresce com patches do jogo, não com input do usuário.
+- Quorum e Raid Events funcionam normalmente para limited (mesma lógica de agendamento e disponibilidade).
+- Loot priority funciona normalmente (players compram gear mesmo em BLU/BST content).
+- BST entra no catálogo já como entrada comentada/desabilitada até o job ser lançado.
+
+**Modelo:** Opus (novo partyMode afeta múltiplas camadas: data.js, app.js, render, loot, eventos).
 
 ---
 
@@ -451,14 +489,14 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    ▼
 1A ✅ ──→ 1B ✅ ──→ Deploy Railway ✅ ──→ 4 ✅
    │
-   ├──→ 5 ✅  6 ✅  7 ✅  2A ✅  2B ✅ (concluídos)
+   ├──→ 5 ✅  6 ✅  7 ✅  2A ✅  2B ✅  13 ✅ (concluídos)
    │
-   ├──→ 2A ✅ ──→ 11 ⏳ (Raid Events — evolui scheduledProgs)
-   │              └──→ 12 ⏳ (Telegram — depende de raid events)
+   ├──→ 2A ✅ ──→ 11 ✅ (Raid Events)
+   │              └──→ 12 ⏳ (Telegram grupo — depende de raid events)
    │
    ├──→ 8 ✅ ──→ 3 ✅ (tipos customizáveis ⇒ redesign cards)
+   │              └──→ 14 ⏳ (Limited Jobs — estende partyMode de 8)
    ├──→ 9 ✅ (cadastro com aprovação — auth)
-   ├──→ 13 ⏳ (bugfixes round 2 — SFX entre clientes + sync de classe)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
 ```
 
@@ -466,10 +504,10 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ## Sugestão de ordem de execução
 
-1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3~~ ✅ concluídas
-2. **Fase 13 (Bugfixes Round 2)** — SFX vazando entre clientes + sync de classe em tempo-real (alto valor, baixo risco)
-3. **Fase 12 (Telegram)** — depende da Fase 11 estar estável em prod (✅)
-4. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe
+1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3, 13~~ ✅ concluídas
+2. **Fase 12 (Telegram grupo)** — bot no grupo da static com alertas de evento criado, 24 h antes e no dia (Opus)
+3. **Fase 14 (Limited Jobs)** — Blue Mage / Beastmaster com job travado no roster (Opus)
+4. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe (Sonnet)
 
 Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
@@ -477,6 +515,7 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `feature/fase-3-redesign-cards` (pronta para PR/merge)
+- **Branch ativa:** `main` (limpa — Fase 13 mergeada via PR)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Próximo passo recomendado:** Fase 13 (Bugfixes Round 2) — dois bugs pontuais reportados em produção: SFX vazando entre clientes e mudança de classe sem reflexão em tempo-real
+- **Último deploy:** Fase 13 — SFX por usuário via localStorage + polling reduzido para 5 s
+- **Próximo passo recomendado:** Fase 12 (Telegram grupo) — bot no grupo da static com alertas de evento criado, lembrete 24 h antes e lembrete no dia
