@@ -112,9 +112,10 @@ function sortJobsCanonical(jobIds) {
 // Sistema de Efeitos Sonoros FFXIV
 // ==========================================================================
 let audioCtx = null;
+let localSfxEnabled = localStorage.getItem('sfx_enabled') !== 'false';
 
 function playSfx(type) {
-    if (!state.sfx) return;
+    if (!localSfxEnabled) return;
     try {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -168,7 +169,7 @@ let saveTimer = null;
 let lastStateETag = null;
 let pollingTimer = null;
 let pendingSaveAt = 0; // timestamp do último saveState() pendente — evita reload durante edição
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 5000;
 const SAVE_QUIET_WINDOW_MS = 2000; // não recarrega se o user salvou nos últimos 2s
 
 // ==========================================================================
@@ -3010,7 +3011,7 @@ function renderAllAfterLoad() {
     renderEquipmentPanel();
 
     const btnSoundToggle = document.getElementById("btn-sound-toggle");
-    if (btnSoundToggle) btnSoundToggle.classList.toggle("active", !!state.sfx);
+    if (btnSoundToggle) btnSoundToggle.classList.toggle("active", localSfxEnabled);
 }
 
 // ==========================================================================
@@ -3197,12 +3198,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const btnSoundToggle = document.getElementById("btn-sound-toggle");
     if (btnSoundToggle) {
-        if (!state.sfx) btnSoundToggle.classList.remove("active");
+        btnSoundToggle.classList.toggle("active", localSfxEnabled);
         btnSoundToggle.addEventListener("click", () => {
-            state.sfx = !state.sfx;
-            btnSoundToggle.classList.toggle("active", state.sfx);
+            localSfxEnabled = !localSfxEnabled;
+            localStorage.setItem('sfx_enabled', localSfxEnabled ? 'true' : 'false');
+            btnSoundToggle.classList.toggle("active", localSfxEnabled);
             playSfx('click');
-            saveState();
         });
     }
 
