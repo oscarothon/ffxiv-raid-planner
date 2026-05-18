@@ -113,6 +113,7 @@ function sortJobsCanonical(jobIds) {
 // ==========================================================================
 let audioCtx = null;
 let localSfxEnabled = localStorage.getItem('sfx_enabled') !== 'false';
+let localTheme = localStorage.getItem('theme') || 'dark';
 
 function playSfx(type) {
     if (!localSfxEnabled) return;
@@ -429,14 +430,14 @@ function saveState() {
 
 function applyTheme() {
     document.body.classList.remove('theme-classic', 'theme-darkness');
-    if (state.theme === 'classic')   document.body.classList.add('theme-classic');
-    else if (state.theme === 'darkness') document.body.classList.add('theme-darkness');
+    if (localTheme === 'classic')   document.body.classList.add('theme-classic');
+    else if (localTheme === 'darkness') document.body.classList.add('theme-darkness');
 
     const btn = document.getElementById('btn-theme-toggle');
     if (btn) {
         const labels = { dark: 'Crystal Blue', classic: 'Classic Dark', darkness: 'Darkness' };
         const span = btn.querySelector('.txt');
-        if (span) span.textContent = labels[state.theme] || 'Tema';
+        if (span) span.textContent = labels[localTheme] || 'Tema';
     }
 }
 
@@ -3189,10 +3190,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         btnThemeToggle.addEventListener("click", () => {
             playSfx('click');
             const themes = ['dark', 'classic', 'darkness'];
-            const idx = themes.indexOf(state.theme);
-            state.theme = themes[(idx + 1) % themes.length];
+            const idx = themes.indexOf(localTheme);
+            localTheme = themes[(idx + 1) % themes.length];
+            localStorage.setItem('theme', localTheme);
             applyTheme();
-            saveState();
         });
     }
 
