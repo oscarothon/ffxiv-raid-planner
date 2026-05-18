@@ -5,7 +5,8 @@ const FFXIV_ROLES = {
     healer: { name: "Healer", color: "#3e8a4f", icon: "🌿" },
     melee: { name: "Melee DPS", color: "#a53535", icon: "⚔️" },
     ranged: { name: "Ranged Physical", color: "#b66e38", icon: "🏹" },
-    caster: { name: "Magical Ranged", color: "#7a38b6", icon: "🔮" }
+    caster: { name: "Magical Ranged", color: "#7a38b6", icon: "🔮" },
+    limited: { name: "Limited Job", color: "#06b6d4", icon: "🔒" }
 };
 
 const FFXIV_JOBS = [
@@ -38,7 +39,10 @@ const FFXIV_JOBS = [
     { id: "BLM", name: "Black Mage", role: "caster", icon: "☄️", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/blackmage.png" },
     { id: "SMN", name: "Summoner", role: "caster", icon: "🐲", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/summoner.png" },
     { id: "RDM", name: "Red Mage", role: "caster", icon: "🌹", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/redmage.png" },
-    { id: "PCT", name: "Pictomancer", role: "caster", icon: "🎨", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/pct.png" }
+    { id: "PCT", name: "Pictomancer", role: "caster", icon: "🎨", iconUrl: "https://raw.githubusercontent.com/xivapi/classjob-icons/master/companion/pct.png" },
+
+    // Limited Jobs (Fase 14) — só aparecem em conteúdos do tipo "limited"
+    { id: "BLU", name: "Blue Mage", role: "limited", icon: "🔵", iconUrl: "assets/icons/dictionary/blue_mage_v11.png" }
 ];
 
 const FFXIV_ULTIMATES = [
@@ -80,9 +84,16 @@ const FFXIV_RAIDS = [
     { id: "coil_binding", name: "Binding Coil of Bahamut", expansion: "A Realm Reborn", encounters: ["T1", "T2", "T3", "T4", "T5"] }
 ];
 
+// Fase 14 — Conteúdos de Limited Job (hardcoded, não editáveis pelo usuário)
+const FFXIV_LIMITED_CONTENTS = [
+    { id: "blue_mage_raid", name: "Blue Mage", expansion: "Limited Job", partyMode: "limited", limitedJobId: "BLU", partySize: 8 }
+    // Beastmaster será adicionado quando o job for lançado pela Square Enix.
+];
+
 // Tipos de conteúdo suportados — extensível para futuros conteúdos
 const CONTENT_TYPES = [
     { id: "raid",     label: "Savage",       icon: "⚔️", getList: () => FFXIV_RAIDS },
     { id: "ultimate", label: "Ultimate",     icon: "🌀", getList: () => FFXIV_ULTIMATES },
+    { id: "limited",  label: "Limited Jobs", icon: "🔒", getList: () => FFXIV_LIMITED_CONTENTS },
     { id: "custom",   label: "Customizados", icon: "✨", getList: () => (typeof state !== "undefined" && Array.isArray(state.customContents) ? state.customContents : []) }
 ];
