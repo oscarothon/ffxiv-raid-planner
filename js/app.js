@@ -617,6 +617,10 @@ async function handleKickFromStatic(message) {
 function getAssignedJobForProg(player, progId) {
     if (!player) return "WAR";
     const targetProg = progId || state.inspectedProgId || "geral";
+    // Fase 14 — conteúdo limited tem job travado por definição
+    if (isLimitedProg(targetProg)) {
+        return getLimitedJob(targetProg);
+    }
     if (targetProg !== "geral" && player.assignedJobsByProg && player.assignedJobsByProg[targetProg]) {
         return player.assignedJobsByProg[targetProg];
     }
@@ -626,6 +630,8 @@ function getAssignedJobForProg(player, progId) {
 function setAssignedJobForProg(player, progId, jobId) {
     if (!player) return;
     const targetProg = progId || state.inspectedProgId || "geral";
+    // Fase 14 — não persiste seleção em conteúdo limited (job é sempre o travado)
+    if (isLimitedProg(targetProg)) return;
     if (!player.assignedJobsByProg) player.assignedJobsByProg = {};
     if (targetProg !== "geral") {
         player.assignedJobsByProg[targetProg] = jobId;
@@ -657,12 +663,13 @@ function setPlayerStatusForProg(player, progId, statusVal) {
 function getProgObj(progId) {
     if (progId === "geral") return { id: "geral", name: "Geral Padrão", expansion: "Todas" };
     const customs = Array.isArray(state.customContents) ? state.customContents : [];
-    const allTargets = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...customs];
+    const limited = Array.isArray(FFXIV_LIMITED_CONTENTS) ? FFXIV_LIMITED_CONTENTS : [];
+    const allTargets = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...limited, ...customs];
     return allTargets.find(t => t.id === progId) || { id: progId, name: progId, expansion: "" };
 }
 
 // Fase 8 — Modo de party do conteúdo
-// Hardcoded (Savage/Ultimate) sempre é "full" (8 titulares).
+// Hardcoded Savage/Ultimate = "full" (8 titulares). Limited Jobs = "limited".
 // Customs definem "full" | "light" | "dynamic" via state.customContents.
 function getCustomContent(progId) {
     if (!progId) return null;
@@ -670,8 +677,25 @@ function getCustomContent(progId) {
     return customs.find(c => c.id === progId) || null;
 }
 
+// Fase 14 — conteúdos de Limited Job (hardcoded em data.js)
+function getLimitedContent(progId) {
+    if (!progId) return null;
+    const limited = Array.isArray(FFXIV_LIMITED_CONTENTS) ? FFXIV_LIMITED_CONTENTS : [];
+    return limited.find(c => c.id === progId) || null;
+}
+
+function isLimitedProg(progId) {
+    return !!getLimitedContent(progId);
+}
+
+function getLimitedJob(progId) {
+    const c = getLimitedContent(progId);
+    return c ? c.limitedJobId : null;
+}
+
 function getPartyMode(progId) {
     if (!progId || progId === "geral") return "full";
+    if (isLimitedProg(progId)) return "limited";
     const c = getCustomContent(progId);
     if (!c) return "full"; // hardcoded raids/ultimates
     const m = c.partyMode;
@@ -681,7 +705,7 @@ function getPartyMode(progId) {
 function getPartySize(progId) {
     const mode = getPartyMode(progId);
     if (mode === "light") return 4;
-    return 8; // full e dynamic compartilham cap de 8
+    return 8; // full, dynamic e limited compartilham cap de 8
 }
 
 function isDynamicProg(progId) {
@@ -811,6 +835,16 @@ const ROLE_WEIGHTS = { tank: 1, healer: 2, melee: 3, ranged: 4, caster: 5 };
 // Fase 3 — Mapeia o tipo do prog para um ícone nativo do FFXIV (assets/icons/dictionary)
 function getProgTypeMeta(progId) {
     const isUlt = FFXIV_ULTIMATES.some(u => u.id === progId);
+    // Fase 14 — limited tem prioridade: usa o ícone do próprio job travado
+    if (isLimitedProg(progId)) {
+        const jobId = getLimitedJob(progId);
+        const job = FFXIV_JOBS.find(j => j.id === jobId);
+        return {
+            label: "Limited",
+            key: "limited",
+            icon: (job && job.iconUrl) || "assets/icons/dictionary/blue_mage_v11.png",
+        };
+    }
     const customObj = getCustomContent(progId);
     if (customObj) {
         const mode = getPartyMode(progId);
@@ -1001,6 +1035,11 @@ function renderContentPicker() {
         let iconPath;
         if (activeContentTypeId === "raid")          iconPath = "assets/icons/dictionary/instanced_raid.png";
         else if (activeContentTypeId === "ultimate") iconPath = "assets/icons/dictionary/ultimate_raids.png";
+        else if (activeContentTypeId === "limited") {
+            // Fase 14 — ícone do próprio job limitado (BLU)
+            const job = FFXIV_JOBS.find(j => j.id === item.limitedJobId);
+            iconPath = (job && job.iconUrl) || "assets/icons/dictionary/blue_mage_v11.png";
+        }
         else {
             const m = (item.partyMode === "light" || item.partyMode === "dynamic") ? item.partyMode : "full";
             iconPath = m === "dynamic" ? "assets/icons/dictionary/event_participant.png"
@@ -1094,6 +1133,29 @@ function renderProgTabsBar() {
     });
 }
 
+// Fase 14 — gera o HTML dos badges do pool de jobs.
+// Em conteúdo limited, mostra um único badge travado com o job da raid (sem botoes).
+function buildPoolBadgesHtml(player, activeProgId, canEdit) {
+    if (isLimitedProg(activeProgId)) {
+        const jobId = getLimitedJob(activeProgId);
+        const jObj = FFXIV_JOBS.find(j => j.id === jobId);
+        const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
+        const color = (roleData && roleData.color) || "#06b6d4";
+        const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jobId}">` : (jObj ? jObj.icon : "");
+        return `<span class="job-badge job-badge-locked" style="background-color: ${color};" title="Job travado para este conteúdo">${imgH || jobId}<span class="job-badge-lock">🔒</span></span>`;
+    }
+    const currentAssignedJob = getAssignedJobForProg(player, activeProgId);
+    return (player.jobsPool || []).map(jId => {
+        const jObj = FFXIV_JOBS.find(j => j.id === jId);
+        const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
+        const color = roleData ? roleData.color : '#475569';
+        const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
+        const isAssigned = jId === currentAssignedJob;
+        const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
+        return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
+    }).join(' ');
+}
+
 // Constrói o HTML dos botões de ação para uma linha do roster baseado em permissões
 function buildRowActions(player, ctx) {
     const editBtn = `<button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>`;
@@ -1163,16 +1225,7 @@ function renderRosterTables() {
 
             const canEdit = canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
-
-            const poolBadgesHtml = player.jobsPool.map(jId => {
-                const jObj = FFXIV_JOBS.find(j => j.id === jId);
-                const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
-                const color = roleData ? roleData.color : '#475569';
-                const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
-                const isAssigned = jId === currentAssignedJob;
-                const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
-                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
-            }).join(' ');
+            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
                 <td style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
@@ -1208,19 +1261,9 @@ function renderRosterTables() {
     } else {
         benchMembers.forEach(player => {
             const tr = document.createElement("tr");
-            const currentAssignedJob = getAssignedJobForProg(player, activeProgId);
             const canEdit = canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
-
-            const poolBadgesHtml = player.jobsPool.map(jId => {
-                const jObj = FFXIV_JOBS.find(j => j.id === jId);
-                const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
-                const color = roleData ? roleData.color : '#475569';
-                const imgH = jObj && jObj.iconUrl ? `<img class="job-img-icon" src="${jObj.iconUrl}" alt="${jId}">` : (jObj ? jObj.icon : '');
-                const isAssigned = jId === currentAssignedJob;
-                const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
-                return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
-            }).join(' ');
+            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
                 <td>
