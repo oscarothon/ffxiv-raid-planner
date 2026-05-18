@@ -28,7 +28,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 12 | Feature  | Integração Telegram — bot de grupo: alertas de evento, lembretes 24h e no dia | ✅ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ✅ | Sonnet |
 | 13 | Bugfixes | SFX vazando entre clientes + sync de classe em tempo-real | ✅ | Sonnet |
-| 14 | Feature  | Conteúdo Limited Job (Blue Mage / Beastmaster) — classes travadas por conteúdo | ⏳ | Opus |
+| 14 | Feature  | Conteúdo Limited Job (Blue Mage / Beastmaster) — classes travadas por conteúdo | ✅ | Opus |
 | 10 | Mobile   | Responsividade completa (mobile, tablet, ultrawide) | ⏳ | Sonnet |
 
 Legenda: ✅ concluído · ⏳ pendente
@@ -425,42 +425,42 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ---
 
-## Fase 14 — Conteúdo Limited Job (Blue Mage / Beastmaster) ⏳
+## Fase 14 — Conteúdo Limited Job (Blue Mage) ✅
 
-**Objetivo:** adicionar uma categoria de conteúdo "Limited Job" para raids e eventos em que todos os jogadores são obrigados a jogar uma classe específica (Blue Mage hoje; Beastmaster no futuro). No contexto desse prog, o job atribuído de cada player é travado automaticamente na classe limitada — sem seleção manual.
+**Branch:** `feature/fase-14-limited-jobs` · **PR:** #14 · **Commit:** `4522ce4`
 
-### Modelo de dados
-- Novo `partyMode: "limited"` (além de `"full"`, `"light"`, `"dynamic"`).
-- Campo adicional em conteúdos custom: `limitedJobId: "BLU" | "BST"` (obrigatório quando `partyMode === "limited"`).
-- Conteúdos hardcoded de Limited Job (pré-definidos, não customizáveis):
-  - `blue_mage_raid` → nome "Blue Mage", `limitedJobId: "BLU"`, `partySize: 8`
-  - (futuro) `beastmaster_raid` → nome "Beastmaster", `limitedJobId: "BST"`, `partySize: 8`
+Adiciona uma nova categoria de conteúdo "Limited Job" — raids em que todos os 8 jogadores são obrigados a jogar uma classe específica. Inicialmente apenas Blue Mage; Beastmaster entra quando a Square Enix lançar o job (decisão tomada por simplicidade: nada de entrada comentada — adiciona no momento do lançamento).
 
-### Jobs adicionados ao catálogo (`js/data.js`)
-- `BLU` — Blue Mage: ícone nativo do jogo (`assets/jobs/blu.png`), role `limited`, cor distinta (azul turquesa).
-- `BST` — Beastmaster: ícone nativo (`assets/jobs/bst.png`, a ser adicionado quando o job for lançado), role `limited`.
+### Modelo de dados (`js/data.js`)
+- `FFXIV_ROLES.limited` (cor turquesa `#06b6d4`, ícone 🔒).
+- `BLU` em `FFXIV_JOBS` com `role: "limited"` e `iconUrl: "assets/icons/dictionary/blue_mage_v11.png"` (versão mais recente do ícone presente nos assets).
+- `FFXIV_LIMITED_CONTENTS` hardcoded — `[{ id: "blue_mage_raid", name: "Blue Mage", partyMode: "limited", limitedJobId: "BLU", partySize: 8 }]`. Não é editável pelo usuário (cresce com patches do jogo).
+- `CONTENT_TYPES` ganha entrada `"limited"` entre `ultimate` e `custom`.
 
-### Frontend (`js/app.js`, `js/data.js`)
-- `CONTENT_TYPES` ganha entrada `"limited"` que lista os conteúdos de limited job.
-- Nova tab "Limited Jobs" no content picker, com card por conteúdo (ícone BLU/BST, nome, tag "8 jogadores").
-- `getProgTypeMeta(progId)` retorna meta para limited: ícone do job limitado, pill colorida em azul turquesa.
-- `getAssignedJobForProg(player, progId)` para progs `limited`: retorna `getLimitedJob(progId)` direto, ignorando `assignedJobsByProg`.
-- `renderRosterTables` para limited: substitui os pool badges por um único badge do job limitado (sem `direct-pool-job-btn` — não há seleção). Exibe tooltip "Job travado para este conteúdo".
-- `isDynamicProg`, `isLimitedProg(progId)` — novo helper que checa `partyMode === "limited"`.
-- `setAssignedJobForProg` é no-op para progs limited (não salva nada — o job é sempre o limitado).
+### Helpers (`js/app.js`)
+- `getLimitedContent(progId)`, `isLimitedProg(progId)`, `getLimitedJob(progId)`.
+- `getProgObj` resolve em `[...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...FFXIV_LIMITED_CONTENTS, ...state.customContents]`.
+- `getPartyMode` retorna `"limited"` antes de checar customs; `getPartySize` mantém cap de 8.
+- `getAssignedJobForProg` em prog limited ignora pool e `assignedJobsByProg`, retorna o job travado.
+- `setAssignedJobForProg` em prog limited é no-op (não persiste seleção).
+
+### Render
+- `buildPoolBadgesHtml(player, activeProgId, canEdit)` extraído como função única para os dois lugares do `renderRosterTables` (active + bench). Em prog limited, gera um único `<span class="job-badge job-badge-locked">` com tooltip "Job travado para este conteúdo" e mini-cadeado no canto. Em prog normal, mantém os `direct-pool-job-btn` originais.
+- `getProgTypeMeta` retorna meta com `label: "Limited"`, `key: "limited"` e ícone do próprio job travado (`blue_mage_v11.png`).
+- `renderContentPicker` mapeia o ícone da tab limited para o iconUrl do job (em vez de hardcodar path por modo).
 
 ### CSS (`css/styles.css`)
-- Nova variável `--type-limited` (azul turquesa, ex: `#06b6d4`).
-- Pill "Limited" no card de prog.
-- Badge de job travado com ícone de cadeado ou outline diferenciado.
+- Variável `--type-limited: #06b6d4`.
+- `.prog-card-type-limited` (borda turquesa esquerda) + `.prog-card-pill.type-limited` (texto turquesa).
+- `.job-badge-locked` com outline turquesa, glow suave (`box-shadow`) e `.job-badge-lock` mini-cadeado no canto inferior direito.
 
 ### Decisões de design
-- Progs limited hardcoded (não customizáveis pelo officer) — a lista cresce com patches do jogo, não com input do usuário.
-- Quorum e Raid Events funcionam normalmente para limited (mesma lógica de agendamento e disponibilidade).
-- Loot priority funciona normalmente (players compram gear mesmo em BLU/BST content).
-- BST entra no catálogo já como entrada comentada/desabilitada até o job ser lançado.
+- Progs limited hardcoded (não customizáveis pelo officer).
+- Quorum, Raid Events e notificações Telegram funcionam normalmente para limited.
+- Loot priority funciona normalmente (BLU compra gear).
+- BST adiciona quando lançar — sem stub comentado para não poluir o catálogo.
 
-**Modelo:** Opus (novo partyMode afeta múltiplas camadas: data.js, app.js, render, loot, eventos).
+**Modelo:** Opus.
 
 ---
 
@@ -498,7 +498,7 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    │              └──→ 12 ✅ (Telegram grupo — depende de raid events)
    │
    ├──→ 8 ✅ ──→ 3 ✅ (tipos customizáveis ⇒ redesign cards)
-   │              └──→ 14 ⏳ (Limited Jobs — estende partyMode de 8)
+   │              └──→ 14 ✅ (Limited Jobs — estende partyMode de 8)
    ├──→ 9 ✅ (cadastro com aprovação — auth)
    └──→ 10 ⏳ (responsividade — por último para cobrir tudo que tem)
 ```
@@ -507,9 +507,8 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ## Sugestão de ordem de execução
 
-1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3, 13, 12~~ ✅ concluídas
-2. **Fase 14 (Limited Jobs)** — Blue Mage / Beastmaster com job travado no roster (Opus)
-3. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe (Sonnet)
+1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3, 13, 12, 14~~ ✅ concluídas
+2. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe (Sonnet)
 
 Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
@@ -517,7 +516,7 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `main` (limpa — Fase 12 mergeada via PR #13)
+- **Branch ativa:** `main` (limpa — Fase 14 mergeada via PR #14)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Último deploy:** Fase 12 — integração Telegram (bot de grupo com alertas de raid, lembretes 24 h e no dia)
-- **Próximo passo recomendado:** Fase 14 (Limited Jobs — Blue Mage com job travado no roster) ou Fase 10 (responsividade mobile)
+- **Último deploy:** Fase 14 — conteúdo Limited Job (Blue Mage) com job travado no roster
+- **Próximo passo recomendado:** Fase 10 (responsividade mobile)
