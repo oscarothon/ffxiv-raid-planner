@@ -1228,25 +1228,25 @@ function renderRosterTables() {
             const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
-                <td style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
-                <td>
+                <td data-label="rank" style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
+                <td data-label="Jogador">
                     <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
                 </td>
-                <td>
+                <td data-label="Classes">
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                         ${poolBadgesHtml}
                     </div>
                 </td>
-                <td>
+                <td data-label="Principal">
                     ${assignedJobHtml}
                 </td>
-                <td>
+                <td data-label="iLvl">
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 65px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
                         <label title="BiS (Best in Slot)"><input type="checkbox" class="ff-checkbox chk-roster-bis" data-id="${player.id}" ${player.bis ? 'checked' : ''} ${canEdit ? '' : 'disabled'}></label>
                     </div>
                 </td>
-                <td>
+                <td data-label="Ações">
                     <div style="display: flex; gap: 4px;">
                         ${buildRowActions(player, "active")}
                     </div>
@@ -1266,18 +1266,18 @@ function renderRosterTables() {
             const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
-                <td>
+                <td data-label="Jogador">
                     <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
                 </td>
-                <td>
+                <td data-label="Classes">
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                         ${poolBadgesHtml}
                     </div>
                 </td>
-                <td>
+                <td data-label="iLvl">
                     <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 70px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
                 </td>
-                <td>
+                <td data-label="Ações">
                     <div style="display: flex; gap: 4px;">
                         ${buildRowActions(player, "bench")}
                     </div>

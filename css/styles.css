@@ -2003,7 +2003,8 @@ label {
     background: rgba(4, 16, 34, 0.95);
 }
 
-.calendar-header-bar {
+.calendar-header-bar,
+.calendar-nav-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2013,7 +2014,8 @@ label {
     border: 1px solid rgba(255,255,255,0.05);
 }
 
-.calendar-month-label {
+.calendar-month-label,
+.calendar-month-title {
     font-family: var(--font-title);
     font-size: 1.3rem;
     font-weight: 700;
@@ -3126,4 +3128,336 @@ label {
     padding: 1px 3px;
     line-height: 1;
     border: 1px solid var(--type-limited, #06b6d4);
+}
+
+/* ==========================================================================
+   Fase 10 — Responsividade Mobile Completa
+   Breakpoints: 768px (tablet) | 480px (mobile)
+   ========================================================================== */
+
+/* ---- Tablet (≤ 768px) ---- */
+@media (max-width: 768px) {
+    /* Container */
+    .app-container {
+        padding: 12px;
+        gap: 14px;
+    }
+
+    /* Header — já empilhado em 900px, refinamos aqui */
+    .ff-header {
+        padding: 12px 16px;
+        gap: 10px;
+    }
+    .logo-area {
+        justify-content: center;
+    }
+    .header-controls {
+        justify-content: center;
+        width: 100%;
+    }
+    .title-wrapper h1 {
+        font-size: clamp(1.1rem, 4vw, 1.6rem);
+    }
+
+    /* Grid principal: tudo em coluna única */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    .quick-schedule-list {
+        grid-template-columns: 1fr;
+    }
+
+    /* Modais */
+    .ff-modal {
+        max-width: calc(100vw - 24px);
+        max-height: 95vh;
+    }
+    .ff-modal-overlay {
+        padding: 12px;
+    }
+    .ff-modal .modal-body {
+        padding: 14px 16px;
+    }
+
+    /* Painel de membros */
+    .member-row {
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+    }
+
+    /* Pending rows */
+    .pending-row {
+        flex-wrap: wrap;
+    }
+}
+
+/* ---- Mobile (≤ 480px) ---- */
+@media (max-width: 480px) {
+    /* Container */
+    .app-container {
+        padding: 8px;
+        gap: 10px;
+    }
+
+    /* Header */
+    .ff-header {
+        padding: 10px 12px;
+    }
+    .title-wrapper h1 {
+        font-size: clamp(0.95rem, 5vw, 1.2rem);
+        letter-spacing: 1px;
+    }
+    .title-wrapper .subtitle {
+        font-size: 0.58rem;
+        letter-spacing: 1.2px;
+    }
+    .fc-banner-logo {
+        width: 44px;
+    }
+    .user-pill {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px;
+    }
+    .user-pill-static {
+        max-width: 110px;
+    }
+    /* Tabs de navegação principal */
+    .tab-btn {
+        padding: 8px 10px;
+        font-size: 0.78rem;
+        letter-spacing: 0.4px;
+        min-height: 44px;
+    }
+    .tab-icon {
+        font-size: 0.95rem;
+    }
+
+    /* Botões — alvo de toque mínimo de 44×44px */
+    .ff-btn {
+        min-height: 44px;
+        padding: 10px 14px;
+    }
+    .ff-btn-small {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+    .ff-btn-action,
+    .ff-btn-danger {
+        min-height: 44px;
+    }
+    .ff-btn-crystal-add {
+        height: 44px;
+    }
+
+    /* Painéis */
+    .panel-body {
+        padding: 10px;
+    }
+    .panel-header {
+        padding: 8px 10px;
+    }
+    .panel-header h2 {
+        font-size: 1rem;
+    }
+
+    /* Modais */
+    .ff-modal {
+        max-width: calc(100vw - 16px);
+    }
+    .ff-modal-overlay {
+        padding: 8px;
+    }
+    .ff-modal .modal-body {
+        padding: 10px 12px;
+    }
+    .ff-modal .modal-header {
+        padding: 10px 14px;
+    }
+    .ff-modal .modal-header h3 {
+        font-size: 0.92rem;
+    }
+
+    /* Tabela do roster → layout em cards (1 jogador por card) */
+    .ff-table thead {
+        display: none;
+    }
+    .ff-table,
+    .ff-table tbody {
+        display: block;
+    }
+    .ff-table tbody tr {
+        display: flex;
+        flex-direction: column;
+        background: rgba(4, 16, 34, 0.5);
+        border: 1px solid rgba(51, 181, 229, 0.18);
+        border-radius: var(--radius-sm);
+        margin-bottom: 8px;
+        padding: 6px 0;
+        transition: border-color 0.2s;
+    }
+    .ff-table tbody tr:hover {
+        border-color: rgba(51, 181, 229, 0.4);
+    }
+    .ff-table tbody tr:hover td {
+        background: transparent;
+    }
+    .ff-table td {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        background: transparent !important;
+    }
+    .ff-table td:last-child {
+        border-bottom: none;
+    }
+    /* Rótulos inline via data-label */
+    .ff-table td[data-label]:not([data-label=""])::before {
+        content: attr(data-label);
+        font-size: 0.62rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--border-crystal);
+        min-width: 68px;
+        flex-shrink: 0;
+    }
+    /* Célula de rank (#1, #2…): compactar no canto superior-direito */
+    .ff-table td[data-label="rank"] {
+        padding: 4px 12px 2px;
+        font-size: 0.7rem;
+        color: var(--gold-muted);
+        justify-content: flex-end;
+        border-bottom: none;
+    }
+    .ff-table td[data-label="rank"]::before {
+        display: none;
+    }
+    /* Campo de nome: ocupa mais espaço */
+    .ff-table td[data-label="Jogador"] .ff-input,
+    .ff-table td[data-label=""] .ff-input {
+        flex: 1;
+        min-width: 0;
+    }
+    /* Pool de classes: permite wrap */
+    .ff-table td[data-label="Classes"] > div {
+        flex-wrap: wrap;
+    }
+    /* Ações: alinhar à direita */
+    .ff-table td[data-label="Ações"],
+    .ff-table td[data-label=""]:last-child {
+        justify-content: flex-end;
+        padding-top: 4px;
+        padding-bottom: 6px;
+    }
+
+    /* Calendário — coluna fixa mais estreita */
+    .calendar-table th.col-fixed,
+    .calendar-table td.col-fixed {
+        min-width: 90px;
+        width: 90px;
+        font-size: 0.76rem;
+    }
+    /* Barra de navegação do calendário */
+    .calendar-nav-header,
+    .calendar-header-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        text-align: center;
+    }
+    .calendar-month-title,
+    .calendar-month-label {
+        font-size: 1rem;
+    }
+
+    /* Toasts — largura total */
+    .toast-container {
+        left: 12px;
+        right: 12px;
+        top: 12px;
+        max-width: calc(100vw - 24px);
+    }
+    .toast {
+        min-width: unset;
+        width: 100%;
+    }
+
+    /* Comp visualizer */
+    .comp-visualizer {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+
+    /* Gear wiki */
+    .gear-wiki-layout {
+        grid-template-columns: 1fr;
+    }
+
+    /* Formulário de conteúdo customizado */
+    .content-form-grid {
+        grid-template-columns: 1fr;
+    }
+    .content-party-modes {
+        grid-template-columns: 1fr;
+    }
+
+    /* Controles de prog */
+    .add-prog-controls,
+    .add-prog-controls-enhanced {
+        flex-direction: column;
+    }
+    .add-prog-controls .ff-select,
+    .add-prog-controls-enhanced .ff-select,
+    .add-prog-controls .ff-input,
+    .add-prog-controls-enhanced .ff-input {
+        width: 100%;
+    }
+
+    /* Rows de pendente */
+    .pending-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .pending-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* Notificações do dashboard */
+    .notif-item {
+        flex-direction: column;
+    }
+    .notif-item-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* Static list rows */
+    .static-list-row {
+        flex-wrap: wrap;
+    }
+
+    /* Prog cards grid — já é 1fr a partir de 600px, forçamos aqui */
+    .prog-cards-grid {
+        grid-template-columns: 1fr;
+    }
+    /* Content picker — coluna única */
+    .content-picker-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Schedules */
+    .quick-schedule-list {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---- Ultra-pequeno (≤ 360px) — ocultar labels de texto nos botões do header ---- */
+@media (max-width: 360px) {
+    .header-controls .ff-btn-small .txt {
+        display: none;
+    }
 }
