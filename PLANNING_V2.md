@@ -10,15 +10,25 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 ## Visão Geral
 
-Adicionar uma nova aba **"Estratégias"** com um editor visual de canvas (estilo [raidplan.io](https://raidplan.io)) para planejar mecânicas das lutas. Recursos principais:
+Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`), com um editor visual de canvas (estilo [raidplan.io](https://raidplan.io)) para planejar mecânicas das lutas. Recursos principais:
 
 - Canvas SVG com arena circular + grid configurável
-- Tokens de jogadores arrastáveis (usando os ícones de job da party ativa do prog vinculado)
+- Tokens de jogadores arrastáveis com **ícone do job principal atribuído àquele jogador para aquele prog específico** (via `getAssignedJobForProg`). Em conteúdos Limited (ex: Blue Mage), todos os tokens ficam travados no job da limited.
 - Marcação de AOEs (circles, donuts, cones, stacks) e waymarks (A-D, 1-4)
 - **Colaboração em tempo real** — múltiplos membros da party editam simultaneamente com visualização instantânea via WebSocket
-- Timeline multi-step (frames) para sequenciar mecânicas
+- **Timeline progressível** (frames) — cada frame representa um momento da luta; navegar = avançar/voltar no tempo da mecânica
 - Light Party split visual em conteúdos Full Party (8p)
 - Múltiplas arenas (círculo, quadrado, octógono…) ao longo das fases
+
+### Layout e Design
+
+- **Quebra de largura permitida**: o resto do app respeita `max-width: 1400px` no `.app-container`, mas esta aba expande para ~95vw (ou `100vw - margin`) para dar espaço ao canvas. Quando o usuário entra na aba "Estratégias", o `app-container` recebe uma classe (`is-canvas-mode`) que remove o cap de largura.
+- **Design system 100% preservado**:
+  - Fonte `Cinzel` em todos os textos
+  - Paleta existente: `--clear-blue`, `--gold-bright`, `--bg-panel`, etc.
+  - **Todos os 3 temas funcionam**: Clear Blue Crystal (padrão), Classic Dark, Warrior of Darkness. O canvas SVG usa CSS variables para cores, então troca de tema repinta tudo automaticamente.
+  - Botões, painéis, modais seguem o vocabulário visual existente (`.ff-btn`, `.ff-panel`, `.ff-modal`)
+  - Bordas do canvas e da arena: gradient azul-cristal + ouro como nas headers de painel
 
 ### Decisões já tomadas com o usuário
 
@@ -117,11 +127,13 @@ Adicionar uma nova aba **"Estratégias"** com um editor visual de canvas (estilo
    - Arena círculo (`<circle>` 800×800, fundo escuro com borda azul-cristal)
    - Grid configurável (default 8×8) — `<line>` ou `<pattern>`
    - Marcadores cardinais (N/S/L/O) visíveis
-4. **Tokens de jogador**:
+4. **Tokens de jogador** (vindo da party real do prog):
    - Renderizar 1 token por slot da party ativa do prog (`getPlayerStatusForProg === "active"`)
-   - Cada token = círculo + ícone do job principal atribuído + nome abaixo
-   - Posição inicial: distribuição circular dentro da arena
-   - Drag-and-drop (mouse + touch) com snap-to-grid opcional
+   - Cada token = círculo colorido (cor do role) + **ícone do job principal atribuído** (`getAssignedJobForProg(player, prog_id)`) + nome do jogador abaixo
+   - Se o conteúdo for Limited (ex: Blue Mage): todos os 8 tokens forçados ao ícone do `limitedJobId` (mesma lógica do roster)
+   - Posição inicial: distribuição circular dentro da arena (8 jogadores = 8 posições cardinais/intercardinais)
+   - Drag-and-drop (mouse + touch) com snap-to-grid opcional (toggle)
+   - Tokens **não podem ser deletados** (são sempre os jogadores da party); só posicionados
 5. **Real-time sync (Socket.IO)**:
    - Ao começar drag → emit `op: token_drag_start`
    - Durante drag → emit `op: token_move` a cada 50ms (throttle)
@@ -190,27 +202,30 @@ Adicionar uma nova aba **"Estratégias"** com um editor visual de canvas (estilo
 
 ---
 
-## Fase D — Timeline Multi-step (Frames)
+## Fase D — Timeline Progressível Multi-step (Frames)
 
-**Objetivo:** sequenciar mecânicas. Cada "frame" é um momento da luta com posições e AoEs específicas.
+**Objetivo:** sequenciar mecânicas como linha do tempo da luta. Cada "frame" representa um momento da luta com posições, AoEs e marcas específicas. Avançar pelos frames = avançar no tempo da mecânica.
 
 1. **Barra de timeline** abaixo do canvas:
    - Lista horizontal de chips: `[1] [2] [3] [+]`
-   - Cada chip tem um nome editável (ex: "Spread", "Stack", "Resolve")
-   - Chip ativo destacado
+   - Cada chip tem um nome editável (ex: "Pré-mecânica", "Spread", "Stack", "Resolve", "Pós")
+   - Chip ativo destacado em dourado
+   - Opcional: cada frame pode ter um "timestamp" textual (ex: "0:30", "1:15") para referência ao log da luta
 2. **Ações por frame**:
-   - **Adicionar**: cria frame novo, opção "duplicar do anterior" ou "vazio"
+   - **Adicionar**: cria frame novo, opção "duplicar do anterior" (padrão) ou "vazio"
    - **Deletar**: remove frame (não pode deletar o último)
    - **Reordenar**: drag-and-drop entre chips
    - **Renomear**: double-click → input inline
-3. **Navegação**:
-   - Setas ◀ ▶ no canvas ou teclado
+3. **Navegação progressível**:
+   - Setas ◀ ▶ no canvas ou teclas direcionais do teclado
+   - Botão **"Play"** opcional (Fase D ou H): anima automaticamente a transição entre frames (interpolação linear das posições dos tokens em ~500ms cada)
    - Cada frame guarda **snapshot completo** de `tokens`, `aoes`, `marks`
-4. **Botão "Duplicar como próximo"**: clona o frame atual e abre o duplicado para edição
+   - Indicador visual: "Frame 2 de 5 — Spread"
+4. **Botão "Duplicar como próximo"**: clona o frame atual e abre o duplicado para edição (caso comum: editar pequena diferença entre dois momentos consecutivos)
 5. **Sincronização**:
-   - `op: add_frame`, `op: delete_frame`, `op: rename_frame`, `op: set_current_frame`
-   - Mudança de frame ativo é por usuário (não broadcast) — cada um navega independentemente
-   - Edições no frame são broadcast pra sala
+   - `op: add_frame`, `op: delete_frame`, `op: rename_frame`, `op: reorder_frames`
+   - Mudança de frame ativo é **por usuário** (não broadcast) — cada um navega independentemente
+   - Edições dentro de um frame são broadcast para todos que estão visualizando aquele mesmo frame
 
 ### Critério de aceite
 
