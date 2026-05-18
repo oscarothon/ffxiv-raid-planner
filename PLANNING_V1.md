@@ -1,4 +1,12 @@
-# Planejamento de Features — FFXIV Raid Planner
+# Planejamento de Features — FFXIV Raid Planner (Roadmap V1)
+
+> ## ✅ ROADMAP CONCLUÍDO (2026-05-18)
+>
+> Todas as 17 fases originais foram implementadas e estão em produção. Este documento permanece como **registro histórico** das decisões arquiteturais, escopo realizado e cronologia das entregas.
+>
+> Para o próximo ciclo de features (Visual Strategy Planner com canvas, AOEs e colaboração em tempo real), consulte **`PLANNING_V2.md`**.
+
+---
 
 Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob em `statics.data_json`.
 
