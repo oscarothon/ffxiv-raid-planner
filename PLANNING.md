@@ -25,7 +25,7 @@ Stack: Vanilla JS + Flask + SQLite. Estado por static persistido como JSON blob 
 | 8  | Conteúdo | Tipos de conteúdo customizáveis (party sizes 8/4/dinâmico + tipos novos) | ✅ | Opus |
 | 9  | Auth     | Cadastro com aprovação por officer/admin (timeout 24h) | ✅ | Sonnet |
 | 11 | Feature  | Raid Events — data formal de raid, quorum e adiamento por officer/admin | ✅ | Opus |
-| 12 | Feature  | Integração Telegram — bot de grupo: alertas de evento, lembretes 24h e no dia | ⏳ | Opus |
+| 12 | Feature  | Integração Telegram — bot de grupo: alertas de evento, lembretes 24h e no dia | ✅ | Opus |
 | 3  | Polish   | Redesign visual da lista de conteúdos (cards animados) | ✅ | Sonnet |
 | 13 | Bugfixes | SFX vazando entre clientes + sync de classe em tempo-real | ✅ | Sonnet |
 | 14 | Feature  | Conteúdo Limited Job (Blue Mage / Beastmaster) — classes travadas por conteúdo | ⏳ | Opus |
@@ -331,46 +331,49 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ---
 
-## Fase 12 — Integração Telegram ⏳
+## Fase 12 — Integração Telegram ✅
 
-**Objetivo:** adicionar o bot a um grupo de Telegram da static; o bot alerta o grupo quando um Raid Event é criado (com link do site para os players marcarem disponibilidade), envia lembrete 24 h antes do evento e outro no dia do evento.
+**Branch:** `feature/fase-12-telegram` · **PR:** #13 · **Commit:** `c944912`
 
-### Configuração
-- Env var: `TELEGRAM_BOT_TOKEN` (Railway secret).
-- Env var: `TELEGRAM_GROUP_CHAT_ID` — chat_id do grupo onde o bot foi adicionado (configurado pelo admin via comando ou painel).
+### Configuração de produção
+- Env vars no Railway: `TELEGRAM_BOT_TOKEN` (token do @BotFather) + `TELEGRAM_WEBHOOK_SECRET` (string aleatória usada no header `X-Telegram-Bot-Api-Secret-Token`).
+- Webhook registrado uma vez via `setWebhook` com `secret_token` + `allowed_updates=["message","my_chat_member"]`.
+- `chat_id` do grupo é persistido na coluna `telegram_chat_id` da tabela `statics` (multi-static-friendly).
 
 ### Vinculação do grupo
 - Admin adiciona o bot ao grupo do Telegram da static.
-- Bot detecta a entrada no grupo (update `my_chat_member`) ou recebe `/start` no grupo e salva o `chat_id` do grupo na tabela de configurações da static (`static_settings` ou coluna em `statics`).
-- Painel de configuração no frontend (admin only): mostra status "Bot vinculado ao grupo ✓" ou instruções para vincular.
+- Bot detecta entrada via `my_chat_member` e/ou recebe `/start` no grupo → salva `chat_id` na DB e envia mensagem de confirmação.
+- Painel admin no modal de Membros mostra 3 estados: bot não configurado / vinculado (com chat_id e botão de desvincular) / aguardando `/start`.
 
-### Backend (`server/`)
-- `server/telegram.py` — helper `send_group_message(text)` via `requests` (HTTP simples, sem biblioteca pesada). Lê `TELEGRAM_GROUP_CHAT_ID` da env ou da DB.
-- `POST /api/telegram/webhook` — recebe updates do Telegram; processa `/start` no grupo para vincular `chat_id`, responde com confirmação.
-- Webhook registrado em produção via `POST https://api.telegram.org/bot<TOKEN>/setWebhook`.
-- **Notificações disparadas em três momentos:**
-  1. **Evento criado** (`PUT /api/state` com novo item em `raidEvents`): dispara imediatamente → mensagem no grupo com nome do prog, data e link do site para marcar disponibilidade.
-  2. **Lembrete 24 h antes**: checado a cada `GET /api/state` de qualquer usuário; se há evento com `date == amanhã` e `reminder24hSent` não está marcado → dispara e marca no evento.
-  3. **Lembrete no dia**: mesma lógica, checa `date == hoje` e `reminderTodaySent` → dispara e marca.
-- Campos adicionados ao modelo de `raidEvents`: `reminder24hSent: bool`, `reminderTodaySent: bool`.
-- Fallback: se `TELEGRAM_GROUP_CHAT_ID` não estiver configurado, notificações são silenciosamente ignoradas (sem erro).
+### Backend
+- `server/telegram.py`: helper `send_group_message` via `requests`, secret do webhook derivado de `TELEGRAM_WEBHOOK_SECRET` ou fallback `sha256("tg-webhook:" + SECRET_KEY)`. Formatadores de mensagem em pt-BR.
+- `server/db.py`: coluna `telegram_chat_id TEXT` em `statics` com migração idempotente.
+- `POST /api/telegram/webhook`: valida secret no header, processa `/start` e `my_chat_member`, vincula chat_id.
+- `GET /api/telegram/status` (qualquer membro): retorna `{configured, chat_id, bound}` para o painel admin.
+- `POST /api/telegram/unbind` (admin only): remove o vínculo.
+- `PUT /api/state`: detecta `raidEvents` adicionados (id novo) ou adiados (`postponedTo` mudou) e dispara notificação no try/except (best-effort).
+- `GET /api/state`: piggyback — varre `raidEvents` da static, se houver evento com data == amanhã ou hoje sem `reminder24hSent`/`reminderTodaySent`, dispara e marca o flag.
 
-### Mensagens (português, tom informal)
-- **Evento criado:** `"📅 Raid agendada! [Nome do Prog] em [dia da semana], [data]. Acesse [link] e marque se vai ou não. Confirmados até agora: 0/[quorum]"`
-- **Lembrete 24 h:** `"⏰ Lembrete: [Nome do Prog] é amanhã ([data])! Confirmados: X/Y. Ainda não marcou? Acesse [link]"`
-- **Lembrete no dia:** `"⚔️ É hoje! [Nome do Prog] — [data]. Confirmados: X/Y. Boa raid!"`
+### Mensagens (HTML parse mode)
+- **Evento criado:** `📅 Raid agendada! [Prog] em [qua, dd/mm]. Confirmados: X/Y. Acesse [link] e marque se vai ou não.`
+- **Evento adiado:** `📅 Raid adiada — [Prog] agora é [data]. Confirme sua presença em [link].`
+- **Lembrete 24 h:** `⏰ Lembrete — [Prog] é amanhã ([data]). Confirmados: X/Y. Ainda não marcou? [link]`
+- **Lembrete no dia:** `⚔️ É hoje! [Prog] — [data]. Confirmados: X/Y. Boa raid!`
+- Modo `dynamic` omite quorum (mostra apenas "Confirmados: X").
 
-### Frontend (`js/app.js`, `index.html`)
-- Seção "Telegram" no modal de configuração (admin only): mostra chat_id vinculado ou botão/instrução para vincular.
-- Toast de confirmação quando o webhook recebe o `/start` do grupo com sucesso.
+### Frontend
+- `raidEvent` agora carrega `progName` (para o backend usar na mensagem sem conhecer o catálogo), `reminder24hSent: false`, `reminderTodaySent: false`.
+- Seção "Telegram da Static" no modal de Membros (admin only): status + chat_id + botão desvincular + instruções para mandar `/start` no grupo.
+- `API.telegramStatus` e `API.telegramUnbind` no client centralizado.
 
 ### Decisões de design
-- Foco em notificações de GRUPO — DMs individuais fora de escopo por ora.
-- Sem APScheduler — lembretes são piggyback em requisições existentes (sem background thread).
-- Sem OAuth — fluxo de `/start` no grupo é suficiente para grupo pequeno.
-- Link do site: `https://mhigos-raid-planner.up.railway.app` (fixo ou configurável).
+- Foco em notificações de GRUPO — DMs individuais fora de escopo.
+- Sem APScheduler/cron — lembretes são piggyback nos GETs existentes (polling de 5 s garante disparo no primeiro acesso após meia-noite).
+- Sem OAuth — `/start` no grupo é suficiente.
+- Sem `TELEGRAM_GROUP_CHAT_ID` em env — chat_id sempre vem da DB (permite multi-static no futuro).
+- Notificações best-effort: token ausente, falha de rede ou exception são silenciosos; nunca bloqueiam save/leitura do estado.
 
-**Modelo:** Opus (backend multi-arquivo + segurança do webhook).
+**Modelo:** Opus (backend multi-arquivo + segurança do webhook + lógica de eventos).
 
 ---
 
@@ -492,7 +495,7 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
    ├──→ 5 ✅  6 ✅  7 ✅  2A ✅  2B ✅  13 ✅ (concluídos)
    │
    ├──→ 2A ✅ ──→ 11 ✅ (Raid Events)
-   │              └──→ 12 ⏳ (Telegram grupo — depende de raid events)
+   │              └──→ 12 ✅ (Telegram grupo — depende de raid events)
    │
    ├──→ 8 ✅ ──→ 3 ✅ (tipos customizáveis ⇒ redesign cards)
    │              └──→ 14 ⏳ (Limited Jobs — estende partyMode de 8)
@@ -504,10 +507,9 @@ Substituir `state.scheduledProgs: {}` por `state.raidEvents: []`. Cada evento:
 
 ## Sugestão de ordem de execução
 
-1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3, 13~~ ✅ concluídas
-2. **Fase 12 (Telegram grupo)** — bot no grupo da static com alertas de evento criado, 24 h antes e no dia (Opus)
-3. **Fase 14 (Limited Jobs)** — Blue Mage / Beastmaster com job travado no roster (Opus)
-4. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe (Sonnet)
+1. ~~Fases 5, 6, 7, 2A, 2B, 9, 11, 8, 3, 13, 12~~ ✅ concluídas
+2. **Fase 14 (Limited Jobs)** — Blue Mage / Beastmaster com job travado no roster (Opus)
+3. **Fase 10 (Responsividade)** — finaliza polindo tudo que existe (Sonnet)
 
 Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
@@ -515,7 +517,7 @@ Ordem pode ser ajustada a qualquer momento conforme prioridade do usuário.
 
 ## Estado Atual
 
-- **Branch ativa:** `main` (limpa — Fase 13 mergeada via PR)
+- **Branch ativa:** `main` (limpa — Fase 12 mergeada via PR #13)
 - **Produção:** https://mhigos-raid-planner.up.railway.app no ar com volume persistente
-- **Último deploy:** Fase 13 — SFX por usuário via localStorage + polling reduzido para 5 s
-- **Próximo passo recomendado:** Fase 12 (Telegram grupo) — bot no grupo da static com alertas de evento criado, lembrete 24 h antes e lembrete no dia
+- **Último deploy:** Fase 12 — integração Telegram (bot de grupo com alertas de raid, lembretes 24 h e no dia)
+- **Próximo passo recomendado:** Fase 14 (Limited Jobs — Blue Mage com job travado no roster) ou Fase 10 (responsividade mobile)
