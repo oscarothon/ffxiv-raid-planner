@@ -587,6 +587,29 @@
                     <!-- Preenchido via JS -->
                 </div>
                 <p id="members-error" class="text-danger mt-2" hidden></p>
+
+                <!-- Fase 12 — Integração Telegram (admin only) -->
+                <div id="telegram-section" class="telegram-section" hidden>
+                    <h4 style="margin-top: 18px; font-size: 0.95rem; color: var(--gold-bright); border-top: 1px solid var(--border); padding-top: 14px;">
+                        Telegram da Static
+                    </h4>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 6px 0 10px;">
+                        Vincule um grupo do Telegram para receber alertas de raid agendada, lembrete 24 h antes e lembrete no dia do evento.
+                    </p>
+                    <div id="telegram-status-box" class="telegram-status-box">
+                        <span id="telegram-status-text">Carregando...</span>
+                    </div>
+                    <div id="telegram-instructions" class="telegram-instructions" hidden>
+                        <ol style="font-size: 0.85rem; color: var(--text-muted); padding-left: 20px; margin: 8px 0;">
+                            <li>Adicione o bot ao grupo do Telegram da static.</li>
+                            <li>No grupo, mande o comando <code>/start</code>.</li>
+                            <li>O bot vai responder confirmando o vínculo.</li>
+                        </ol>
+                    </div>
+                    <button id="btn-telegram-unbind" class="ff-btn-tertiary" hidden style="margin-top: 8px;">
+                        Desvincular grupo
+                    </button>
+                </div>
             </div>
         </div>
     </div>

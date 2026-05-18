@@ -1601,6 +1601,7 @@ function upsertRaidEvent(dateKey, progId, quorum) {
     const evt = {
         id: `evt_${progId}_${dateKey.replace(/-/g, '')}`,
         progId,
+        progName: getProgObj(progId).name,
         date: dateKey,
         quorum,
         createdBy: currentUserId,
@@ -1608,6 +1609,8 @@ function upsertRaidEvent(dateKey, progId, quorum) {
         postponedTo: null,
         postponedBy: null,
         postponedAt: null,
+        reminder24hSent: false,
+        reminderTodaySent: false,
     };
     state.raidEvents.push(evt);
     return evt;
@@ -2578,6 +2581,7 @@ async function openMembersModal() {
         cachedMembers = await API.listMembers(currentStaticId);
         renderMembersList();
         if (isOfficer()) await renderPendingSection(cont);
+        renderTelegramSection();
     } catch (err) {
         cont.innerHTML = "";
         if (errEl) {
@@ -2590,6 +2594,61 @@ async function openMembersModal() {
 function closeMembersModal() {
     const modal = document.getElementById("modal-members");
     if (modal) modal.hidden = true;
+}
+
+// Fase 12 — Seção Telegram no modal admin
+async function renderTelegramSection() {
+    const section = document.getElementById("telegram-section");
+    const statusBox = document.getElementById("telegram-status-box");
+    const statusText = document.getElementById("telegram-status-text");
+    const instructions = document.getElementById("telegram-instructions");
+    const btnUnbind = document.getElementById("btn-telegram-unbind");
+    if (!section || !statusBox || !statusText) return;
+
+    // Apenas admin vê a seção
+    if (!isAdmin()) {
+        section.hidden = true;
+        return;
+    }
+    section.hidden = false;
+    statusText.textContent = "Carregando...";
+    if (instructions) instructions.hidden = true;
+    if (btnUnbind) btnUnbind.hidden = true;
+
+    try {
+        const status = await API.telegramStatus();
+        if (!status.configured) {
+            statusText.innerHTML = "<span style='color: var(--danger, #c33);'>Bot não configurado no servidor.</span> Defina <code>TELEGRAM_BOT_TOKEN</code> nas variáveis de ambiente.";
+            return;
+        }
+        if (status.bound) {
+            statusText.innerHTML = `<span style='color: var(--success, #4a9);'>Vinculado</span> ao grupo (chat_id: <code>${status.chat_id}</code>)`;
+            if (btnUnbind) btnUnbind.hidden = false;
+        } else {
+            statusText.innerHTML = "<span style='color: var(--text-muted);'>Nenhum grupo vinculado.</span>";
+            if (instructions) instructions.hidden = false;
+        }
+    } catch (err) {
+        statusText.textContent = `Erro: ${err.message || "falha ao consultar status"}`;
+    }
+}
+
+async function unbindTelegramGroup() {
+    if (!isAdmin()) return;
+    const ok = await showConfirm({
+        title: "Desvincular grupo do Telegram?",
+        message: "Os alertas de raid não serão mais enviados até que um novo grupo seja vinculado.",
+        confirmText: "Desvincular",
+        danger: true,
+    });
+    if (!ok) return;
+    try {
+        await API.telegramUnbind();
+        showToast("Grupo desvinculado.", { type: "info" });
+        await renderTelegramSection();
+    } catch (err) {
+        showToast(`Erro: ${err.message || "falha ao desvincular"}`, { type: "error" });
+    }
 }
 
 // ==========================================================================
@@ -3400,6 +3459,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (e.target === modalMembers) modalMembers.hidden = true;
         });
     }
+
+    // Fase 12 — Botão de desvincular grupo do Telegram
+    const btnTgUnbind = document.getElementById("btn-telegram-unbind");
+    if (btnTgUnbind) btnTgUnbind.addEventListener("click", unbindTelegramGroup);
     const modalContentMgr = document.getElementById("modal-content-manager");
     if (modalContentMgr) {
         modalContentMgr.addEventListener("click", (e) => {

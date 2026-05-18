@@ -71,5 +71,7 @@ const API = (() => {
         listPending:    ()         => request("/api/pending"),
         approvePending: (id)       => request(`/api/pending/${id}/approve`, { method: "POST" }),
         rejectPending:  (id)       => request(`/api/pending/${id}/reject`,  { method: "POST" }),
+        telegramStatus: ()         => request("/api/telegram/status"),
+        telegramUnbind: ()         => request("/api/telegram/unbind", { method: "POST" }),
     };
 })();

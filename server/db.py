@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS statics (
     invite_code TEXT UNIQUE NOT NULL,
     owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     data_json TEXT NOT NULL DEFAULT '{}',
+    telegram_chat_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -88,6 +89,10 @@ def _migrate(conn):
         conn.execute(
             "ALTER TABLE static_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'"
         )
+
+    # Fase 12: chat_id do grupo de Telegram vinculado à static
+    if not _column_exists(conn, "statics", "telegram_chat_id"):
+        conn.execute("ALTER TABLE statics ADD COLUMN telegram_chat_id TEXT")
 
     # Para cada static sem admin, promove o membro mais antigo (joined_at) a admin.
     # Garante bootstrap: o "primeiro" usuário de qualquer static (incluindo a global)

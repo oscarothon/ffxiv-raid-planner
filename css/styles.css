@@ -3063,3 +3063,39 @@ label {
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* =========================================================================
+   Fase 12 — Integração Telegram (admin only no modal de Membros)
+   ========================================================================= */
+.telegram-section h4 {
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.04em;
+}
+.telegram-status-box {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+.telegram-status-box code {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.82rem;
+    color: var(--gold-bright, #d4a73a);
+}
+.telegram-instructions {
+    background: rgba(212, 167, 58, 0.06);
+    border-left: 3px solid var(--gold-bright, #d4a73a);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-top: 10px;
+}
+.telegram-instructions code {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.82rem;
+}

@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from .db import ROOT_DIR, init_db, get_conn, db_conn, VALID_ROLES, ROLE_ADMIN, ROLE_OFFICER, ROLE_MEMBER
 from .auth import login_required, current_user, get_user_role, role_at_least, require_role
+from . import telegram as tg
 
 app = Flask(__name__, static_folder=ROOT_DIR, static_url_path="")
 
@@ -378,6 +379,13 @@ def get_state():
     if not _assert_member(static_id, session["user_id"]):
         return jsonify({"error": "not_a_member"}), 403
 
+    # Fase 12: piggyback nos GETs para disparar lembretes 24 h / no dia.
+    # Best-effort — falhas silenciosas para não impactar a leitura do estado.
+    try:
+        _maybe_send_reminders(static_id)
+    except Exception:
+        pass
+
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -566,6 +574,18 @@ def put_state():
         cur = conn.execute("SELECT updated_at FROM statics WHERE id = ?", (static_id,))
         updated_at = cur.fetchone()["updated_at"]
 
+    # Fase 12: dispara notificações no Telegram para eventos novos/adiados.
+    # Falhas silenciosas — best-effort, não bloqueia o save.
+    try:
+        _notify_new_raid_events(
+            payload,
+            old_data.get("raidEvents"),
+            payload.get("raidEvents"),
+            static_id,
+        )
+    except Exception:
+        pass
+
     new_etag = _compute_state_etag(static_id, updated_at, session["user_id"], role)
     resp = jsonify({"ok": True, "etag": new_etag, "updated_at": updated_at})
     resp.headers["ETag"] = new_etag
@@ -699,6 +719,208 @@ def remove_static_member(static_id, user_id):
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
     return jsonify({"ok": True, "deleted_user_id": user_id, "slot_orphaned": slot_orphaned})
+
+
+# ==========================================================================
+# Fase 12 — Integração Telegram
+# ==========================================================================
+
+def _get_static_telegram_chat_id(static_id):
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT telegram_chat_id FROM statics WHERE id = ?", (static_id,))
+        row = cur.fetchone()
+        return row["telegram_chat_id"] if row else None
+    finally:
+        conn.close()
+
+
+def _set_static_telegram_chat_id(static_id, chat_id):
+    chat_id_str = str(chat_id) if chat_id is not None else None
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE statics SET telegram_chat_id = ? WHERE id = ?",
+            (chat_id_str, static_id),
+        )
+
+
+def _count_confirmed_for_date(state_data, date_str):
+    """Conta jogadores com 'avail' ou 'late' no monthlySchedule da data."""
+    roster = state_data.get("roster") or []
+    count = 0
+    for p in roster:
+        if not isinstance(p, dict):
+            continue
+        sched = p.get("monthlySchedule") or {}
+        if sched.get(date_str) in ("avail", "late"):
+            count += 1
+    return count
+
+
+def _is_dynamic_prog(state_data, prog_id):
+    """Detecta se um prog custom é dynamic. Hardcoded é sempre full party."""
+    customs = state_data.get("customContents") or []
+    for c in customs:
+        if isinstance(c, dict) and c.get("id") == prog_id:
+            return (c.get("partyMode") or "full") == "dynamic"
+    return False
+
+
+def _notify_new_raid_events(state_data, old_events, new_events, static_id):
+    """Detecta eventos recém-criados ou adiados e dispara notificações."""
+    chat_id = _get_static_telegram_chat_id(static_id)
+    if not chat_id or not tg.is_configured():
+        return
+
+    old_by_id = {e.get("id"): e for e in (old_events or []) if isinstance(e, dict)}
+    for evt in (new_events or []):
+        if not isinstance(evt, dict):
+            continue
+        evt_id = evt.get("id")
+        prog_name = evt.get("progName") or evt.get("progId") or "Raid"
+        quorum = evt.get("quorum") or 0
+        dynamic = _is_dynamic_prog(state_data, evt.get("progId"))
+
+        if evt_id not in old_by_id:
+            # Evento novo
+            target_date = evt.get("postponedTo") or evt.get("date")
+            confirmed = _count_confirmed_for_date(state_data, target_date)
+            msg = tg.format_event_created(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            tg.send_group_message(chat_id, msg)
+        else:
+            # Evento existente: checa adiamento
+            old_evt = old_by_id[evt_id]
+            if evt.get("postponedTo") and evt.get("postponedTo") != old_evt.get("postponedTo"):
+                msg = tg.format_event_postponed(prog_name, evt.get("postponedTo"))
+                tg.send_group_message(chat_id, msg)
+
+
+def _maybe_send_reminders(static_id):
+    """Piggyback: checa eventos do dia/amanhã e dispara lembretes pendentes.
+
+    Chamado dentro do GET /api/state. Best-effort — falhas são engolidas.
+    """
+    chat_id = _get_static_telegram_chat_id(static_id)
+    if not chat_id or not tg.is_configured():
+        return
+
+    from datetime import date, timedelta
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT data_json FROM statics WHERE id = ?", (static_id,))
+        row = cur.fetchone()
+        if not row:
+            return
+        try:
+            data = json.loads(row["data_json"] or "{}")
+        except (TypeError, ValueError):
+            return
+    finally:
+        conn.close()
+
+    events = data.get("raidEvents") or []
+    if not events:
+        return
+
+    changed = False
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        target_date = evt.get("postponedTo") or evt.get("date")
+        prog_name = evt.get("progName") or evt.get("progId") or "Raid"
+        quorum = evt.get("quorum") or 0
+        dynamic = _is_dynamic_prog(data, evt.get("progId"))
+        confirmed = _count_confirmed_for_date(data, target_date)
+
+        if target_date == tomorrow and not evt.get("reminder24hSent"):
+            msg = tg.format_reminder_24h(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            if tg.send_group_message(chat_id, msg):
+                evt["reminder24hSent"] = True
+                changed = True
+        elif target_date == today and not evt.get("reminderTodaySent"):
+            msg = tg.format_reminder_today(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            if tg.send_group_message(chat_id, msg):
+                evt["reminderTodaySent"] = True
+                changed = True
+
+    if changed:
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE statics SET data_json = ? WHERE id = ?",
+                (json.dumps(data, ensure_ascii=False), static_id),
+            )
+
+
+@app.post("/api/telegram/webhook")
+def telegram_webhook():
+    """Recebe updates do Telegram. Autenticação via secret token no header."""
+    # Valida secret (proteção contra invocações externas)
+    incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    expected = tg.get_webhook_secret() or ""
+    if not expected or incoming != expected:
+        return jsonify({"error": "forbidden"}), 403
+
+    update = request.get_json(silent=True) or {}
+    message = update.get("message") or update.get("edited_message") or {}
+    chat = message.get("chat") or {}
+    text = (message.get("text") or "").strip()
+    chat_id = chat.get("id")
+    chat_type = chat.get("type")
+
+    # Vincula o grupo quando recebe /start em um chat de grupo
+    if chat_id and chat_type in ("group", "supergroup"):
+        first_token = text.split()[0] if text else ""
+        # /start ou /start@nome_do_bot
+        if first_token == "/start" or first_token.startswith("/start@"):
+            static_id = _ensure_global_static()
+            _set_static_telegram_chat_id(static_id, chat_id)
+            chat_title = chat.get("title") or "este grupo"
+            confirm = f"✅ Bot vinculado a <b>{chat_title}</b>. Alertas de raid serão enviados aqui."
+            tg.send_group_message(chat_id, confirm)
+            return jsonify({"ok": True, "bound": True, "chat_id": chat_id})
+
+    # Detecta entrada do bot em um novo grupo via my_chat_member
+    member_update = update.get("my_chat_member")
+    if member_update:
+        new_chat = member_update.get("chat") or {}
+        new_status = (member_update.get("new_chat_member") or {}).get("status")
+        if new_chat.get("type") in ("group", "supergroup") and new_status in ("member", "administrator"):
+            static_id = _ensure_global_static()
+            _set_static_telegram_chat_id(static_id, new_chat.get("id"))
+            greeting = "👋 Olá! Mande /start aqui pra confirmar o vínculo com o Mhigos Raid Planner."
+            tg.send_group_message(new_chat.get("id"), greeting)
+            return jsonify({"ok": True, "bound": True, "chat_id": new_chat.get("id")})
+
+    return jsonify({"ok": True})
+
+
+@app.get("/api/telegram/status")
+@login_required
+def telegram_status():
+    """Retorna o status da integração. Qualquer membro pode consultar."""
+    user = current_user()
+    static_id = user["active_static_id"] or _ensure_global_static()
+    chat_id = _get_static_telegram_chat_id(static_id)
+    return jsonify({
+        "configured": tg.is_configured(),
+        "chat_id": chat_id,
+        "bound": bool(chat_id),
+    })
+
+
+@app.post("/api/telegram/unbind")
+@login_required
+def telegram_unbind():
+    """Remove o vínculo do grupo. Apenas admin."""
+    user = current_user()
+    static_id = user["active_static_id"] or _ensure_global_static()
+    if get_user_role(static_id, user["id"]) != ROLE_ADMIN:
+        return jsonify({"error": "forbidden", "required_role": "admin"}), 403
+    _set_static_telegram_chat_id(static_id, None)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
