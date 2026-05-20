@@ -57,6 +57,13 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | F | Light Party Split | Split visual 8p → LP1 (1-4) + LP2 (5-8) em conteúdos Full Party | Sonnet |
 | G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | Sonnet |
 | H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | Sonnet |
+| I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | Opus |
+| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | Sonnet |
+| K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | Sonnet |
+| L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | Sonnet |
+| M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | Sonnet |
+
+> **Fases A-I**: Strategy Planner (canvas). **Fases J-M**: features adjacentes do app principal (eventos, alertas, Telegram).
 
 ---
 
@@ -342,6 +349,263 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase I — Free Draw: Desenho Colaborativo + Color Picker RGB + Modo Seta
+
+**Objetivo:** permitir desenho livre sobre o canvas para marcar caminhos, áreas customizadas e direções de movimentação, com sincronização quase simultânea entre os editores da party. Cada desenho pertence ao frame atual (some/aparece junto com tokens e AoEs ao navegar pelos frames).
+
+1. **Toolbar — nova seção "Desenho"** ao lado das AoEs e marcas:
+   - Ferramenta **Pen (livre)**: cursor desenha polyline ao arrastar
+   - Ferramenta **Arrow (seta)**: idêntico ao pen, mas ao soltar o traço é simplificado e ganha ponta de seta no último ponto — usado para indicar direção de movimentação
+   - Ferramenta **Eraser**: clicar sobre um desenho remove (alternativa ao DEL para mobile)
+2. **Color picker RGB:**
+   - Botão circular no toolbar mostrando a cor atual
+   - Ao clicar, abre popover com seletor RGB. Implementação preferida:
+     - **MVP**: `<input type="color">` (nativo HTML5) embrulhado em wrapper estilizado para combinar com o design system
+     - **Polimento (opcional)**: substituir por um círculo HSL custom em SVG (mais aderente ao design FFXIV)
+   - Última cor escolhida persistida por usuário em `localStorage` (`drawColor`)
+   - Espessura do traço configurável (slider 1-8px, ou 3 presets: fino/médio/grosso)
+3. **Conversão Pen → Arrow:**
+   - Ao soltar o traço em modo Arrow: aplicar simplificação Ramer-Douglas-Peucker (tolerância ~3px) para reduzir pontos
+   - Calcular vetor dos últimos 2-3 pontos para orientar a ponta
+   - Renderizar como `<polyline>` + `<polygon>` (ponta triangular) ou `<path>` com `marker-end`
+4. **Estado no frame:**
+   ```json
+   "drawings": [
+     {
+       "id": "uuid",
+       "type": "stroke" | "arrow",
+       "color": "#rrggbb",
+       "thickness": 3,
+       "points": [{"x": ..., "y": ...}, ...],
+       "createdBy": <user_id>,
+       "createdAt": "iso"
+     }
+   ]
+   ```
+   Adicionar `drawings: []` ao schema de frame na Fase B.
+5. **Sincronização real-time (Socket.IO):**
+   - Durante o desenho: emit `op: stroke_progress` a cada ~50ms (throttle) com os últimos pontos coletados → outros clientes renderizam um stroke "fantasma" progressivamente
+   - Ao soltar: emit `op: stroke_commit` (ou `arrow_commit`) com o objeto final, substituindo o fantasma
+   - Outros usuários do mesmo frame veem o desenho aparecer com latência < 200ms
+   - Edição/remoção: `op: delete_drawing`, `op: clear_frame_drawings`
+6. **Edição local:**
+   - Clicar sobre um desenho → selecionado (highlight)
+   - DEL ou Eraser → remove
+   - Botão "Limpar desenhos deste frame" (com confirmação) no painel direito
+7. **Permissões:** mesma regra das outras operações de canvas — só membros ativos no prog (`can_edit_plan`)
+
+### Critério de aceite
+
+- 2 usuários editando ao mesmo tempo veem o traço um do outro aparecendo progressivamente
+- Modo Arrow gera uma seta limpa (não a polyline crua) — ponta visualmente clara
+- Color picker funciona nos 3 temas (Clear Blue Crystal / Classic Dark / Warrior of Darkness)
+- Desenhos pertencem ao frame: ao navegar pelos frames, desenhos somem/aparecem corretamente
+- DEL + Eraser removem desenhos selecionados; "Limpar" remove todos do frame com confirmação
+
+---
+
+## Fase J — Detalhes do Evento (`description` + botão "Detalhes")
+
+**Objetivo:** permitir que o criador do evento OU um officer/admin anote uma descrição livre para cada evento agendado (objetivos da sessão, observações de composição, regras específicas de loot, links, etc), visível por todos via botão "Detalhes".
+
+### Schema
+
+1. Adicionar campo `description: string` ao objeto `raidEvent` criado em [js/app.js:1644](js/app.js:1644). Default `""`. Sem migração necessária (campos faltantes em eventos antigos são tratados como `""`).
+2. Sem limite duro no MVP, mas validação client-side soft em ~2000 chars (com counter).
+
+### Edição (criador + officer/admin)
+
+3. Novo helper de permissão em [js/app.js:177-197](js/app.js:177):
+   ```js
+   function canEditEventDetails(evt) {
+     if (!evt) return false;
+     return currentUserId === evt.createdBy || isOfficer();
+   }
+   ```
+4. No `openScheduleModal` ([js/app.js:1683](js/app.js:1683)), adicionar `<textarea>` ao final do modal:
+   - Label: "Detalhes do evento (opcional)"
+   - Placeholder: "Objetivos da sessão, observações sobre composição, regras de loot…"
+   - Counter de chars
+   - Só aparece se `canEditEventDetails(evt)` (criador ou officer)
+5. Botão "Salvar" do modal persiste `description` junto com `progId`/`quorum`.
+
+### Visualização (qualquer membro da static)
+
+6. **Card no Quick Schedule** ([js/app.js:2180](js/app.js:2180)): adicionar botão pequeno `Detalhes` no header do bloco do evento. Estilo `.ff-btn` em variante mini. **Só aparece se `evt.description.trim() !== ""`**.
+7. **Célula do calendário mensal**: adicionar indicador clicável discreto (ex: ícone pequeno tipo "📄" ou um traço gráfico) na célula do dia agendado quando há descrição. Clicar abre o mesmo modal de leitura.
+8. **Modal de leitura** (`modal-event-details` em [index.html](index.html)):
+   - Header: `<nome do prog> — <data formatada>`
+   - Body: descrição renderizada com `white-space: pre-wrap` (preserva quebras de linha) e escape de HTML (evita XSS)
+   - Botão "Editar" no rodapé apenas se `canEditEventDetails(evt)` — abre `openScheduleModal` no estado de edição
+
+### Critério de aceite
+
+- Criador consegue editar; officer/admin também; outros membros só leem
+- Botão "Detalhes" só aparece quando há texto
+- Renderização preserva quebras de linha e escapa HTML
+- Indicador de descrição visível no calendário mensal nos dias com evento+descrição
+- Persiste no banco (`statics.data_json`)
+
+---
+
+## Fase K — Listagem de "Talvez / Atraso" na Mensagem de Atenção
+
+**Objetivo:** a mensagem atual em [js/app.js:2218](js/app.js:2218) ("Atenção: há titulares com status 'Talvez / Atraso'") é genérica e ainda dá a impressão de que essas pessoas estão confirmadas. Listar os nicks explicitamente e deixar claro que o status é **incerto**.
+
+1. **Coletar lista separada** no loop de [js/app.js:2156-2169](js/app.js:2156):
+   - Substituir `tLate: boolean` por `tLateNames: []` (titulares com `late`)
+   - Adicionar `rLateNames: []` (reservas com `late`) — também relevante para o officer saber
+   - Quem está em `avail` continua contando para o quórum como hoje
+2. **Nova mensagem de atenção** substituindo a linha 2218:
+   ```js
+   if (tLateNames.length > 0 || rLateNames.length > 0) {
+     const all = [...tLateNames, ...rLateNames];
+     alertsHtml += `<div style="...">
+       Status incerto (Talvez/Atraso) — não confirmados: ${all.join(", ")}
+     </div>`;
+   }
+   ```
+3. **Decisão em aberto a confirmar no início da fase:** atualmente o quórum (`if (sVal === "avail" || sVal === "late")` em [js/app.js:2158](js/app.js:2158)) **conta `late` como confirmação**. Isso pode estar inflando o quórum percebido. Validar com o usuário se:
+   - **Opção A**: manter como está (late conta, mas avisa) — fase só lista os nomes
+   - **Opção B**: parar de contar `late` no quórum, e listar separadamente "Confirmados: X, Incerto: Y"
+   - Recomendação: **Opção B** — mais honesto sobre o estado real do dia.
+
+### Critério de aceite
+
+- Listagem clara dos nicks com status `late`
+- Copy deixa explícito que esses jogadores **não estão confirmados**
+- Mensagem aparece tanto para titulares quanto para reservas com `late`
+- Comportamento de quórum: alinhado com a decisão da Opção A ou B (validar)
+
+---
+
+## Fase L — Aviso de Quórum Potencial (Sugestão de Full Party)
+
+**Objetivo:** quando houver **≥8 jogadores** marcando disponibilidade num dia *sem evento agendado*, alertar admin/officer (no painel principal e via Telegram) que podem agendar uma raid Full Party. O alerta considera **qualquer membro do roster** (titular ou banco/reserva) — o que importa é ter gente o suficiente disponível.
+
+### Backend (Python — em `app.py` + novo helper)
+
+1. Nova função `evaluate_quorum_opportunities(state)` que roda ao fim de cada `save_state`:
+   - Itera dias futuros nos próximos N dias (ex: 14)
+   - Para cada `dateKey`:
+     - **Pular** se já existe `raidEvent` para esse dia (alinhado com a decisão "só em dias sem evento")
+     - `count = nº de roster (titular OU reserva) com monthlySchedule[dateKey] === "avail"` (apenas `avail`, **não conta `late`** — incertos não disparam alerta no grupo)
+     - Se `count >= 8` E `state.quorumSuggestionsSent[dateKey]` ainda não está marcado:
+       - Marca `state.quorumSuggestionsSent[dateKey] = true`
+       - Envia `format_quorum_suggestion(date_str, count)` via `send_group_message(chat_id, ...)`
+2. **Persistência da flag:**
+   - Novo campo `state.quorumSuggestionsSent: { "2026-05-30": true, "2026-06-02": true }`
+   - Limpar entradas com data passada na mesma função (housekeeping)
+3. **Dedup:** uma vez por data. Se cair de 8→7→8, **não re-envia** — evita spam no grupo.
+
+### Telegram — nova mensagem em [server/telegram.py](server/telegram.py)
+
+4. ```python
+   def format_quorum_suggestion(date_str, count):
+       pretty = _format_date(date_str)
+       return (
+           f"<b>Oportunidade de raid</b>\n"
+           f"{pretty}: {count} pessoa(s) disponíveis.\n"
+           f"Possível agendar uma Full Party (8p).\n\n"
+           f"Agende em {SITE_URL}."
+       )
+   ```
+
+### Painel principal (UI) — apenas para officer/admin
+
+5. Nova seção no topo do `quick-schedule-list` em [js/app.js:2103](js/app.js:2103) (ou bloco próprio acima):
+   - Título: "Oportunidades de agendamento"
+   - Para cada dia nos próximos 14 dias **sem evento** e com `count >= 8`:
+     - Linha: `<data> — N pessoas disponíveis (Full Party possível) — [Agendar]`
+     - Botão "Agendar" abre `openScheduleModal(dateKey)`
+6. **Visibilidade**: só renderiza para `isOfficer()`. Membros comuns não veem essa seção.
+7. **Se não há oportunidades**: seção fica oculta (sem placeholder vazio).
+
+### Critério de aceite
+
+- Dia com 8+ disponíveis (sem evento, contando titular + banco) → aparece para officer/admin na main page
+- Dia com 7 ou menos → não aparece
+- Telegram envia exatamente 1 mensagem por data ao cruzar 8
+- Se cair de 8→7→8, **não** re-envia
+- Se já há evento agendado para o dia, nem painel nem Telegram avisam
+- Botão "Agendar" abre o modal já preenchido com a data correta
+
+---
+
+## Fase M — Avisos de Adiamento e Cancelamento no Telegram
+
+**Objetivo:** o aviso de adiamento já existe em [server/app.py:790-795](server/app.py:790) mas a mensagem atual omite a data anterior. Além disso, **cancelamento (deleção de evento) hoje não dispara nenhuma notificação**. Esta fase corrige os dois.
+
+### Adiamento — incluir data anterior na mensagem
+
+1. Modificar assinatura de [`format_event_postponed`](server/telegram.py:109) para receber também a data antiga:
+   ```python
+   def format_event_postponed(prog_name, old_date_str, new_date_str):
+       old_pretty = _format_date(old_date_str)
+       new_pretty = _format_date(new_date_str)
+       return (
+           f"<b>Raid adiada</b>\n"
+           f"{prog_name} foi adiada de {old_pretty} para {new_pretty}.\n\n"
+           f"Confirme sua presença em {SITE_URL}."
+       )
+   ```
+2. Em [server/app.py:794](server/app.py:794), passar a data anterior. O `old_evt` já está disponível no escopo (`old_by_id[evt_id]`):
+   ```python
+   old_target = old_evt.get("postponedTo") or old_evt.get("date")
+   msg = tg.format_event_postponed(prog_name, old_target, evt.get("postponedTo"))
+   ```
+3. Observação: se o evento foi adiado várias vezes, `old_target` é sempre a data **anterior ao adiamento atual** (não a data original do agendamento). Isso é o comportamento desejado — o grupo precisa saber de onde *está saindo* a raid agora.
+
+### Cancelamento — nova função + detecção em `_notify_new_raid_events`
+
+4. Nova função em [server/telegram.py](server/telegram.py):
+   ```python
+   def format_event_cancelled(prog_name, date_str):
+       pretty = _format_date(date_str)
+       return f"<b>Raid cancelada</b>\n{prog_name} — {pretty}."
+   ```
+5. Modificar [`_notify_new_raid_events`](server/app.py:769) para também detectar **eventos deletados** — ids que estão em `old_events` mas não em `new_events`:
+   ```python
+   new_ids = {e.get("id") for e in (new_events or []) if isinstance(e, dict)}
+   for old_evt in (old_events or []):
+       if not isinstance(old_evt, dict):
+           continue
+       if old_evt.get("id") not in new_ids:
+           prog_name = old_evt.get("progName") or old_evt.get("progId") or "Raid"
+           target_date = old_evt.get("postponedTo") or old_evt.get("date")
+           msg = tg.format_event_cancelled(prog_name, target_date)
+           tg.send_group_message(chat_id, msg)
+   ```
+
+### Edge case — remoção em massa quando um prog inteiro é deletado
+
+6. Quando um prog é removido da static ([js/app.js:2774](js/app.js:2774)), **todos os seus eventos futuros são apagados de uma vez**. Sem proteção, isso disparaaria múltiplas mensagens de cancelamento no grupo.
+7. **Decisão a tomar durante a fase** (validar com usuário):
+   - **Opção A — supressão por threshold**: se houver >2 cancelamentos no mesmo `save_state`, suprimir todos e enviar 1 mensagem agregada ("X raids canceladas — prog removido"). Simples e seguro.
+   - **Opção B — sem proteção**: cada evento gera 1 mensagem. Pode poluir o grupo se um prog tinha muitos eventos futuros, mas é raro.
+   - Recomendação: **Opção A** com threshold de 2.
+
+### Critério de aceite
+
+- Adiar uma raid: Telegram recebe mensagem mencionando **de X para Y**
+- Cancelar uma raid: Telegram recebe mensagem de cancelamento com data + prog
+- Adiar uma raid já adiada: mensagem mostra "de [data atual antes do novo adiamento] para [nova data]"
+- Remover um prog inteiro com N eventos futuros: ou 1 mensagem agregada (Opção A) ou N mensagens (Opção B), conforme decisão
+
+---
+
+## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
+
+**Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
+
+- Criar comandos novos no BotFather
+- Mexer no webhook ou no secret
+- Mudar permissões do bot no grupo do Telegram
+
+**Único pré-requisito** (que provavelmente já está atendido se os lembretes 24h/dia já funcionam): a static precisa estar com `telegram_chat_id` salvo no banco. Se algum dia o bot for removido do grupo, basta re-adicionar e configurar o `chat_id` novamente.
+
+---
+
 ## Considerações Arquiteturais
 
 ### Por que Flask-SocketIO?
@@ -383,7 +647,12 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | F | 1 sessão (Sonnet) |
 | G | 2 sessões (Sonnet) |
 | H | 1-2 sessões (Sonnet) |
-| **Total** | **~15-20 sessões** |
+| I | 2 sessões (Opus) — desenho + sync + color picker |
+| J | 1 sessão (Sonnet) — descrição + modal + permissões |
+| K | 0.5 sessão (Sonnet) — listagem + revisão de copy |
+| L | 1 sessão (Sonnet) — aviso 8+ + Telegram + dedup |
+| M | 0.5 sessão (Sonnet) — adiamento melhorado + cancelamento |
+| **Total** | **~19-25 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
