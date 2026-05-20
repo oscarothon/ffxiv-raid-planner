@@ -131,6 +131,16 @@ def format_event_cancelled_bulk(count):
     )
 
 
+def format_quorum_suggestion(date_str, count):
+    pretty = _format_date(date_str)
+    return (
+        f"✨ <b>Oportunidade de raid</b>\n"
+        f"{pretty}: {count} pessoa(s) disponíveis.\n"
+        f"Possível agendar uma Full Party (8p).\n\n"
+        f"Agende em {SITE_URL}."
+    )
+
+
 def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False):
     pretty_date = _format_date(date_str)
     if dynamic:

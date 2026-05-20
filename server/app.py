@@ -574,7 +574,7 @@ def put_state():
         cur = conn.execute("SELECT updated_at FROM statics WHERE id = ?", (static_id,))
         updated_at = cur.fetchone()["updated_at"]
 
-    # Fase 12: dispara notificações no Telegram para eventos novos/adiados.
+    # Fase 12: dispara notificações no Telegram para eventos novos/adiados/cancelados.
     # Falhas silenciosas — best-effort, não bloqueia o save.
     try:
         _notify_new_raid_events(
@@ -583,6 +583,20 @@ def put_state():
             payload.get("raidEvents"),
             static_id,
         )
+    except Exception:
+        pass
+
+    # Fase L: avalia oportunidades de quórum (8+ confirmados em dia sem evento)
+    # e re-persiste se quorumSuggestionsSent foi atualizado.
+    try:
+        if _evaluate_quorum_opportunities(payload, static_id):
+            with db_conn() as conn:
+                conn.execute(
+                    "UPDATE statics SET data_json = ?, updated_at = datetime('now') WHERE id = ?",
+                    (json.dumps(payload, ensure_ascii=False), static_id),
+                )
+                cur = conn.execute("SELECT updated_at FROM statics WHERE id = ?", (static_id,))
+                updated_at = cur.fetchone()["updated_at"]
     except Exception:
         pass
 
@@ -812,6 +826,47 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
             target_date = old_evt.get("postponedTo") or old_evt.get("date")
             msg = tg.format_event_cancelled(prog_name, target_date)
             tg.send_group_message(chat_id, msg)
+
+
+def _evaluate_quorum_opportunities(state_data, static_id):
+    """Detecta dias com 8+ confirmações sem evento agendado e avisa no Telegram.
+
+    Dispara apenas uma vez por (data) usando state.quorumSuggestionsSent como flag.
+    Modifica state_data in-place. Retorna True se houve mudanças que precisam ser persistidas.
+    """
+    chat_id = _get_static_telegram_chat_id(static_id)
+    if not chat_id or not tg.is_configured():
+        return False
+
+    from datetime import date, timedelta
+    today = date.today()
+    today_iso = today.isoformat()
+
+    booked_dates = set()
+    for evt in (state_data.get("raidEvents") or []):
+        if isinstance(evt, dict):
+            d = evt.get("postponedTo") or evt.get("date")
+            if d:
+                booked_dates.add(d)
+
+    sent_in = state_data.get("quorumSuggestionsSent") or {}
+    # Housekeeping: descarta entradas com data passada
+    sent = {k: v for k, v in sent_in.items() if isinstance(k, str) and k >= today_iso}
+
+    changed = sent != sent_in
+    for delta in range(0, 14):
+        d = (today + timedelta(days=delta)).isoformat()
+        if d in booked_dates or d in sent:
+            continue
+        count = _count_confirmed_for_date(state_data, d)
+        if count >= 8:
+            if tg.send_group_message(chat_id, tg.format_quorum_suggestion(d, count)):
+                sent[d] = True
+                changed = True
+
+    if changed:
+        state_data["quorumSuggestionsSent"] = sent
+    return changed
 
 
 def _maybe_send_reminders(static_id):
