@@ -1081,6 +1081,12 @@ function renderContentPicker() {
                 renderActiveProgsPanel();
                 renderProgTabsBar();
                 renderRosterTables();
+                renderQuickSchedule();
+                if (isOfficer()) {
+                    const pickerEl = document.getElementById("content-picker-panel");
+                    if (pickerEl) pickerEl.hidden = true;
+                    openScheduleModal(null, item.id);
+                }
             });
         }
         gridCont.appendChild(card);
@@ -1686,24 +1692,36 @@ function removeRaidEvent(dateKey) {
 // Modal de Agendamento de Dia (Fase 2A / 11)
 // ==========================================================================
 
-function openScheduleModal(dateKey) {
+function openScheduleModal(dateKey = null, defaultProgId = null) {
     const modal = document.getElementById("modal-schedule-date");
     const title = document.getElementById("modal-sched-title");
     const body  = document.getElementById("modal-sched-body");
     if (!modal || !title || !body) return;
 
-    const [y, m, d] = dateKey.split("-");
-    const label = `${d}/${m}/${y}`;
-    title.textContent = `Agendar — ${label}`;
+    let resolvedDateKey = dateKey;
+    if (dateKey) {
+        const [y, m, d] = dateKey.split("-");
+        title.textContent = `Agendar — ${d}/${m}/${y}`;
+    } else {
+        title.textContent = "Nova Sessão";
+    }
 
-    const existingEvt = getRaidEventForDate(dateKey);
-    const currentProgId = existingEvt ? existingEvt.progId : null;
+    const existingEvt = dateKey ? getRaidEventForDate(dateKey) : null;
+    const currentProgId = existingEvt ? existingEvt.progId : (defaultProgId || null);
     const currentQuorum = existingEvt ? existingEvt.quorum : 6;
     const currentDescription = existingEvt ? (existingEvt.description || "") : "";
     const canEditDetails = !existingEvt || canEditEventDetails(existingEvt);
     const progs = state.activeProgs || [];
 
     let html = `<p class="sched-modal-desc" id="sched-modal-desc">Selecione o conteúdo e o quorum mínimo de confirmações.</p>`;
+
+    if (!dateKey) {
+        html += `
+            <div id="sched-date-row" style="margin-bottom:14px;">
+                <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:4px;">Data da sessão <span style="color:var(--color-late)">*</span></label>
+                <input type="text" id="inp-sched-session-date" class="ff-input" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" style="width:100%;">
+            </div>`;
+    }
 
     // Seleção de prog
     html += `<div class="sched-prog-options">`;
@@ -1751,6 +1769,17 @@ function openScheduleModal(dateKey) {
     }
 
     body.innerHTML = html;
+
+    // Máscara DD/MM/AAAA para campo de data de nova sessão
+    const sessionDateEl = body.querySelector("#inp-sched-session-date");
+    if (sessionDateEl) {
+        sessionDateEl.addEventListener("input", e => {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+            if (v.length > 4) v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+            else if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+            e.target.value = v;
+        });
+    }
 
     // Counter dinâmico do textarea de descrição
     const descEl = body.querySelector("#inp-sched-description");
@@ -1821,14 +1850,26 @@ function openScheduleModal(dateKey) {
 
     function confirmSchedule() {
         if (!selectedProg) return;
+        if (!resolvedDateKey) {
+            const dateEl = body.querySelector("#inp-sched-session-date");
+            const parts = (dateEl?.value || "").trim().split("/");
+            if (parts.length !== 3 || parts[2].length !== 4) {
+                if (dateEl) {
+                    dateEl.style.borderColor = "var(--color-late)";
+                    setTimeout(() => { dateEl.style.borderColor = ""; }, 1500);
+                }
+                return;
+            }
+            resolvedDateKey = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+        }
         // Modo dynamic: quorum não se aplica; gravamos 0 para sinalizar.
         const quorum = isDynamicProg(selectedProg)
             ? 0
             : (parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6);
         const descInput = body.querySelector("#inp-sched-description");
         const description = descInput ? descInput.value : undefined;
-        upsertRaidEvent(dateKey, selectedProg, quorum, description);
-        addScheduleNotification(dateKey, selectedProg);
+        upsertRaidEvent(resolvedDateKey, selectedProg, quorum, description);
+        addScheduleNotification(resolvedDateKey, selectedProg);
         saveState();
         renderScheduleTable();
         renderQuickSchedule();
@@ -2336,10 +2377,13 @@ function renderQuickSchedule() {
         raidBlock.style.marginBottom = "10px";
 
         const hasDescription = !!(raidEvt && (raidEvt.description || "").trim());
-        const detailsBtnHtml = hasDescription
-            ? `<button class="ff-btn-small btn-event-details-open" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Detalhes</button>`
-            : "";
-        const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;"><span>${progObj.name.split(" (")[0]}</span>${detailsBtnHtml}</div>`;
+        const showEditBtn = !!(raidEvt && isOfficer());
+        const headerBtnHtml = showEditBtn
+            ? `<button class="ff-btn-small btn-quick-edit-event" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Editar</button>`
+            : hasDescription
+                ? `<button class="ff-btn-small btn-event-details-open" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Detalhes</button>`
+                : "";
+        const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;"><span>${progObj.name.split(" (")[0]}</span>${headerBtnHtml}</div>`;
 
         if (foundDateKey) {
             const dayNumStr = String(foundDateObj.getDate()).padStart(2, '0');
@@ -2414,13 +2458,43 @@ function renderQuickSchedule() {
             const noEvtMsg = raidEvt
                 ? `Evento agendado para ${(raidEvt.postponedTo || raidEvt.date).split("-").reverse().join("/")} — sem confirmações ainda.`
                 : "Nenhuma data de raid agendada para este conteúdo.";
+            const quickSchedFormHtml = (!raidEvt && isOfficer())
+                ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
+                       <input type="text" class="ff-input inp-quick-sched-date" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" style="flex:1;font-size:0.82rem;padding:5px 8px;">
+                       <button class="ff-btn-action btn-quick-sched-open" style="font-size:0.82rem;padding:5px 10px;">Agendar</button>
+                   </div>`
+                : "";
             raidBlock.innerHTML = `
                 ${headerHtml}
                 <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">${noEvtMsg}</div>
+                ${quickSchedFormHtml}
             `;
         }
 
         container.appendChild(raidBlock);
+
+        // Bind do mini-form de agendamento (apenas quando sem evento)
+        const quickDateInput = raidBlock.querySelector(".inp-quick-sched-date");
+        const quickSchedBtn  = raidBlock.querySelector(".btn-quick-sched-open");
+        if (quickDateInput && quickSchedBtn) {
+            quickDateInput.addEventListener("input", e => {
+                let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                if (v.length > 4) v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+                else if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+                e.target.value = v;
+            });
+            quickSchedBtn.addEventListener("click", () => {
+                const parts = quickDateInput.value.trim().split("/");
+                if (parts.length !== 3 || parts[2].length !== 4) {
+                    quickDateInput.style.borderColor = "var(--color-late)";
+                    setTimeout(() => { quickDateInput.style.borderColor = ""; }, 1500);
+                    return;
+                }
+                const dateKey2 = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                playSfx('click');
+                openScheduleModal(dateKey2, progId);
+            });
+        }
     });
 
     // Bind dos botões "Detalhes" — todos delegados via classe
@@ -2429,6 +2503,16 @@ function renderQuickSchedule() {
             e.stopPropagation();
             const dk = btn.getAttribute("data-date");
             if (dk) openEventDetailsModal(dk);
+        });
+    });
+
+    // Bind dos botões "Editar" (officer) — abre modal de agendamento diretamente
+    container.querySelectorAll(".btn-quick-edit-event").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            playSfx('click');
+            const dk = btn.getAttribute("data-date");
+            if (dk) openScheduleModal(dk);
         });
     });
 }
