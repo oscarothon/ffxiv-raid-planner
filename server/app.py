@@ -745,14 +745,17 @@ def _set_static_telegram_chat_id(static_id, chat_id):
 
 
 def _count_confirmed_for_date(state_data, date_str):
-    """Conta jogadores com 'avail' ou 'late' no monthlySchedule da data."""
+    """Conta jogadores com 'avail' no monthlySchedule da data.
+
+    'late' (Talvez/Atraso) é status incerto e não conta como confirmação.
+    """
     roster = state_data.get("roster") or []
     count = 0
     for p in roster:
         if not isinstance(p, dict):
             continue
         sched = p.get("monthlySchedule") or {}
-        if sched.get(date_str) in ("avail", "late"):
+        if sched.get(date_str) == "avail":
             count += 1
     return count
 

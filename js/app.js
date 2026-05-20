@@ -1628,7 +1628,7 @@ function getRaidEventForProg(progId) {
 
 function getAvailCountForDate(dateKey) {
     return (state.roster || []).filter(p =>
-        p.monthlySchedule && (p.monthlySchedule[dateKey] === "avail" || p.monthlySchedule[dateKey] === "late")
+        p.monthlySchedule && p.monthlySchedule[dateKey] === "avail"
     ).length;
 }
 
@@ -2131,7 +2131,8 @@ function renderQuickSchedule() {
         let foundDateObj = null;
         let confTitulares = [];
         let confReservas = [];
-        let hasTitularLate = false;
+        let lateTitulares = [];
+        let lateReservas = [];
 
         // Procura a data do evento (ou varre 45 dias se não houver evento)
         const datesToCheck = raidEvt
@@ -2149,30 +2150,29 @@ function renderQuickSchedule() {
             const evtForDate = getRaidEventForDate(dateKey);
             if (!raidEvt && (!evtForDate || evtForDate.progId !== progId)) continue;
 
-            let tConf = [];
-            let rConf = [];
-            let tLate = false;
+            let tAvail = [];
+            let tLate  = [];
+            let rAvail = [];
+            let rLate  = [];
 
             progTitulares.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail" || sVal === "late") {
-                    tConf.push(p.name || "Sem Nick");
-                    if (sVal === "late") tLate = true;
-                }
+                if (sVal === "avail")     tAvail.push(p.name || "Sem Nick");
+                else if (sVal === "late") tLate.push(p.name  || "Sem Nick");
             });
 
             progReservas.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail" || sVal === "late") {
-                    rConf.push(p.name || "Sem Nick");
-                }
+                if (sVal === "avail")     rAvail.push(p.name || "Sem Nick");
+                else if (sVal === "late") rLate.push(p.name  || "Sem Nick");
             });
 
-            foundDateKey = dateKey;
-            foundDateObj = dObj;
-            confTitulares = tConf;
-            confReservas = rConf;
-            hasTitularLate = tLate;
+            foundDateKey   = dateKey;
+            foundDateObj   = dObj;
+            confTitulares  = tAvail;
+            confReservas   = rAvail;
+            lateTitulares  = tLate;
+            lateReservas   = rLate;
             break;
         }
 
@@ -2207,16 +2207,17 @@ function renderQuickSchedule() {
                 borderCol = quorumMet ? "var(--color-avail)"      : "var(--color-late)";
                 quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:${quorumMet ? 'var(--color-avail)' : 'var(--color-late)'};">${totalConfCount}/${quorum}</span>`;
 
-                if (quorumMet && !hasTitularLate) {
+                if (quorumMet) {
                     alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">Quorum atingido</div>`;
                 } else {
                     const faltam = quorum - totalConfCount;
                     if (faltam > 0) {
                         alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Faltam ${faltam} confirmação(ões) para o quorum</div>`;
                     }
-                    if (hasTitularLate) {
-                        alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Atenção: há titulares com status "Talvez / Atraso"</div>`;
-                    }
+                }
+                const lateAll = [...lateTitulares, ...lateReservas];
+                if (lateAll.length > 0) {
+                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Status incerto (Talvez/Atraso) — não confirmados: ${lateAll.join(", ")}</div>`;
                 }
                 if (confReservas.length > 0) {
                     alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
