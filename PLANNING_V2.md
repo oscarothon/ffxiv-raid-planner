@@ -47,23 +47,24 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ## Tabela Resumo
 
-| # | Fase | Descrição | Modelo sugerido |
-|---|------|-----------|:---:|
-| A | Foundation | Backend WebSocket (Flask-SocketIO) + tabela `plans` + permissões | Opus |
-| B | Canvas Core | Arena SVG circular + grid + tokens de jogadores draggáveis (real-time) | Opus |
-| C | AOEs & Marcas | Toolbar de AoE shapes, waymarks A-D / 1-4, target markers | Opus |
-| D | Timeline | Multi-step (frames) com snapshot por frame + navegação | Opus |
-| E | Plan Manager | UI de listagem/criação/renomeação/deleção de planos por prog | Sonnet |
-| F | Light Party Split | Split visual 8p → LP1 (1-4) + LP2 (5-8) em conteúdos Full Party | Sonnet |
-| G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | Sonnet |
-| H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | Sonnet |
-| I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | Opus |
-| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | Sonnet |
-| K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | Sonnet |
-| L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | Sonnet |
-| M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | Sonnet |
+| # | Fase | Descrição | Status | Modelo |
+|---|------|-----------|:------:|:------:|
+| A | Foundation | Backend WebSocket (Flask-SocketIO) + tabela `plans` + permissões | ⏳ | Opus |
+| B | Canvas Core | Arena SVG circular + grid + tokens de jogadores draggáveis (real-time) | ⏳ | Opus |
+| C | AOEs & Marcas | Toolbar de AoE shapes, waymarks A-D / 1-4, target markers | ⏳ | Opus |
+| D | Timeline | Multi-step (frames) com snapshot por frame + navegação | ⏳ | Opus |
+| E | Plan Manager | UI de listagem/criação/renomeação/deleção de planos por prog | ⏳ | Sonnet |
+| F | Light Party Split | Split visual 8p → LP1 (1-4) + LP2 (5-8) em conteúdos Full Party | ⏳ | Sonnet |
+| G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | ⏳ | Sonnet |
+| H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | ⏳ | Sonnet |
+| I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | ⏳ | Opus |
+| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | ⏳ | Sonnet |
+| K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
+| L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
+| M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
 
 > **Fases A-I**: Strategy Planner (canvas). **Fases J-M**: features adjacentes do app principal (eventos, alertas, Telegram).
+> Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
@@ -448,7 +449,9 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
-## Fase K — Listagem de "Talvez / Atraso" na Mensagem de Atenção
+## Fase K — Listagem de "Talvez / Atraso" na Mensagem de Atenção ✅
+
+**Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `03b9628`
 
 **Objetivo:** a mensagem atual em [js/app.js:2218](js/app.js:2218) ("Atenção: há titulares com status 'Talvez / Atraso'") é genérica e ainda dá a impressão de que essas pessoas estão confirmadas. Listar os nicks explicitamente e deixar claro que o status é **incerto**.
 
@@ -479,7 +482,9 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
-## Fase L — Aviso de Quórum Potencial (Sugestão de Full Party)
+## Fase L — Aviso de Quórum Potencial (Sugestão de Full Party) ✅
+
+**Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `ab9bd0f`
 
 **Objetivo:** quando houver **≥8 jogadores** marcando disponibilidade num dia *sem evento agendado*, alertar admin/officer (no painel principal e via Telegram) que podem agendar uma raid Full Party. O alerta considera **qualquer membro do roster** (titular ou banco/reserva) — o que importa é ter gente o suficiente disponível.
 
@@ -532,7 +537,9 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
-## Fase M — Avisos de Adiamento e Cancelamento no Telegram
+## Fase M — Avisos de Adiamento e Cancelamento no Telegram ✅
+
+**Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `d10f1a7`
 
 **Objetivo:** o aviso de adiamento já existe em [server/app.py:790-795](server/app.py:790) mas a mensagem atual omite a data anterior. Além disso, **cancelamento (deleção de evento) hoje não dispara nenhuma notificação**. Esta fase corrige os dois.
 
@@ -649,10 +656,10 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) — desenho + sync + color picker |
 | J | 1 sessão (Sonnet) — descrição + modal + permissões |
-| K | 0.5 sessão (Sonnet) — listagem + revisão de copy |
-| L | 1 sessão (Sonnet) — aviso 8+ + Telegram + dedup |
-| M | 0.5 sessão (Sonnet) — adiamento melhorado + cancelamento |
-| **Total** | **~19-25 sessões** |
+| K | ✅ concluída (PR #18) |
+| L | ✅ concluída (PR #18) |
+| M | ✅ concluída (PR #18) |
+| **Total restante** | **~17-22 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
