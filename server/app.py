@@ -770,12 +770,14 @@ def _is_dynamic_prog(state_data, prog_id):
 
 
 def _notify_new_raid_events(state_data, old_events, new_events, static_id):
-    """Detecta eventos recém-criados ou adiados e dispara notificações."""
+    """Detecta eventos recém-criados, adiados ou cancelados e dispara notificações."""
     chat_id = _get_static_telegram_chat_id(static_id)
     if not chat_id or not tg.is_configured():
         return
 
     old_by_id = {e.get("id"): e for e in (old_events or []) if isinstance(e, dict)}
+    new_by_id = {e.get("id"): e for e in (new_events or []) if isinstance(e, dict)}
+
     for evt in (new_events or []):
         if not isinstance(evt, dict):
             continue
@@ -794,8 +796,22 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
             # Evento existente: checa adiamento
             old_evt = old_by_id[evt_id]
             if evt.get("postponedTo") and evt.get("postponedTo") != old_evt.get("postponedTo"):
-                msg = tg.format_event_postponed(prog_name, evt.get("postponedTo"))
+                old_target = old_evt.get("postponedTo") or old_evt.get("date")
+                msg = tg.format_event_postponed(prog_name, old_target, evt.get("postponedTo"))
                 tg.send_group_message(chat_id, msg)
+
+    # Detecta cancelamentos (ids que estavam em old e sumiram em new)
+    cancelled = [e for e in (old_events or [])
+                 if isinstance(e, dict) and e.get("id") not in new_by_id]
+    if len(cancelled) > 2:
+        # Cascateamento (provavelmente remoção de prog inteiro) — agrega
+        tg.send_group_message(chat_id, tg.format_event_cancelled_bulk(len(cancelled)))
+    else:
+        for old_evt in cancelled:
+            prog_name = old_evt.get("progName") or old_evt.get("progId") or "Raid"
+            target_date = old_evt.get("postponedTo") or old_evt.get("date")
+            msg = tg.format_event_cancelled(prog_name, target_date)
+            tg.send_group_message(chat_id, msg)
 
 
 def _maybe_send_reminders(static_id):
