@@ -58,7 +58,7 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | ⏳ | Sonnet |
 | H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | ⏳ | Sonnet |
 | I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | ⏳ | Opus |
-| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | ⏳ | Sonnet |
+| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | ✅ | Sonnet |
 | K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
 | L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
 | M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
@@ -405,7 +405,9 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
-## Fase J — Detalhes do Evento (`description` + botão "Detalhes")
+## Fase J — Detalhes do Evento (`description` + botão "Detalhes") ✅
+
+**Concluída em** [PR #19](https://github.com/oscarothon/ffxiv-raid-planner/pull/19) · commit `462bb75`
 
 **Objetivo:** permitir que o criador do evento OU um officer/admin anote uma descrição livre para cada evento agendado (objetivos da sessão, observações de composição, regras específicas de loot, links, etc), visível por todos via botão "Detalhes".
 
@@ -655,11 +657,11 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | G | 2 sessões (Sonnet) |
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) — desenho + sync + color picker |
-| J | 1 sessão (Sonnet) — descrição + modal + permissões |
+| J | ✅ concluída (PR #19) |
 | K | ✅ concluída (PR #18) |
 | L | ✅ concluída (PR #18) |
 | M | ✅ concluída (PR #18) |
-| **Total restante** | **~17-22 sessões** |
+| **Total restante** | **~16-21 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
