@@ -1082,11 +1082,6 @@ function renderContentPicker() {
                 renderProgTabsBar();
                 renderRosterTables();
                 renderQuickSchedule();
-                if (isOfficer()) {
-                    const pickerEl = document.getElementById("content-picker-panel");
-                    if (pickerEl) pickerEl.hidden = true;
-                    openScheduleModal(null, item.id);
-                }
             });
         }
         gridCont.appendChild(card);
