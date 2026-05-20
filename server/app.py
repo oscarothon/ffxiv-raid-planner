@@ -459,9 +459,30 @@ def _validate_state_diff(old, new, role, user_id):
         violations.append("staticName(admin_only)")
 
     # Campos officer+ (add/remove direto)
-    for fld in ("activeProgs", "scheduledProgs", "raidEvents", "customContents"):
+    for fld in ("activeProgs", "scheduledProgs", "customContents"):
         if old.get(fld) != new.get(fld) and not is_officer:
             violations.append(f"{fld}(officer_only)")
+
+    # raidEvents: officer pode tudo. Member pode editar apenas 'description' de
+    # eventos onde é o criador (Fase J — canEditEventDetails).
+    if old.get("raidEvents") != new.get("raidEvents") and not is_officer:
+        old_evts = {e.get("id"): e for e in (old.get("raidEvents") or []) if isinstance(e, dict)}
+        new_evts = {e.get("id"): e for e in (new.get("raidEvents") or []) if isinstance(e, dict)}
+        if set(old_evts) != set(new_evts):
+            violations.append("raidEvents(add_remove_officer_only)")
+        else:
+            EDITABLE_FIELDS = {"description"}
+            for eid, new_evt in new_evts.items():
+                old_evt = old_evts[eid]
+                if old_evt == new_evt:
+                    continue
+                if old_evt.get("createdBy") != user_id:
+                    violations.append(f"raidEvents[{eid}](not_creator)")
+                    continue
+                changed = {k for k in set(old_evt) | set(new_evt) if old_evt.get(k) != new_evt.get(k)}
+                disallowed = changed - EDITABLE_FIELDS
+                if disallowed:
+                    violations.append(f"raidEvents[{eid}](fields_locked:{','.join(sorted(disallowed))})")
 
     # Diff do roster
     old_by_id = _index_roster(old.get("roster"))

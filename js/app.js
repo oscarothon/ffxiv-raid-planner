@@ -195,6 +195,10 @@ function canEditOtherPlayer(){ return isOfficer(); }
 function canEditPlayer(p)    { return isOfficer() || isOwnSlot(p); }
 function canScheduleDate()   { return isOfficer(); }
 function canEditScheduleFor(p) { return isOfficer() || isOwnSlot(p); }
+function canEditEventDetails(evt) {
+    if (!evt) return false;
+    return isOfficer() || evt.createdBy === currentUserId;
+}
 
 // Rótulo amigável do cargo
 function roleLabel(r) {
@@ -1632,11 +1636,12 @@ function getAvailCountForDate(dateKey) {
     ).length;
 }
 
-function upsertRaidEvent(dateKey, progId, quorum) {
+function upsertRaidEvent(dateKey, progId, quorum, description) {
     if (!state.raidEvents) state.raidEvents = [];
     const existing = state.raidEvents.find(e => (e.postponedTo || e.date) === dateKey && e.progId === progId);
     if (existing) {
         existing.quorum = quorum;
+        if (description !== undefined) existing.description = description;
         return existing;
     }
     // Remove evento anterior para o mesmo progId (só um evento futuro por prog)
@@ -1647,6 +1652,7 @@ function upsertRaidEvent(dateKey, progId, quorum) {
         progName: getProgObj(progId).name,
         date: dateKey,
         quorum,
+        description: description || "",
         createdBy: currentUserId,
         createdAt: new Date().toISOString(),
         postponedTo: null,
@@ -1693,6 +1699,8 @@ function openScheduleModal(dateKey) {
     const existingEvt = getRaidEventForDate(dateKey);
     const currentProgId = existingEvt ? existingEvt.progId : null;
     const currentQuorum = existingEvt ? existingEvt.quorum : 6;
+    const currentDescription = existingEvt ? (existingEvt.description || "") : "";
+    const canEditDetails = !existingEvt || canEditEventDetails(existingEvt);
     const progs = state.activeProgs || [];
 
     let html = `<p class="sched-modal-desc" id="sched-modal-desc">Selecione o conteúdo e o quorum mínimo de confirmações.</p>`;
@@ -1716,6 +1724,19 @@ function openScheduleModal(dateKey) {
             <span class="sched-quorum-hint">players</span>
         </div>`;
 
+    // Descrição do evento (Fase J): visível para criação nova e para quem pode editar
+    if (canEditDetails) {
+        const escapedDesc = currentDescription.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        html += `
+            <div class="sched-description-row" style="margin-top:14px;display:flex;flex-direction:column;gap:6px;">
+                <label class="sched-description-label" for="inp-sched-description" style="font-size:0.85rem;color:var(--text-muted);">Detalhes do evento (opcional):</label>
+                <textarea id="inp-sched-description" class="ff-input" rows="4" maxlength="2000"
+                          style="resize:vertical;font-family:inherit;width:100%;"
+                          placeholder="Objetivos da sessão, observações sobre composição, regras de loot...">${escapedDesc}</textarea>
+                <span id="sched-description-counter" style="font-size:0.72rem;color:var(--text-muted);align-self:flex-end;">${currentDescription.length}/2000</span>
+            </div>`;
+    }
+
     // Adiamento (só se já existe evento nesse dia)
     if (existingEvt) {
         html += `
@@ -1730,6 +1751,15 @@ function openScheduleModal(dateKey) {
     }
 
     body.innerHTML = html;
+
+    // Counter dinâmico do textarea de descrição
+    const descEl = body.querySelector("#inp-sched-description");
+    const descCounter = body.querySelector("#sched-description-counter");
+    if (descEl && descCounter) {
+        descEl.addEventListener("input", () => {
+            descCounter.textContent = `${descEl.value.length}/2000`;
+        });
+    }
 
     // Auto-máscara DD/MM/AAAA no campo de nova data
     const dateInputEl = body.querySelector("#inp-sched-new-date");
@@ -1795,7 +1825,9 @@ function openScheduleModal(dateKey) {
         const quorum = isDynamicProg(selectedProg)
             ? 0
             : (parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6);
-        upsertRaidEvent(dateKey, selectedProg, quorum);
+        const descInput = body.querySelector("#inp-sched-description");
+        const description = descInput ? descInput.value : undefined;
+        upsertRaidEvent(dateKey, selectedProg, quorum, description);
         addScheduleNotification(dateKey, selectedProg);
         saveState();
         renderScheduleTable();
@@ -1815,6 +1847,14 @@ function openScheduleModal(dateKey) {
         confirmBtn.textContent = "Confirmar Agendamento";
         confirmBtn.addEventListener("click", confirmSchedule);
         body.appendChild(confirmBtn);
+    } else if (existingEvt && canEditDetails) {
+        // Permite salvar mudanças (descrição, quorum) sem precisar trocar de prog
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "ff-btn-action";
+        saveBtn.style.cssText = "width:100%;margin-top:12px;justify-content:center;";
+        saveBtn.textContent = "Salvar Alterações";
+        saveBtn.addEventListener("click", confirmSchedule);
+        body.appendChild(saveBtn);
     }
 
     // Toggle formulário de adiamento
@@ -1859,6 +1899,49 @@ function openScheduleModal(dateKey) {
             renderNotificationBanner();
             modal.hidden = true;
             playSfx('click');
+        });
+    }
+
+    modal.hidden = false;
+}
+
+// Fase J: modal de leitura da descrição do evento (qualquer membro pode ver).
+function openEventDetailsModal(dateKey) {
+    const modal = document.getElementById("modal-event-details");
+    const title = document.getElementById("modal-event-details-title");
+    const body  = document.getElementById("modal-event-details-body");
+    if (!modal || !title || !body) return;
+
+    const evt = getRaidEventForDate(dateKey);
+    if (!evt) return;
+
+    const targetDate = evt.postponedTo || evt.date;
+    const [y, m, d] = targetDate.split("-");
+    const wkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const dObj = new Date(targetDate + "T00:00:00");
+    const dateStr = `${wkNames[dObj.getDay()]}, ${d}/${m}/${y}`;
+    const progName = (getProgObj(evt.progId).name || evt.progName || "Raid").split(" (")[0];
+    title.textContent = `${progName} — ${dateStr}`;
+
+    const desc = evt.description || "";
+    const escape = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const canEdit = canEditEventDetails(evt);
+
+    const descHtml = desc.trim()
+        ? `<div style="white-space:pre-wrap;font-size:0.9rem;line-height:1.5;color:var(--text-main);padding:8px 0;">${escape(desc)}</div>`
+        : `<div style="font-size:0.85rem;color:var(--text-muted);font-style:italic;padding:8px 0;">Sem detalhes registrados para este evento.</div>`;
+
+    const editBtnHtml = canEdit
+        ? `<button id="btn-event-details-edit" class="ff-btn-action" style="margin-top:12px;width:100%;justify-content:center;">Editar Detalhes</button>`
+        : "";
+
+    body.innerHTML = `${descHtml}${editBtnHtml}`;
+
+    const editBtn = body.querySelector("#btn-event-details-edit");
+    if (editBtn) {
+        editBtn.addEventListener("click", () => {
+            modal.hidden = true;
+            openScheduleModal(evt.date);
         });
     }
 
@@ -2005,10 +2088,23 @@ function renderScheduleTable() {
             th.title = "Clique para agendar";
         }
 
+        const hasDescription = !!(raidEvt && (raidEvt.description || "").trim());
+        const detailsIndicator = hasDescription
+            ? `<button class="cell-details-indicator" data-date="${dateKey}" title="Ver detalhes do evento" aria-label="Detalhes" style="position:absolute;top:2px;right:2px;background:transparent;border:none;color:var(--gold-bright);cursor:pointer;padding:0 2px;font-size:0.7rem;line-height:1;">●</button>`
+            : "";
+        th.style.position = "relative";
         th.innerHTML = `
+            ${detailsIndicator}
             <div class="cell-day-num">${d}</div>
             <div class="cell-day-wk">${wkDay}</div>
         `;
+        const indBtn = th.querySelector(".cell-details-indicator");
+        if (indBtn) {
+            indBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openEventDetailsModal(dateKey);
+            });
+        }
         if (canSched) {
             th.style.cursor = "pointer";
             th.addEventListener("click", () => {
@@ -2239,7 +2335,11 @@ function renderQuickSchedule() {
         raidBlock.style.padding = "12px";
         raidBlock.style.marginBottom = "10px";
 
-        const headerHtml = `<div style="font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">${progObj.name.split(" (")[0]}</div>`;
+        const hasDescription = !!(raidEvt && (raidEvt.description || "").trim());
+        const detailsBtnHtml = hasDescription
+            ? `<button class="ff-btn-small btn-event-details-open" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Detalhes</button>`
+            : "";
+        const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;"><span>${progObj.name.split(" (")[0]}</span>${detailsBtnHtml}</div>`;
 
         if (foundDateKey) {
             const dayNumStr = String(foundDateObj.getDate()).padStart(2, '0');
@@ -2321,6 +2421,15 @@ function renderQuickSchedule() {
         }
 
         container.appendChild(raidBlock);
+    });
+
+    // Bind dos botões "Detalhes" — todos delegados via classe
+    container.querySelectorAll(".btn-event-details-open").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const dk = btn.getAttribute("data-date");
+            if (dk) openEventDetailsModal(dk);
+        });
     });
 }
 
