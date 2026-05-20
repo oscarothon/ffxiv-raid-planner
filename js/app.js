@@ -1082,6 +1082,11 @@ function renderContentPicker() {
                 renderProgTabsBar();
                 renderRosterTables();
                 renderQuickSchedule();
+                if (isOfficer()) {
+                    const pickerEl = document.getElementById("content-picker-panel");
+                    if (pickerEl) pickerEl.hidden = true;
+                    openScheduleModal(null, item.id);
+                }
             });
         }
         gridCont.appendChild(card);
@@ -1847,7 +1852,22 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
         if (!selectedProg) return;
         if (!resolvedDateKey) {
             const dateEl = body.querySelector("#inp-sched-session-date");
-            const parts = (dateEl?.value || "").trim().split("/");
+            const dateVal = (dateEl?.value || "").trim();
+            if (!dateVal) {
+                // Sem data — salva descrição como nota do prog (se preenchida)
+                const descInput = body.querySelector("#inp-sched-description");
+                const description = descInput ? descInput.value.trim() : "";
+                if (description) {
+                    if (!state.progNotes) state.progNotes = {};
+                    state.progNotes[selectedProg] = description;
+                    saveState();
+                    renderQuickSchedule();
+                }
+                modal.hidden = true;
+                playSfx('success');
+                return;
+            }
+            const parts = dateVal.split("/");
             if (parts.length !== 3 || parts[2].length !== 4) {
                 if (dateEl) {
                     dateEl.style.borderColor = "var(--color-late)";
@@ -1880,7 +1900,7 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
         const confirmBtn = document.createElement("button");
         confirmBtn.className = "ff-btn-action";
         confirmBtn.style.cssText = "width:100%;margin-top:12px;justify-content:center;";
-        confirmBtn.textContent = "Confirmar Agendamento";
+        confirmBtn.textContent = dateKey ? "Confirmar Agendamento" : "Salvar";
         confirmBtn.addEventListener("click", confirmSchedule);
         body.appendChild(confirmBtn);
     } else if (existingEvt && canEditDetails) {
@@ -2453,6 +2473,10 @@ function renderQuickSchedule() {
             const noEvtMsg = raidEvt
                 ? `Evento agendado para ${(raidEvt.postponedTo || raidEvt.date).split("-").reverse().join("/")} — sem confirmações ainda.`
                 : "Nenhuma data de raid agendada para este conteúdo.";
+            const progNote = state.progNotes && state.progNotes[progId] ? state.progNotes[progId] : "";
+            const progNoteHtml = progNote
+                ? `<div style="font-size:0.8rem;color:var(--text-main);margin-top:6px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:var(--radius-sm);white-space:pre-wrap;">${escapeHtml(progNote)}</div>`
+                : "";
             const quickSchedFormHtml = (!raidEvt && isOfficer())
                 ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
                        <input type="text" class="ff-input inp-quick-sched-date" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" style="flex:1;font-size:0.82rem;padding:5px 8px;">
@@ -2462,6 +2486,7 @@ function renderQuickSchedule() {
             raidBlock.innerHTML = `
                 ${headerHtml}
                 <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">${noEvtMsg}</div>
+                ${progNoteHtml}
                 ${quickSchedFormHtml}
             `;
         }
