@@ -106,12 +106,38 @@ def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False):
     return body
 
 
-def format_event_postponed(prog_name, new_date_str):
-    pretty_date = _format_date(new_date_str)
+def format_event_postponed(prog_name, old_date_str, new_date_str):
+    old_pretty = _format_date(old_date_str)
+    new_pretty = _format_date(new_date_str)
     return (
         f"📅 <b>Raid adiada</b>\n"
-        f"{prog_name} agora é {pretty_date}.\n\n"
+        f"{prog_name} foi adiada de {old_pretty} para {new_pretty}.\n\n"
         f"Confirme sua presença em {SITE_URL}."
+    )
+
+
+def format_event_cancelled(prog_name, date_str):
+    pretty_date = _format_date(date_str)
+    return (
+        f"❌ <b>Raid cancelada</b>\n"
+        f"{prog_name} — {pretty_date}."
+    )
+
+
+def format_event_cancelled_bulk(count):
+    return (
+        f"❌ <b>{count} raids canceladas</b>\n"
+        f"Confira a agenda em {SITE_URL}."
+    )
+
+
+def format_quorum_suggestion(date_str, count):
+    pretty = _format_date(date_str)
+    return (
+        f"✨ <b>Oportunidade de raid</b>\n"
+        f"{pretty}: {count} pessoa(s) disponíveis.\n"
+        f"Possível agendar uma Full Party (8p).\n\n"
+        f"Agende em {SITE_URL}."
     )
 
 

@@ -1628,7 +1628,7 @@ function getRaidEventForProg(progId) {
 
 function getAvailCountForDate(dateKey) {
     return (state.roster || []).filter(p =>
-        p.monthlySchedule && (p.monthlySchedule[dateKey] === "avail" || p.monthlySchedule[dateKey] === "late")
+        p.monthlySchedule && p.monthlySchedule[dateKey] === "avail"
     ).length;
 }
 
@@ -2100,6 +2100,59 @@ function renderScheduleTable() {
 }
 
 // Agendamento Preditivo Avançado: Analisa presença parcial, uso do banco e lista nicks confirmados
+// Fase L: lista datas com 8+ confirmações disponíveis sem evento agendado.
+// Visível apenas para officer/admin. Permite agendar Full Party com 1 clique.
+function renderQuorumOpportunities(container) {
+    if (!isOfficer()) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const shortWkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+    const opportunities = [];
+    for (let delta = 0; delta < 14; delta++) {
+        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + delta);
+        const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        if (getRaidEventForDate(dateKey)) continue;
+        const count = getAvailCountForDate(dateKey);
+        if (count >= 8) opportunities.push({ dateKey, dateObj: d, count });
+    }
+
+    if (opportunities.length === 0) return;
+
+    const block = document.createElement("div");
+    block.className = "quorum-opportunities-block";
+    block.style.background = "rgba(16, 185, 129, 0.08)";
+    block.style.border = "1px solid var(--color-avail)";
+    block.style.borderRadius = "var(--radius-sm)";
+    block.style.padding = "10px 12px";
+    block.style.marginBottom = "12px";
+
+    let html = `<div style="font-weight: 700; color: var(--color-avail); font-size: 0.9rem; margin-bottom: 6px;">Oportunidades de agendamento</div>`;
+    opportunities.forEach(({ dateKey, dateObj, count }) => {
+        const dayStr  = String(dateObj.getDate()).padStart(2, '0');
+        const monStr  = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const wkStr   = shortWkNames[dateObj.getDay()];
+        const dateLbl = `${wkStr}, ${dayStr}/${monStr}`;
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 0.82rem;">
+                <span><span style="color: var(--gold-bright); font-weight: 600;">${dateLbl}</span> — ${count} pessoa(s) disponíveis (Full Party possível)</span>
+                <button class="ff-btn-small btn-quorum-schedule" data-date="${dateKey}" style="padding: 2px 10px; font-size: 0.78rem;">Agendar</button>
+            </div>
+        `;
+    });
+    block.innerHTML = html;
+
+    block.querySelectorAll(".btn-quorum-schedule").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            const dk = e.currentTarget.getAttribute("data-date");
+            if (dk) openScheduleModal(dk);
+        });
+    });
+
+    container.appendChild(block);
+}
+
 function renderQuickSchedule() {
     const container = document.getElementById("quick-schedule-list");
     if (!container) return;
@@ -2109,6 +2162,8 @@ function renderQuickSchedule() {
         container.innerHTML = `<span style="color: var(--text-muted); font-size: 0.85rem;">Nenhum conteúdo ativo para agendamento.</span>`;
         return;
     }
+
+    renderQuorumOpportunities(container);
 
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -2131,7 +2186,8 @@ function renderQuickSchedule() {
         let foundDateObj = null;
         let confTitulares = [];
         let confReservas = [];
-        let hasTitularLate = false;
+        let lateTitulares = [];
+        let lateReservas = [];
 
         // Procura a data do evento (ou varre 45 dias se não houver evento)
         const datesToCheck = raidEvt
@@ -2149,30 +2205,29 @@ function renderQuickSchedule() {
             const evtForDate = getRaidEventForDate(dateKey);
             if (!raidEvt && (!evtForDate || evtForDate.progId !== progId)) continue;
 
-            let tConf = [];
-            let rConf = [];
-            let tLate = false;
+            let tAvail = [];
+            let tLate  = [];
+            let rAvail = [];
+            let rLate  = [];
 
             progTitulares.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail" || sVal === "late") {
-                    tConf.push(p.name || "Sem Nick");
-                    if (sVal === "late") tLate = true;
-                }
+                if (sVal === "avail")     tAvail.push(p.name || "Sem Nick");
+                else if (sVal === "late") tLate.push(p.name  || "Sem Nick");
             });
 
             progReservas.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail" || sVal === "late") {
-                    rConf.push(p.name || "Sem Nick");
-                }
+                if (sVal === "avail")     rAvail.push(p.name || "Sem Nick");
+                else if (sVal === "late") rLate.push(p.name  || "Sem Nick");
             });
 
-            foundDateKey = dateKey;
-            foundDateObj = dObj;
-            confTitulares = tConf;
-            confReservas = rConf;
-            hasTitularLate = tLate;
+            foundDateKey   = dateKey;
+            foundDateObj   = dObj;
+            confTitulares  = tAvail;
+            confReservas   = rAvail;
+            lateTitulares  = tLate;
+            lateReservas   = rLate;
             break;
         }
 
@@ -2207,16 +2262,17 @@ function renderQuickSchedule() {
                 borderCol = quorumMet ? "var(--color-avail)"      : "var(--color-late)";
                 quorumBadge = `<span style="font-size:0.78rem;font-weight:700;color:${quorumMet ? 'var(--color-avail)' : 'var(--color-late)'};">${totalConfCount}/${quorum}</span>`;
 
-                if (quorumMet && !hasTitularLate) {
+                if (quorumMet) {
                     alertsHtml += `<div style="background: var(--color-avail); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block;">Quorum atingido</div>`;
                 } else {
                     const faltam = quorum - totalConfCount;
                     if (faltam > 0) {
                         alertsHtml += `<div style="background: var(--color-late); color: #000; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Faltam ${faltam} confirmação(ões) para o quorum</div>`;
                     }
-                    if (hasTitularLate) {
-                        alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 4px;">Atenção: há titulares com status "Talvez / Atraso"</div>`;
-                    }
+                }
+                const lateAll = [...lateTitulares, ...lateReservas];
+                if (lateAll.length > 0) {
+                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Status incerto (Talvez/Atraso) — não confirmados: ${lateAll.join(", ")}</div>`;
                 }
                 if (confReservas.length > 0) {
                     alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
