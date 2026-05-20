@@ -825,14 +825,16 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
             # Evento novo
             target_date = evt.get("postponedTo") or evt.get("date")
             confirmed = _count_confirmed_for_date(state_data, target_date)
-            msg = tg.format_event_created(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            description = evt.get("description")
+            msg = tg.format_event_created(prog_name, target_date, confirmed, quorum, dynamic=dynamic, description=description)
             tg.send_group_message(chat_id, msg)
         else:
             # Evento existente: checa adiamento
             old_evt = old_by_id[evt_id]
             if evt.get("postponedTo") and evt.get("postponedTo") != old_evt.get("postponedTo"):
                 old_target = old_evt.get("postponedTo") or old_evt.get("date")
-                msg = tg.format_event_postponed(prog_name, old_target, evt.get("postponedTo"))
+                description = evt.get("description")
+                msg = tg.format_event_postponed(prog_name, old_target, evt.get("postponedTo"), description=description)
                 tg.send_group_message(chat_id, msg)
 
     # Detecta cancelamentos (ids que estavam em old e sumiram em new)
@@ -930,13 +932,14 @@ def _maybe_send_reminders(static_id):
         dynamic = _is_dynamic_prog(data, evt.get("progId"))
         confirmed = _count_confirmed_for_date(data, target_date)
 
+        description = evt.get("description")
         if target_date == tomorrow and not evt.get("reminder24hSent"):
-            msg = tg.format_reminder_24h(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            msg = tg.format_reminder_24h(prog_name, target_date, confirmed, quorum, dynamic=dynamic, description=description)
             if tg.send_group_message(chat_id, msg):
                 evt["reminder24hSent"] = True
                 changed = True
         elif target_date == today and not evt.get("reminderTodaySent"):
-            msg = tg.format_reminder_today(prog_name, target_date, confirmed, quorum, dynamic=dynamic)
+            msg = tg.format_reminder_today(prog_name, target_date, confirmed, quorum, dynamic=dynamic, description=description)
             if tg.send_group_message(chat_id, msg):
                 evt["reminderTodaySent"] = True
                 changed = True

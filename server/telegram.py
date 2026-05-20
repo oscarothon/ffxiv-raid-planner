@@ -92,26 +92,39 @@ def _format_date(date_str):
         return date_str
 
 
-def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False):
+def _format_details_line(description):
+    """Retorna '\\n\\nDetalhes: <desc>' se houver descrição, '' caso contrário."""
+    if not description:
+        return ""
+    desc = str(description).strip()
+    if not desc:
+        return ""
+    import html as _html
+    return f"\n\n<b>Detalhes:</b> {_html.escape(desc)}"
+
+
+def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
     pretty_date = _format_date(date_str)
+    details = _format_details_line(description)
     if dynamic:
-        body = f"📅 <b>Raid agendada!</b>\n{prog_name} — {pretty_date}.\n\nAcesse {SITE_URL} e marque se vai ou não."
+        body = f"📅 <b>Raid agendada!</b>\n{prog_name} — {pretty_date}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
     else:
         body = (
             f"📅 <b>Raid agendada!</b>\n"
-            f"{prog_name} — {pretty_date}.\n\n"
+            f"{prog_name} — {pretty_date}.{details}\n\n"
             f"Confirmados: {confirmed}/{quorum}.\n"
             f"Acesse {SITE_URL} e marque se vai ou não."
         )
     return body
 
 
-def format_event_postponed(prog_name, old_date_str, new_date_str):
+def format_event_postponed(prog_name, old_date_str, new_date_str, description=None):
     old_pretty = _format_date(old_date_str)
     new_pretty = _format_date(new_date_str)
+    details = _format_details_line(description)
     return (
         f"📅 <b>Raid adiada</b>\n"
-        f"{prog_name} foi adiada de {old_pretty} para {new_pretty}.\n\n"
+        f"{prog_name} foi adiada de {old_pretty} para {new_pretty}.{details}\n\n"
         f"Confirme sua presença em {SITE_URL}."
     )
 
@@ -141,33 +154,35 @@ def format_quorum_suggestion(date_str, count):
     )
 
 
-def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False):
+def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
     pretty_date = _format_date(date_str)
+    details = _format_details_line(description)
     if dynamic:
         return (
             f"⏰ <b>Lembrete</b>\n"
-            f"{prog_name} é amanhã ({pretty_date}).\n\n"
+            f"{prog_name} é amanhã ({pretty_date}).{details}\n\n"
             f"Confirmados: {confirmed}.\n"
             f"Ainda não marcou? {SITE_URL}"
         )
     return (
         f"⏰ <b>Lembrete</b>\n"
-        f"{prog_name} é amanhã ({pretty_date}).\n\n"
+        f"{prog_name} é amanhã ({pretty_date}).{details}\n\n"
         f"Confirmados: {confirmed}/{quorum}.\n"
         f"Ainda não marcou? {SITE_URL}"
     )
 
 
-def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False):
+def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
     pretty_date = _format_date(date_str)
+    details = _format_details_line(description)
     if dynamic:
         return (
             f"⚔️ <b>É hoje!</b>\n"
-            f"{prog_name} — {pretty_date}.\n\n"
+            f"{prog_name} — {pretty_date}.{details}\n\n"
             f"Confirmados: {confirmed}.\nBoa raid!"
         )
     return (
         f"⚔️ <b>É hoje!</b>\n"
-        f"{prog_name} — {pretty_date}.\n\n"
+        f"{prog_name} — {pretty_date}.{details}\n\n"
         f"Confirmados: {confirmed}/{quorum}.\nBoa raid!"
     )

@@ -2392,13 +2392,10 @@ function renderQuickSchedule() {
         raidBlock.style.marginBottom = "10px";
 
         const hasDescription = !!(raidEvt && (raidEvt.description || "").trim());
-        const showEditBtn = !!(raidEvt && isOfficer());
-        const headerBtnHtml = showEditBtn
-            ? `<button class="ff-btn-small btn-quick-edit-event" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Editar</button>`
-            : hasDescription
-                ? `<button class="ff-btn-small btn-event-details-open" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Detalhes</button>`
-                : "";
-        const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;"><span>${progObj.name.split(" (")[0]}</span>${headerBtnHtml}</div>`;
+        const detailsBtnHtml = hasDescription
+            ? `<button class="ff-btn-small btn-event-details-open" data-date="${raidEvt.postponedTo || raidEvt.date}" style="padding:2px 10px;font-size:0.72rem;">Detalhes</button>`
+            : "";
+        const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight: 700; color: var(--gold-bright); font-size: 0.95rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;"><span>${progObj.name.split(" (")[0]}</span>${detailsBtnHtml}</div>`;
 
         if (foundDateKey) {
             const dayNumStr = String(foundDateObj.getDate()).padStart(2, '0');
@@ -2523,16 +2520,6 @@ function renderQuickSchedule() {
             e.stopPropagation();
             const dk = btn.getAttribute("data-date");
             if (dk) openEventDetailsModal(dk);
-        });
-    });
-
-    // Bind dos botões "Editar" (officer) — abre modal de agendamento diretamente
-    container.querySelectorAll(".btn-quick-edit-event").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            playSfx('click');
-            const dk = btn.getAttribute("data-date");
-            if (dk) openScheduleModal(dk);
         });
     });
 }
