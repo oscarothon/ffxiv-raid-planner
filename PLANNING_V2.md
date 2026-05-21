@@ -62,8 +62,11 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
 | L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
 | M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
+| N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin | ⏳ | Sonnet |
+| O | Aba Personagem + Refactor Party | Renomeia "Membros"→"Party", cria aba "Personagem" (ilvl/jobs/expansão por user), arquitetura extensível | ⏳ | Opus |
+| P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
 
-> **Fases A-I**: Strategy Planner (canvas). **Fases J-M**: features adjacentes do app principal (eventos, alertas, Telegram).
+> **Fases A-I**: Strategy Planner (canvas). **Fases J-M**: features adjacentes do app principal (eventos, alertas, Telegram). **Fases N-P**: expansões + personagem + validação de presença.
 > Legenda: ✅ concluído · ⏳ pendente
 
 ---
@@ -603,6 +606,191 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase N — Catálogo de Expansões (dropdown + level cap editável)
+
+**Objetivo:** transformar `expansion` (hoje campo de texto livre em `inp-cc-expansion`) em entidade do estado com level cap próprio. Permite dropdown na criação de conteúdo, adição de expansões novas, edição do level cap das existentes, e abre caminho para validação de presença na Fase P.
+
+### Schema
+
+1. Novo objeto no estado: `state.expansions` — array de `{ id, name, levelCap, order, isLimited?: boolean }`.
+2. **Seed da migração** (em [js/app.js](js/app.js) ao carregar state sem `expansions`):
+   ```js
+   state.expansions = state.expansions || [
+     { id: "arr", name: "A Realm Reborn", levelCap: 50,  order: 1 },
+     { id: "hw",  name: "Heavensward",    levelCap: 60,  order: 2 },
+     { id: "sb",  name: "Stormblood",     levelCap: 70,  order: 3 },
+     { id: "shb", name: "Shadowbringers", levelCap: 80,  order: 4 },
+     { id: "ew",  name: "Endwalker",      levelCap: 90,  order: 5 },
+     { id: "dt",  name: "Dawntrail",      levelCap: 100, order: 6 },
+     { id: "limited", name: "Limited Job", levelCap: null, order: 99, isLimited: true }
+   ];
+   ```
+3. **Backfill nos conteúdos existentes** (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`, `state.customContents`): mapear `content.expansion` (string) para `content.expansionId` via helper `getExpansionIdByName(name)`. Itens custom sem match recebem `expansionId: null` e aparecem com tag "Sem expansão definida" no modal de gerenciamento de conteúdos.
+4. Eventos antigos (`raidEvents`) **não** precisam de campo `expansionId` — derivam de `content.expansionId` via lookup. Sem migração de eventos.
+
+### Dropdown na criação de conteúdo
+
+5. Substituir `<input id="inp-cc-expansion">` (campo de texto livre em [index.html:543](index.html:543)) por:
+   - `<select id="sel-cc-expansion">` populado dinamicamente das `state.expansions` ordenadas por `order`
+   - Última opção: `+ Nova expansão` → abre mini-form inline com input `name` (string) + input `levelCap` (number) + botão "Adicionar"
+   - Ao adicionar: cria entrada em `state.expansions` com `order = max(order)+1` e auto-seleciona no dropdown
+6. Em `handleCreateCustomContent` em [js/app.js:2997](js/app.js:2997): mudar `expansion: string` → `expansionId: string` no objeto salvo em `customContents`.
+7. **Compat de leitura**: durante a transição, qualquer código que leia `content.expansion` (string) deve cair em fallback: `state.expansions.find(e => e.id === content.expansionId)?.name || content.expansion`.
+
+### Edição de level cap (admin/officer)
+
+8. Nova seção no modal `modal-content-manager` (ou modal próprio "Expansões"):
+   - Lista de expansões com nome + level cap inline editável
+   - Botão "Salvar" para cada linha
+   - `levelCap` é apenas informativo nesta fase (Fase P usa `order`, não o cap). Mas fica visível e editável para futuras features.
+9. Validação: `levelCap` deve ser positivo OU `null` (Limited Job).
+10. Deletar expansão: **não permitido** se houver pelo menos 1 `content` apontando para ela. Mostrar contador de conteúdos vinculados.
+
+### Critério de aceite
+
+- Conteúdos antigos e custom continuam funcionando após a migração (sem perda de info)
+- Criação de conteúdo usa dropdown; opção "Nova expansão" abre form inline com nome + level cap
+- Admin/officer consegue editar level cap de expansões existentes via modal de Expansões
+- Itens custom sem match na migração aparecem com tag "Sem expansão definida" no manager (officer corrige)
+- Não é possível deletar expansão com conteúdos vinculados
+
+---
+
+## Fase O — Aba Personagem + Refactor da Aba Party
+
+**Objetivo:** desacoplar dados *do usuário* (personagem) dos dados *do roster* (party). Hoje, slot do roster = personagem do usuário. Esta fase separa as duas coisas em abas distintas, criando arquitetura extensível para features futuras (mount tracker, minion tracker, achievements, etc).
+
+### Renomeação
+
+1. Aba `roster-tab` em [index.html:140](index.html:140) → renomear:
+   - Botão `data-tab="roster"` → label "Party" (em vez de "Membros")
+   - **Decisão a tomar no início da fase**: manter `id="roster-tab"` por compat ou renomear para `party-tab` (afeta links/bookmarks externos — provavelmente nenhum, então pode renomear).
+2. Conteúdo da aba **Party** após o refactor: continua sendo o lugar onde admin/officer gerencia escalação titular/banco em cada prog. Visualização de jobs, ilvl, status por prog — tudo leitura/apenas-admin para escalação.
+
+### Nova aba "Personagem"
+
+3. Nova tab `data-tab="character"` em [index.html:70](index.html:70):
+   - Label "Personagem"
+   - Ícone próprio (a definir — sugestão: 👤 ou SVG no estilo do design system)
+   - `<section id="character-tab" class="tab-pane" role="tabpanel" hidden>`
+4. **Visibilidade**: aba aparece para qualquer usuário **autenticado** (não-anônimo). O conteúdo é sempre do **próprio usuário** (não há "personagem de outro" — para isso existe a Party).
+
+### Modelo de dados — onde mora o "personagem"
+
+5. **Decisão a tomar no início da fase** (validar com usuário):
+   - **Opção A — campo no `user`**: tabela `users` ganha coluna `character_json` (TEXT). Personagem 1:1 com user. Desacopla user de static, habilita alts/multi-static no futuro.
+   - **Opção B — campo no `roster slot`**: continua acoplado ao slot que o user ocupa na static. Mais simples no MVP, mas dificulta multi-static.
+   - **Recomendação**: **Opção A**.
+6. Schema (Opção A):
+   ```sql
+   ALTER TABLE users ADD COLUMN character_json TEXT;
+   -- {"name": "...", "ilvl": ..., "currentExpansionId": "...", "jobs": [{"id":"WAR","level":100}, ...], "subscribedProgs": ["dsr", ...]}
+   ```
+7. Endpoints novos:
+   - `GET /api/character` — retorna `character_json` do user logado
+   - `PUT /api/character` — substitui (com debounce no front, mesmo padrão do state)
+
+### Migração
+
+8. Para cada user que tem slot no roster (com `name`, `ilvl`, `assignedJobs`, `statusByProg`): popular `character_json` desse user a partir desses campos.
+9. O slot do roster **continua existindo** como container da Party (status titular/banco) — mas o "perfil" (nick, ilvl, classes) passa a ser lido do `character_json` do user que ocupa o slot.
+10. Slots sem user vinculado: dados ficam num campo backup `slot_legacy_json` para o admin migrar manualmente depois (ou ignorar).
+
+### Arquitetura extensível (seções modulares)
+
+11. UI da aba Personagem em **seções modulares**, cada uma um `.ff-panel` separado:
+    - `character-identity-panel` — nome do personagem + expansão atual (dropdown das `state.expansions`) + ilvl
+    - `character-jobs-panel` — lista de classes com level opcional por classe (input numérico ou "—" para não definido)
+    - `character-progs-panel` — checkboxes dos progs ativos da static (subscrição: em quais progs o usuário quer participar)
+    - `character-future-panel` — placeholder com exemplos de "seções futuras" (mounts, minions, achievements). Pode ficar oculto no MVP, mas o sistema de seções já existe.
+12. Cada seção é um componente JS isolado: `renderCharacterIdentity()`, `renderCharacterJobs()`, `renderCharacterProgs()`, etc. Adicionar uma seção nova = criar uma função render + adicionar 1 chamada em `renderCharacterTab()` + 1 painel no HTML.
+13. **Padrão visual**: usar `.ff-panel` + `.panel-header` + `.panel-body` igual aos outros painéis. Fonte Cinzel, paleta dos 3 temas, espaçamentos consistentes.
+14. Salvamento via debounce de 400ms (mesmo padrão do `PUT /api/state`).
+
+### Remoção/migração das features na aba Party
+
+15. **Mover** da aba Party → aba Personagem:
+    - Definição de nome/ilvl/classes (hoje na linha do roster)
+    - Subscrição em progs (status active/bench por prog — hoje no `statusByProg` do roster, vira `subscribedProgs` no character)
+16. **Decisão a tomar no início da fase**: **atribuição de job por prog** (`assignedJobs[progId]`) continua na Party (faz sentido — é decisão de composição) ou vai pra Personagem (faz sentido — é meu personagem)?
+    - **Recomendação**: continuar na Party como decisão de composição do prog, mas com dropdown limitado às classes do `character.jobs` do user vinculado ao slot.
+17. **Permanece** na aba Party:
+    - Visualização da escalação por prog (`comp-visualizer`)
+    - Tabela de roster com status titular/banco por prog
+    - **Visualização** (não-editável) do ilvl e classes — consulta o `character_json` do user vinculado ao slot
+    - Ações de officer/admin para gerenciar a escalação (titular ↔ banco, atribuir job por prog)
+18. **Visibilidade do ilvl/jobs na Party**:
+    - Officer/admin sempre vê todos
+    - Membro comum vê só do próprio personagem e dos jogadores na composição do prog que ele participa
+    - **Decisão a confirmar no início da fase.**
+
+### Critério de aceite
+
+- Usuário logado vê a aba "Personagem" e consegue editar nome, ilvl, expansão atual, classes (com level opcional)
+- Aba Party mostra a escalação igual antes, mas com dados de identidade vindos do `character_json` do user vinculado ao slot
+- Adicionar uma seção nova na Personagem (ex: mount tracker) requer apenas 1 painel HTML + 1 função render + 1 chamada no `renderCharacterTab()`
+- Migração não perde dados existentes (todos os ilvl/jobs do roster atual aparecem no `character_json` dos respectivos users)
+- Slot do roster sem user vinculado mantém os dados antigos em `slot_legacy_json` para o admin migrar depois
+- Design segue padrão visual existente (`.ff-panel`, Cinzel, 3 temas, espaçamentos)
+
+---
+
+## Fase P — Validação de Presença por Expansão
+
+**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se a **expansão atual do personagem** for compatível com a **expansão do conteúdo** daquele evento. Bloqueia o caso de membro Heavensward sendo contado como confirmado num evento de Endwalker.
+
+**Depende de:** Fase N (`state.expansions` com `order`) + Fase O (`character.currentExpansionId`).
+
+### Regra de compatibilidade
+
+1. Helper em [js/app.js](js/app.js):
+   ```js
+   function isExpansionCompatible(userExpansionId, contentExpansionId) {
+     if (!userExpansionId || !contentExpansionId) return true; // fallback permissivo (dados faltando)
+     const expById = (state.expansions || []).reduce((a, e) => (a[e.id]=e, a), {});
+     const u = expById[userExpansionId];
+     const c = expById[contentExpansionId];
+     if (!u || !c) return true;
+     if (u.isLimited || c.isLimited) return true; // Limited Job: regra própria, ignora ordem
+     return c.order <= u.order; // pode fazer conteúdo de expansão igual ou anterior à sua
+   }
+   ```
+2. **Limited Job** é exceção: não entra na ordem das expansões normais. Sempre compatível (Limited tem regra própria via `limitedJobId`).
+3. **Fallback permissivo**: se `userExpansionId` ou `contentExpansionId` for `null` (ex: char sem expansão definida, ou conteúdo custom sem expansão), considerar compatível para não bloquear acidentalmente.
+
+### Aplicação da regra (frontend)
+
+4. **Cálculo de confirmados em "Próximos dias de raid"** em [js/app.js:2156](js/app.js:2156): no loop que monta `confTitulares`/`confReservas`/`lateTitulares`/`lateReservas`, só contar um jogador como `avail` se `isExpansionCompatible(user.character.currentExpansionId, event.contentExpansionId)`.
+5. **`getAvailCountForDate(dateKey)`** em [js/app.js:1633](js/app.js:1633): aceita opcionalmente um `contentExpansionId` e filtra. Sem esse parâmetro, mantém comportamento atual (compat para quem chama sem contexto de prog).
+6. **Quorum opportunities (Fase L)**: também aplica — não sugere full party se os 8 disponíveis incluem gente incompatível. Como o evento ainda não existe, a Fase L pode considerar "para qualquer prog ativo" (se há 8 compatíveis com PELO MENOS um prog ativo, sugere).
+
+### Aplicação da regra (backend, para o Telegram)
+
+7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py:782](server/app.py:782):
+   - Buscar `currentExpansionId` do `character_json` do user vinculado a cada slot
+   - Buscar `expansionId` do `content` (de `customContents` ou catálogo built-in espelhado em backend)
+   - Aplicar `is_expansion_compatible` (helper Python espelhado)
+8. Sem isso, os números reportados pelo Telegram (Confirmados X/Y) divergem do site. **Crítico para consistência.**
+
+### Feedback visual
+
+9. Na tabela mensal de schedule ([js/app.js:2160](js/app.js:2160)): célula com `avail` de jogador incompatível para o prog do evento daquele dia:
+   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida)
+   - **Adiciona** indicador discreto sobreposto (sugestão: 🔒 pequeno no canto + tooltip "Não conta — expansão atual: Heavensward, evento: Endwalker")
+   - Cor da célula muda para acinzentada/desaturada para deixar claro que não conta
+10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora da expansão: X" (officer/admin only, para o officer saber quem está marcando mas não pode contar).
+
+### Critério de aceite
+
+- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta para quórum, não aparece na lista de confirmados, célula com indicador 🔒 + tooltip
+- Membro Heavensward marca `avail` num dia de evento Heavensward ou ARR → conta normalmente
+- Conteúdo Limited (Blue Mage): regra de expansão não se aplica, segue a lógica existente do `limitedJobId`
+- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis para pelo menos um prog ativo
+- Telegram reporta os mesmos números do site (`Confirmados: X/Y` consistente front ↔ back)
+- Fallback permissivo: char sem expansão OU conteúdo sem expansão = sempre conta (não bloqueia indevidamente)
+
+---
+
 ## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
 
 **Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
@@ -661,7 +849,10 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | K | ✅ concluída (PR #18) |
 | L | ✅ concluída (PR #18) |
 | M | ✅ concluída (PR #18) |
-| **Total restante** | **~16-21 sessões** |
+| N | 1-2 sessões (Sonnet) — schema + dropdown + admin edit |
+| O | 3-4 sessões (Opus) — refactor grande, nova aba, migração de schema |
+| P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
+| **Total restante** | **~21-29 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
