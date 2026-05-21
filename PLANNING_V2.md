@@ -1,4 +1,4 @@
-# Planejamento de Features V2 — Visual Strategy Planner
+# Planejamento de Features V2 — App Principal + Visual Strategy Planner
 
 > Roadmap V1 (17 fases originais) concluído em 2026-05-18 — consulte `PLANNING_V1.md` para o histórico.
 
@@ -8,7 +8,427 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 ---
 
-## Visão Geral
+## Ordem de execução
+
+**Prioridade total nas fases do app principal.** O **Strategy Planner (fases A-I)** fica em backlog — será executado *por último*, depois que N, O, P, Q estiverem em produção.
+
+Ordem prevista:
+
+1. **Fase N** — Catálogo de Expansões (dropdown + level cap)
+2. **Fase O** — Aba Personagem + Refactor Party
+3. **Fase P** — Validação de Presença por Expansão
+4. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
+5. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
+
+Concluídas: J, K, L, M.
+
+---
+
+## Tabela Resumo
+
+### Concluídas
+
+| # | Fase | Descrição | Status | Modelo |
+|---|------|-----------|:------:|:------:|
+| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | ✅ | Sonnet |
+| K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
+| L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
+| M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
+
+### Pendentes — App Principal (prioridade)
+
+| # | Fase | Descrição | Status | Modelo |
+|---|------|-----------|:------:|:------:|
+| N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin + retrocompat aprimorada | ⏳ | Sonnet |
+| O | Aba Personagem + Refactor Party | Renomeia "Membros"→"Party", cria aba "Personagem" (ilvl/jobs/expansão por user), arquitetura extensível | ⏳ | Opus |
+| P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
+| Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
+
+### Backlog — Strategy Planner (executar por último)
+
+| # | Fase | Descrição | Status | Modelo |
+|---|------|-----------|:------:|:------:|
+| A | Foundation | Backend WebSocket (Flask-SocketIO) + tabela `plans` + permissões | ⏳ | Opus |
+| B | Canvas Core | Arena SVG circular + grid + tokens de jogadores draggáveis (real-time) | ⏳ | Opus |
+| C | AOEs & Marcas | Toolbar de AoE shapes, waymarks A-D / 1-4, target markers | ⏳ | Opus |
+| D | Timeline | Multi-step (frames) com snapshot por frame + navegação | ⏳ | Opus |
+| E | Plan Manager | UI de listagem/criação/renomeação/deleção de planos por prog | ⏳ | Sonnet |
+| F | Light Party Split | Split visual 8p → LP1 (1-4) + LP2 (5-8) em conteúdos Full Party | ⏳ | Sonnet |
+| G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | ⏳ | Sonnet |
+| H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | ⏳ | Sonnet |
+| I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | ⏳ | Opus |
+
+> Legenda: ✅ concluído · ⏳ pendente
+
+---
+
+# PARTE 1 — Pendentes do App Principal (Prioridade)
+
+## Fase N — Catálogo de Expansões (dropdown + level cap editável)
+
+**Objetivo:** transformar `expansion` (hoje campo de texto livre em `inp-cc-expansion`) em entidade do estado com level cap próprio. Permite dropdown na criação de conteúdo, adição de expansões novas, edição do level cap das existentes, e abre caminho para validação de presença na Fase P.
+
+### Schema
+
+1. Novo objeto no estado: `state.expansions` — array de `{ id, name, levelCap, order, isLimited?: boolean }`.
+2. **Seed da migração** (em [js/app.js](js/app.js) ao carregar state sem `expansions`):
+   ```js
+   state.expansions = state.expansions || [
+     { id: "arr", name: "A Realm Reborn", levelCap: 50,  order: 1 },
+     { id: "hw",  name: "Heavensward",    levelCap: 60,  order: 2 },
+     { id: "sb",  name: "Stormblood",     levelCap: 70,  order: 3 },
+     { id: "shb", name: "Shadowbringers", levelCap: 80,  order: 4 },
+     { id: "ew",  name: "Endwalker",      levelCap: 90,  order: 5 },
+     { id: "dt",  name: "Dawntrail",      levelCap: 100, order: 6 },
+     { id: "limited", name: "Limited Job", levelCap: null, order: 99, isLimited: true }
+   ];
+   ```
+
+### Retrocompat — converter conteúdos existentes (estratégia aprimorada)
+
+3. Built-ins (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`) já têm `expansion` canônica em código — match direto via `getExpansionIdByName(name)`.
+4. Customs em `state.customContents` passam por backfill em camadas:
+   - **(a) Match exato** (case-insensitive, trim) contra `expansions[].name`.
+   - **(b) Aliases comuns**: tabela explícita de abreviações e variações:
+     ```
+     "arr" | "a realm reborn" | "realm reborn"       → arr
+     "hw"  | "heavensward"                            → hw
+     "sb"  | "stormblood"                             → sb
+     "shb" | "shadowbringers" | "shadow bringers"    → shb
+     "ew"  | "endwalker" | "end walker"               → ew
+     "dt"  | "dawntrail" | "dawn trail"               → dt
+     "blu" | "blue mage" | "limited"                  → limited
+     ```
+   - **(c) Heurística por nome do conteúdo**: se o nome do prog contém marcador conhecido de raid tier, deduzir:
+     - "Pandæmonium" / "Pandaemonium" → `ew`
+     - "Anabaseios" / "Abyssos" / "Asphodelos" → `ew`
+     - "Arcadion" / "Light-heavyweight" / "Cruiserweight" → `dt`
+     - "Eden" → `shb`
+     - "Omega" → `sb`
+     - "Alexander" → `hw`
+     - "DSR" / "Dragonsong" → `ew` (Endwalker patch)
+     - "TOP" / "Omega Protocol" → `ew`
+     - "FRU" / "Futures Rewritten" → `dt`
+     - "UCOB" → `hw`, "UWU" → `sb`, "TEA" → `shb`
+   - **(d) Fallback permissivo**: se nada bate, atribuir a expansão **mais recente** (`dt`). Melhor permissivo do que travar o usuário — admin pode corrigir depois no modal de Expansões.
+5. **Aplicar mesma estratégia em personagens** (Fase O) para `character.currentExpansion` (texto livre legado, se houver).
+6. Eventos antigos (`raidEvents`) **não** precisam de campo `expansionId` — derivam de `content.expansionId` via lookup. Sem migração de eventos.
+
+### Dropdown na criação de conteúdo
+
+7. Substituir `<input id="inp-cc-expansion">` (campo de texto livre em [index.html:543](index.html:543)) por:
+   - `<select id="sel-cc-expansion">` populado dinamicamente das `state.expansions` ordenadas por `order`
+   - Última opção: `+ Nova expansão` → abre mini-form inline com input `name` (string) + input `levelCap` (number) + botão "Adicionar"
+   - Ao adicionar: cria entrada em `state.expansions` com `order = max(order)+1` e auto-seleciona no dropdown
+8. Em `handleCreateCustomContent` em [js/app.js:2997](js/app.js:2997): mudar `expansion: string` → `expansionId: string` no objeto salvo em `customContents`.
+9. **Compat de leitura**: durante a transição, qualquer código que leia `content.expansion` (string) deve cair em fallback: `state.expansions.find(e => e.id === content.expansionId)?.name || content.expansion`.
+
+### Edição de level cap (admin/officer)
+
+10. Nova seção no modal `modal-content-manager` (ou modal próprio "Expansões"):
+    - Lista de expansões com nome + level cap inline editável
+    - Botão "Salvar" para cada linha
+    - `levelCap` é apenas informativo nesta fase (Fase P usa `order`, não o cap). Mas fica visível e editável para futuras features.
+11. Validação: `levelCap` deve ser positivo OU `null` (Limited Job).
+12. Deletar expansão: **não permitido** se houver pelo menos 1 `content` apontando para ela. Mostrar contador de conteúdos vinculados.
+
+### Critério de aceite
+
+- Conteúdos antigos e custom são **convertidos automaticamente** via match exato → alias → heurística → fallback `dt`. Nenhum conteúdo fica com "Sem expansão definida".
+- Criação de conteúdo usa dropdown; opção "Nova expansão" abre form inline com nome + level cap.
+- Admin/officer consegue editar level cap de expansões existentes via modal de Expansões.
+- Não é possível deletar expansão com conteúdos vinculados.
+- Personagens (quando Fase O chegar) usam a mesma estratégia de retrocompat para `currentExpansion`.
+
+---
+
+## Fase O — Aba Personagem + Refactor da Aba Party
+
+**Objetivo:** desacoplar dados *do usuário* (personagem) dos dados *do roster* (party). Hoje, slot do roster = personagem do usuário. Esta fase separa as duas coisas em abas distintas, criando arquitetura extensível para features futuras (mount tracker, minion tracker, achievements, etc).
+
+### Renomeação
+
+1. Aba `roster-tab` em [index.html:140](index.html:140) → renomear:
+   - Botão `data-tab="roster"` → label "Party" (em vez de "Membros")
+   - **Decisão a tomar no início da fase**: manter `id="roster-tab"` por compat ou renomear para `party-tab` (afeta links/bookmarks externos — provavelmente nenhum, então pode renomear).
+2. Conteúdo da aba **Party** após o refactor: continua sendo o lugar onde admin/officer gerencia escalação titular/banco em cada prog. Visualização de jobs, ilvl, status por prog — tudo leitura/apenas-admin para escalação.
+
+### Nova aba "Personagem"
+
+3. Nova tab `data-tab="character"` em [index.html:70](index.html:70):
+   - Label "Personagem"
+   - Ícone próprio (a definir — SVG no estilo do design system)
+   - `<section id="character-tab" class="tab-pane" role="tabpanel" hidden>`
+4. **Visibilidade**: aba aparece para qualquer usuário **autenticado** (não-anônimo). O conteúdo é sempre do **próprio usuário** (não há "personagem de outro" — para isso existe a Party).
+
+### Modelo de dados — onde mora o "personagem"
+
+5. **Decisão a tomar no início da fase** (validar com usuário):
+   - **Opção A — campo no `user`**: tabela `users` ganha coluna `character_json` (TEXT). Personagem 1:1 com user. Desacopla user de static, habilita alts/multi-static no futuro.
+   - **Opção B — campo no `roster slot`**: continua acoplado ao slot que o user ocupa na static. Mais simples no MVP, mas dificulta multi-static.
+   - **Recomendação**: **Opção A**.
+6. Schema (Opção A):
+   ```sql
+   ALTER TABLE users ADD COLUMN character_json TEXT;
+   -- {"name": "...", "ilvl": ..., "currentExpansionId": "...", "jobs": [{"id":"WAR","level":100}, ...], "subscribedProgs": ["dsr", ...]}
+   ```
+7. Endpoints novos:
+   - `GET /api/character` — retorna `character_json` do user logado
+   - `PUT /api/character` — substitui (com debounce no front, mesmo padrão do state)
+
+### Migração
+
+8. Para cada user que tem slot no roster (com `name`, `ilvl`, `assignedJobs`, `statusByProg`): popular `character_json` desse user a partir desses campos. Aplicar **estratégia de retrocompat da Fase N** para `currentExpansion` (texto livre → ID).
+9. O slot do roster **continua existindo** como container da Party (status titular/banco) — mas o "perfil" (nick, ilvl, classes) passa a ser lido do `character_json` do user que ocupa o slot.
+10. Slots sem user vinculado: dados ficam num campo backup `slot_legacy_json` para o admin migrar manualmente depois (ou ignorar).
+
+### Arquitetura extensível (seções modulares)
+
+11. UI da aba Personagem em **seções modulares**, cada uma um `.ff-panel` separado:
+    - `character-identity-panel` — nome do personagem + expansão atual (dropdown das `state.expansions`) + ilvl
+    - `character-jobs-panel` — lista de classes com level opcional por classe (input numérico ou "—" para não definido)
+    - `character-progs-panel` — checkboxes dos progs ativos da static (subscrição: em quais progs o usuário quer participar)
+    - `character-future-panel` — placeholder com exemplos de "seções futuras" (mounts, minions, achievements, **horários típicos da semana** — pode virar default da Fase Q). Pode ficar oculto no MVP, mas o sistema de seções já existe.
+12. Cada seção é um componente JS isolado: `renderCharacterIdentity()`, `renderCharacterJobs()`, `renderCharacterProgs()`, etc. Adicionar uma seção nova = criar uma função render + adicionar 1 chamada em `renderCharacterTab()` + 1 painel no HTML.
+13. **Padrão visual**: usar `.ff-panel` + `.panel-header` + `.panel-body` igual aos outros painéis. Fonte Cinzel, paleta dos 3 temas, espaçamentos consistentes.
+14. Salvamento via debounce de 400ms (mesmo padrão do `PUT /api/state`).
+
+### Remoção/migração das features na aba Party
+
+15. **Mover** da aba Party → aba Personagem:
+    - Definição de nome/ilvl/classes (hoje na linha do roster)
+    - Subscrição em progs (status active/bench por prog — hoje no `statusByProg` do roster, vira `subscribedProgs` no character)
+16. **Decisão a tomar no início da fase**: **atribuição de job por prog** (`assignedJobs[progId]`) continua na Party (faz sentido — é decisão de composição) ou vai pra Personagem (faz sentido — é meu personagem)?
+    - **Recomendação**: continuar na Party como decisão de composição do prog, mas com dropdown limitado às classes do `character.jobs` do user vinculado ao slot.
+17. **Permanece** na aba Party:
+    - Visualização da escalação por prog (`comp-visualizer`)
+    - Tabela de roster com status titular/banco por prog
+    - **Visualização** (não-editável) do ilvl e classes — consulta o `character_json` do user vinculado ao slot
+    - Ações de officer/admin para gerenciar a escalação (titular ↔ banco, atribuir job por prog)
+18. **Visibilidade do ilvl/jobs na Party**:
+    - Officer/admin sempre vê todos
+    - Membro comum vê só do próprio personagem e dos jogadores na composição do prog que ele participa
+    - **Decisão a confirmar no início da fase.**
+
+### Critério de aceite
+
+- Usuário logado vê a aba "Personagem" e consegue editar nome, ilvl, expansão atual, classes (com level opcional)
+- Aba Party mostra a escalação igual antes, mas com dados de identidade vindos do `character_json` do user vinculado ao slot
+- Adicionar uma seção nova na Personagem (ex: mount tracker, horários típicos) requer apenas 1 painel HTML + 1 função render + 1 chamada no `renderCharacterTab()`
+- Migração não perde dados existentes (todos os ilvl/jobs do roster atual aparecem no `character_json` dos respectivos users)
+- Slot do roster sem user vinculado mantém os dados antigos em `slot_legacy_json` para o admin migrar depois
+- Design segue padrão visual existente (`.ff-panel`, Cinzel, 3 temas, espaçamentos)
+
+---
+
+## Fase P — Validação de Presença por Expansão
+
+**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se a **expansão atual do personagem** for compatível com a **expansão do conteúdo** daquele evento. Bloqueia o caso de membro Heavensward sendo contado como confirmado num evento de Endwalker.
+
+**Depende de:** Fase N (`state.expansions` com `order`) + Fase O (`character.currentExpansionId`).
+
+### Regra de compatibilidade
+
+1. Helper em [js/app.js](js/app.js):
+   ```js
+   function isExpansionCompatible(userExpansionId, contentExpansionId) {
+     if (!userExpansionId || !contentExpansionId) return true; // fallback permissivo (dados faltando)
+     const expById = (state.expansions || []).reduce((a, e) => (a[e.id]=e, a), {});
+     const u = expById[userExpansionId];
+     const c = expById[contentExpansionId];
+     if (!u || !c) return true;
+     if (u.isLimited || c.isLimited) return true; // Limited Job: regra própria, ignora ordem
+     return c.order <= u.order; // pode fazer conteúdo de expansão igual ou anterior à sua
+   }
+   ```
+2. **Limited Job** é exceção: não entra na ordem das expansões normais. Sempre compatível (Limited tem regra própria via `limitedJobId`).
+3. **Fallback permissivo**: se `userExpansionId` ou `contentExpansionId` for `null`, considerar compatível para não bloquear acidentalmente. Com a retrocompat da Fase N, esses `null` devem ser raros.
+
+### Aplicação da regra (frontend)
+
+4. **Cálculo de confirmados em "Próximos dias de raid"** em [js/app.js:2156](js/app.js:2156): no loop que monta `confTitulares`/`confReservas`/etc., só contar um jogador como `avail` se `isExpansionCompatible(user.character.currentExpansionId, event.contentExpansionId)`.
+5. **`getAvailCountForDate(dateKey)`** em [js/app.js:1633](js/app.js:1633): aceita opcionalmente um `contentExpansionId` e filtra. Sem esse parâmetro, mantém comportamento atual (compat para quem chama sem contexto de prog).
+6. **Quorum opportunities (Fase L)**: também aplica — não sugere full party se os 8 disponíveis incluem gente incompatível. A Fase Q vai refinar isso (considerando overlap + expansão).
+
+### Aplicação da regra (backend, para o Telegram)
+
+7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py:782](server/app.py:782):
+   - Buscar `currentExpansionId` do `character_json` do user vinculado a cada slot
+   - Buscar `expansionId` do `content` (de `customContents` ou catálogo built-in espelhado em backend)
+   - Aplicar `is_expansion_compatible` (helper Python espelhado)
+8. Sem isso, os números reportados pelo Telegram (Confirmados X/Y) divergem do site. **Crítico para consistência.**
+
+### Feedback visual
+
+9. Na tabela mensal de schedule ([js/app.js:2160](js/app.js:2160)): célula com `avail` de jogador incompatível para o prog do evento daquele dia:
+   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida)
+   - **Adiciona** indicador discreto sobreposto (cadeado pequeno no canto + tooltip "Não conta — expansão atual: Heavensward, evento: Endwalker")
+   - Cor da célula muda para acinzentada/desaturada para deixar claro que não conta
+10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora da expansão: X" (officer/admin only, para o officer saber quem está marcando mas não pode contar).
+
+### Critério de aceite
+
+- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta para quórum, não aparece na lista de confirmados, célula com indicador + tooltip
+- Membro Heavensward marca `avail` num dia de evento Heavensward ou ARR → conta normalmente
+- Conteúdo Limited (Blue Mage): regra de expansão não se aplica, segue a lógica existente do `limitedJobId`
+- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis para pelo menos um prog ativo
+- Telegram reporta os mesmos números do site (`Confirmados: X/Y` consistente front ↔ back)
+- Fallback permissivo: char sem expansão OU conteúdo sem expansão = sempre conta (não bloqueia indevidamente)
+
+---
+
+## Fase Q — Disponibilidade por Horário (popover do dia + janelas de overlap)
+
+**Objetivo:** substituir a marcação binária de disponibilidade (`avail/late/none`) por um modelo baseado em **ranges de horário**. Cada jogador marca seu status do dia (Disponível/Talvez/Indisponível) e os horários específicos em que pode jogar. Eventos passam a ser agendados **dentro das janelas de overlap viáveis** da composição — invertendo o paradigma atual de "agenda primeiro, vê quem pode depois".
+
+**Depende de:** Fases N, O, P (a regra de expansão da P combina com a de overlap; o character.json da O guarda configs futuras como horários típicos).
+
+### Mudança de paradigma
+
+- **Antes:** officer escolhe data+horário arbitrário → pessoal confirma se pode
+- **Depois:** pessoal marca quando pode → sistema computa janelas viáveis → officer agenda dentro de uma janela
+- **Confirmação de presença vira derivada**, não declarada. A pessoa não diz "confirmo o evento das 20:30" — ela diz "posso 19:00–23:00", e o sistema calcula que ela cobre o evento.
+
+### Schema
+
+1. `monthlySchedule[dateKey]` deixa de ser string e vira objeto:
+   ```js
+   {
+     status: "avail" | "maybe" | "unavail",
+     ranges: [{ start: "HH:MM", end: "HH:MM" }, ...]  // vazio quando unavail
+   }
+   ```
+   - `avail` com `ranges: []` = atalho "Dia inteiro"
+   - `maybe` com `ranges: []` = "talvez o dia inteiro"
+2. `raidEvent` ganha:
+   - `time: "HH:MM" | null` — `null` significa "horário a definir"
+   - `durationMin: number | null` — duração escolhida pelo officer no agendamento
+3. **Migração de `monthlySchedule`:**
+   - `"avail"` → `{status: "avail", ranges: []}`
+   - `"late"` → `{status: "maybe", ranges: []}` (conceito "late" removido)
+   - `"unavail"` ou ausência → `{status: "unavail", ranges: []}`
+4. **Migração de `raidEvent`:** eventos antigos sem `time` ficam com `time: null, durationMin: null` e exibem badge **"Horário a definir"** em todos os pontos de UI (calendário mensal, próximos dias, card do evento). Não conta como confirmado pra ninguém até officer editar.
+
+### UI — popover do dia (substitui marcação binária)
+
+5. Click numa célula do calendário (próprio usuário) abre **popover** (não modal — sobrepõe a célula, fecha com ESC ou clique fora):
+   - 3 botões grandes no topo: **Disponível** / **Talvez** / **Indisponível**
+   - Se **Disponível** ou **Talvez** selecionado ⇒ aparece a grade de horas abaixo
+   - Se **Indisponível** ⇒ grade desaparece, ranges são esvaziados
+6. **Grade de horas** (12:00 → 02:00 do dia seguinte, slots de 30 min = 28 slots):
+   - Layout: faixa horizontal compacta, label a cada hora cheia
+   - Click num slot toggla seleção
+   - Click + drag pinta múltiplos slots (estilo When2meet/Doodle)
+   - Atalho "Dia inteiro" pinta todos os 28 slots de uma vez
+   - Cross-midnight tratado nativamente: slot `01:00-01:30` significa "do dia clicado para o seguinte"
+7. **Botão "Confirmar"** salva o status + ranges normalizados (slots contíguos viram um único range). Cor da célula atualiza com a cor existente para cada status:
+   - Disponível → verde
+   - Talvez → amarelo
+   - Indisponível → vermelho (atual)
+8. Mobile: mesma grade em layout vertical compacto, toque equivalente a click.
+
+### UI — calendário mensal (officer/admin)
+
+9. Modo padrão: cor por status agregado (igual hoje).
+10. **Toggle "Overlap"** no header do calendário (visível só para officer/admin):
+    - Quando ativo, pinta cada dia conforme a **maior janela viável de 8 pessoas do roster** (qualquer 8 — titular ou reserva — alinhado com a decisão da Fase L)
+    - Heatmap dourado: quanto mais brilhante, maior a janela em duração
+    - Hover mostra tooltip com janela e contagem (ex: "20:30–22:30 · 8 disponíveis")
+    - Dias sem janela viável ficam acinzentados
+
+### UI — modal de agendamento (`openScheduleModal`)
+
+11. Reformulação grande do modal:
+    - Officer abre num dia → input de **duração esperada** (default sugerido por categoria do prog: Ultimate=180min, Savage=120min, Custom=120min — todos editáveis)
+    - Lista de **janelas viáveis** computadas dinamicamente conforme a duração:
+      ```
+      ┌────────────────────────────────────────────────┐
+      │ 20:30 – 23:00  │ 8 confirmados      [Agendar] │
+      │ 19:00 – 22:00  │ 6 confirm + 2 talvez [Agendar] │
+      │ 14:00 – 17:00  │ 4 confirm + 3 talvez [Agendar] │
+      └────────────────────────────────────────────────┘
+      ```
+    - Janela com 8 só de `avail` = "garantida" (badge verde)
+    - Janela que precisa somar `maybe` pra atingir 8 = "potencial" (badge amarelo, mostra quantos são talvez)
+    - Se nenhuma janela atinge 8: mostra as maiores parciais com aviso "Faltam N — considere agendar mesmo assim ou esperar mais marcações"
+12. Clicar em **Agendar** numa janela salva o `raidEvent` com `time = janela.start` e `durationMin = duração escolhida`.
+13. Officer pode também escolher horário/duração arbitrário (escape hatch) via toggle "Modo manual" no modal — caso queira sobrepor a sugestão.
+
+### Lógica de overlap
+
+14. Helper novo em [js/app.js](js/app.js):
+    ```js
+    function computeViableWindows(dateKey, durationMin, requiredCount = 8) {
+      // 1. Coletar ranges efetivos de todos do roster pra dateKey
+      //    (considerar status: "avail" sem ranges = dia inteiro 12:00-02:00; "unavail" = nada)
+      // 2. Discretizar em slots de 30 min (mesmo grid da UI)
+      // 3. Para cada slot, contar:
+      //    - countAvail: quantos têm status "avail" cobrindo o slot
+      //    - countMaybe: idem para "maybe"
+      // 4. Aplicar filtro de expansão (Fase P): só conta jogador se compatível com o prog/evento (ou ignorar se chamado sem prog)
+      // 5. Detectar janelas contínuas onde:
+      //    - (countAvail) >= requiredCount E largura >= durationMin → janela "garantida"
+      //    - (countAvail + countMaybe) >= requiredCount E largura >= durationMin → janela "potencial"
+      // 6. Retornar lista ordenada por: garantidas primeiro, depois por maior largura, depois mais cedo
+    }
+    ```
+15. Helper Python espelhado em [server/app.py](server/app.py) para uso nas mensagens do Telegram e validações de backend.
+
+### Confirmação de presença (derivada)
+
+16. Helper novo `getConfirmationStatusForEvent(user, event)`:
+    - Se `event.time === null` (horário a definir): sempre retorna `"pending"`
+    - Verifica `expansionCompatible` (Fase P) → se não, retorna `"incompatible"`
+    - Pega `monthlySchedule[event.date]` do user
+    - Se `status === "unavail"` → `"unavail"`
+    - Se `status === "avail"`:
+      - Range cobre `[event.time, event.time + event.durationMin]` integralmente → `"confirmed"`
+      - Range cobre parcialmente → `"partial"`
+      - Sem ranges (dia inteiro) → `"confirmed"`
+    - Se `status === "maybe"`:
+      - Qualquer overlap com a janela do evento → `"maybe"`
+      - Nenhum overlap → `"unavail"`
+17. UI da confirmação no card do evento e em "Próximos dias":
+    - Confirmados (`confirmed`) — verde, contam para quórum
+    - Talvez (`maybe`/`partial`) — amarelo, listados separadamente
+    - Indisponíveis (`unavail`) — vermelho ou ocultos
+    - Incompatíveis (`incompatible`) — cinza, só officer/admin vê
+    - Pendentes (`pending`, evento sem time) — neutro
+
+### Impacto em features existentes
+
+18. **Fase K (já concluída) — revisão**: a mensagem "Status incerto (Talvez/Atraso): X" passa a usar só "Talvez". O conceito "late" some — sua semântica de "atraso" agora é expressa por um range que começa depois do `event.time`.
+19. **Fase L (já concluída) — revisão grande**: a sugestão "8+ disponíveis num dia" vira "janela de overlap com 8+ pessoas e ≥ X minutos de duração mínima" (definir X — sugiro **90 min** como threshold padrão pra sugerir, configurável depois). Mensagem do Telegram passa a incluir a janela sugerida: `"Oportunidade: sexta 20:30–22:30, 8 disponíveis (2h)."`
+20. **Fase M (já concluída) — adaptação**: mensagens de adiamento/cancelamento passam a incluir `time` quando presente. Format: `"Raid adiada\nDSR foi adiada de sexta 20:30 para sábado 21:00."`
+21. **Telegram — todos os lembretes** ([server/telegram.py](server/telegram.py)): templates que mostram data passam a mostrar `data + hora` quando `event.time` existe; senão mostram "(horário a definir)".
+22. **Botão "Agendar" do quórum opportunity**: passa o horário sugerido pré-preenchido no modal.
+
+### Critério de aceite
+
+- Click numa célula do calendário abre popover com 3 botões (Disponível/Talvez/Indisponível); grade de horas aparece para Disponível ou Talvez; click+drag funciona; ESC e clique fora cancelam
+- Grade respeita 12:00 → 02:00 do dia seguinte, slots de 30 min, cross-midnight nativo
+- Officer abre modal de agendamento e vê lista de janelas viáveis (garantidas + potenciais) — agenda com 1 clique
+- Eventos antigos sem `time` ficam com badge "Horário a definir" em todos os pontos de UI até officer editar
+- Confirmação de presença é derivada do range, não declarada — card do evento explica "Você está confirmado porque marcou 19:00–23:00"
+- Toggle "Overlap" no calendário pinta heatmap para officer/admin
+- Mensagens da Fase L atualizadas: sugerem janela horária específica, não só dia
+- Mensagens da Fase M atualizadas: incluem hora quando presente
+- Migração não perde dados: strings antigas → objeto; `"late"` → `"maybe"`; eventos sem `time` ficam com badge correto
+- Telegram reporta mesma confirmação que o site (helpers Python e JS espelhados)
+
+### Esforço estimado
+
+3-4 sessões (Opus). Feature larga: novo widget de seleção de horas, algoritmo de overlap, refactor profundo do modal de agendamento, migração de schema (`monthlySchedule` + `raidEvent`), revisão de K/L/M em produção, helpers espelhados front+back.
+
+> **Observação:** se a fase ficar grande demais em PR único, pode ser dividida em **Q1 — Schema + popover de horários + grade** e **Q2 — Modal de agendamento com janelas + impacto em K/L/M**. Decidir no início da fase.
+
+---
+
+# PARTE 2 — Backlog: Strategy Planner (Fases A-I)
+
+> **Estas fases ficam para o final.** Só iniciar depois que N, O, P, Q estiverem em produção.
+
+## Visão Geral do Strategy Planner
 
 Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`), com um editor visual de canvas (estilo [raidplan.io](https://raidplan.io)) para planejar mecânicas das lutas. Recursos principais:
 
@@ -42,32 +462,6 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | Arenas adicionais | Começa com círculo + grid; outras arenas em fase própria |
 | Ícones FFXIV (waymarks, marks) | Mirror local de `cdn.raidplan.io/game/ffxiv/mark/` ou alternativa via xivapi.com |
 | Ícones de AOE (SVGs abstratos) | **Recriar do zero** — formas geométricas simples, sem risco de copyright |
-
----
-
-## Tabela Resumo
-
-| # | Fase | Descrição | Status | Modelo |
-|---|------|-----------|:------:|:------:|
-| A | Foundation | Backend WebSocket (Flask-SocketIO) + tabela `plans` + permissões | ⏳ | Opus |
-| B | Canvas Core | Arena SVG circular + grid + tokens de jogadores draggáveis (real-time) | ⏳ | Opus |
-| C | AOEs & Marcas | Toolbar de AoE shapes, waymarks A-D / 1-4, target markers | ⏳ | Opus |
-| D | Timeline | Multi-step (frames) com snapshot por frame + navegação | ⏳ | Opus |
-| E | Plan Manager | UI de listagem/criação/renomeação/deleção de planos por prog | ⏳ | Sonnet |
-| F | Light Party Split | Split visual 8p → LP1 (1-4) + LP2 (5-8) em conteúdos Full Party | ⏳ | Sonnet |
-| G | Arenas Adicionais | Quadrado, octógono, upload de background customizado | ⏳ | Sonnet |
-| H | Assets & Polimento | Mirror dos ícones FFXIV, criação dos SVGs de AOE próprios, melhorias visuais | ⏳ | Sonnet |
-| I | Free Draw | Desenho colaborativo no canvas + color picker RGB + modo seta direcional | ⏳ | Opus |
-| J | Detalhes do Evento | Campo `description` em `raidEvent` + botão "Detalhes" + permissões | ✅ | Sonnet |
-| K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
-| L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
-| M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
-| N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin | ⏳ | Sonnet |
-| O | Aba Personagem + Refactor Party | Renomeia "Membros"→"Party", cria aba "Personagem" (ilvl/jobs/expansão por user), arquitetura extensível | ⏳ | Opus |
-| P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
-
-> **Fases A-I**: Strategy Planner (canvas). **Fases J-M**: features adjacentes do app principal (eventos, alertas, Telegram). **Fases N-P**: expansões + personagem + validação de presença.
-> Legenda: ✅ concluído · ⏳ pendente
 
 ---
 
@@ -408,6 +802,8 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+# PARTE 3 — Fases Concluídas (histórico)
+
 ## Fase J — Detalhes do Evento (`description` + botão "Detalhes") ✅
 
 **Concluída em** [PR #19](https://github.com/oscarothon/ffxiv-raid-planner/pull/19) · commit `462bb75`
@@ -416,41 +812,20 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ### Schema
 
-1. Adicionar campo `description: string` ao objeto `raidEvent` criado em [js/app.js:1644](js/app.js:1644). Default `""`. Sem migração necessária (campos faltantes em eventos antigos são tratados como `""`).
-2. Sem limite duro no MVP, mas validação client-side soft em ~2000 chars (com counter).
+1. Campo `description: string` em `raidEvent`, default `""`.
+2. Validação client-side soft em ~2000 chars (com counter).
 
 ### Edição (criador + officer/admin)
 
-3. Novo helper de permissão em [js/app.js:177-197](js/app.js:177):
-   ```js
-   function canEditEventDetails(evt) {
-     if (!evt) return false;
-     return currentUserId === evt.createdBy || isOfficer();
-   }
-   ```
-4. No `openScheduleModal` ([js/app.js:1683](js/app.js:1683)), adicionar `<textarea>` ao final do modal:
-   - Label: "Detalhes do evento (opcional)"
-   - Placeholder: "Objetivos da sessão, observações sobre composição, regras de loot…"
-   - Counter de chars
-   - Só aparece se `canEditEventDetails(evt)` (criador ou officer)
-5. Botão "Salvar" do modal persiste `description` junto com `progId`/`quorum`.
+3. Helper `canEditEventDetails(evt)`: criador OU officer.
+4. `<textarea>` no modal de agendamento (só visível para quem tem permissão).
+5. Botão "Salvar" persiste `description`.
 
 ### Visualização (qualquer membro da static)
 
-6. **Card no Quick Schedule** ([js/app.js:2180](js/app.js:2180)): adicionar botão pequeno `Detalhes` no header do bloco do evento. Estilo `.ff-btn` em variante mini. **Só aparece se `evt.description.trim() !== ""`**.
-7. **Célula do calendário mensal**: adicionar indicador clicável discreto (ex: ícone pequeno tipo "📄" ou um traço gráfico) na célula do dia agendado quando há descrição. Clicar abre o mesmo modal de leitura.
-8. **Modal de leitura** (`modal-event-details` em [index.html](index.html)):
-   - Header: `<nome do prog> — <data formatada>`
-   - Body: descrição renderizada com `white-space: pre-wrap` (preserva quebras de linha) e escape de HTML (evita XSS)
-   - Botão "Editar" no rodapé apenas se `canEditEventDetails(evt)` — abre `openScheduleModal` no estado de edição
-
-### Critério de aceite
-
-- Criador consegue editar; officer/admin também; outros membros só leem
-- Botão "Detalhes" só aparece quando há texto
-- Renderização preserva quebras de linha e escapa HTML
-- Indicador de descrição visível no calendário mensal nos dias com evento+descrição
-- Persiste no banco (`statics.data_json`)
+6. Botão "Detalhes" no card do Quick Schedule, só se há descrição.
+7. Indicador clicável discreto na célula do calendário mensal.
+8. Modal de leitura com `white-space: pre-wrap` e escape de HTML.
 
 ---
 
@@ -458,32 +833,13 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 **Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `03b9628`
 
-**Objetivo:** a mensagem atual em [js/app.js:2218](js/app.js:2218) ("Atenção: há titulares com status 'Talvez / Atraso'") é genérica e ainda dá a impressão de que essas pessoas estão confirmadas. Listar os nicks explicitamente e deixar claro que o status é **incerto**.
+**Objetivo:** listar nicks dos titulares/reservas com status `late` explicitamente, deixando claro que o status é incerto.
 
-1. **Coletar lista separada** no loop de [js/app.js:2156-2169](js/app.js:2156):
-   - Substituir `tLate: boolean` por `tLateNames: []` (titulares com `late`)
-   - Adicionar `rLateNames: []` (reservas com `late`) — também relevante para o officer saber
-   - Quem está em `avail` continua contando para o quórum como hoje
-2. **Nova mensagem de atenção** substituindo a linha 2218:
-   ```js
-   if (tLateNames.length > 0 || rLateNames.length > 0) {
-     const all = [...tLateNames, ...rLateNames];
-     alertsHtml += `<div style="...">
-       Status incerto (Talvez/Atraso) — não confirmados: ${all.join(", ")}
-     </div>`;
-   }
-   ```
-3. **Decisão em aberto a confirmar no início da fase:** atualmente o quórum (`if (sVal === "avail" || sVal === "late")` em [js/app.js:2158](js/app.js:2158)) **conta `late` como confirmação**. Isso pode estar inflando o quórum percebido. Validar com o usuário se:
-   - **Opção A**: manter como está (late conta, mas avisa) — fase só lista os nomes
-   - **Opção B**: parar de contar `late` no quórum, e listar separadamente "Confirmados: X, Incerto: Y"
-   - Recomendação: **Opção B** — mais honesto sobre o estado real do dia.
+1. Coleta `tLateNames` e `rLateNames` separadamente.
+2. Nova mensagem: `Status incerto (Talvez/Atraso) — não confirmados: <lista>`.
+3. Quórum continua contando `late` como confirmação parcial (Opção A escolhida).
 
-### Critério de aceite
-
-- Listagem clara dos nicks com status `late`
-- Copy deixa explícito que esses jogadores **não estão confirmados**
-- Mensagem aparece tanto para titulares quanto para reservas com `late`
-- Comportamento de quórum: alinhado com a decisão da Opção A ou B (validar)
+> **Revisão prevista na Fase Q:** o conceito de "late" será removido. A mensagem passa a usar só "Talvez". Atraso passa a ser expresso por um range que começa depois do `event.time`.
 
 ---
 
@@ -491,54 +847,14 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 **Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `ab9bd0f`
 
-**Objetivo:** quando houver **≥8 jogadores** marcando disponibilidade num dia *sem evento agendado*, alertar admin/officer (no painel principal e via Telegram) que podem agendar uma raid Full Party. O alerta considera **qualquer membro do roster** (titular ou banco/reserva) — o que importa é ter gente o suficiente disponível.
+**Objetivo:** quando 8+ jogadores marcam disponibilidade num dia *sem evento agendado*, alertar admin/officer no painel principal e via Telegram.
 
-### Backend (Python — em `app.py` + novo helper)
+1. Função `evaluate_quorum_opportunities(state)` em `app.py`.
+2. Persistência da flag em `state.quorumSuggestionsSent` (dedup por data).
+3. Telegram envia `format_quorum_suggestion(date_str, count)`.
+4. Painel principal mostra seção "Oportunidades de agendamento" para officer/admin.
 
-1. Nova função `evaluate_quorum_opportunities(state)` que roda ao fim de cada `save_state`:
-   - Itera dias futuros nos próximos N dias (ex: 14)
-   - Para cada `dateKey`:
-     - **Pular** se já existe `raidEvent` para esse dia (alinhado com a decisão "só em dias sem evento")
-     - `count = nº de roster (titular OU reserva) com monthlySchedule[dateKey] === "avail"` (apenas `avail`, **não conta `late`** — incertos não disparam alerta no grupo)
-     - Se `count >= 8` E `state.quorumSuggestionsSent[dateKey]` ainda não está marcado:
-       - Marca `state.quorumSuggestionsSent[dateKey] = true`
-       - Envia `format_quorum_suggestion(date_str, count)` via `send_group_message(chat_id, ...)`
-2. **Persistência da flag:**
-   - Novo campo `state.quorumSuggestionsSent: { "2026-05-30": true, "2026-06-02": true }`
-   - Limpar entradas com data passada na mesma função (housekeeping)
-3. **Dedup:** uma vez por data. Se cair de 8→7→8, **não re-envia** — evita spam no grupo.
-
-### Telegram — nova mensagem em [server/telegram.py](server/telegram.py)
-
-4. ```python
-   def format_quorum_suggestion(date_str, count):
-       pretty = _format_date(date_str)
-       return (
-           f"<b>Oportunidade de raid</b>\n"
-           f"{pretty}: {count} pessoa(s) disponíveis.\n"
-           f"Possível agendar uma Full Party (8p).\n\n"
-           f"Agende em {SITE_URL}."
-       )
-   ```
-
-### Painel principal (UI) — apenas para officer/admin
-
-5. Nova seção no topo do `quick-schedule-list` em [js/app.js:2103](js/app.js:2103) (ou bloco próprio acima):
-   - Título: "Oportunidades de agendamento"
-   - Para cada dia nos próximos 14 dias **sem evento** e com `count >= 8`:
-     - Linha: `<data> — N pessoas disponíveis (Full Party possível) — [Agendar]`
-     - Botão "Agendar" abre `openScheduleModal(dateKey)`
-6. **Visibilidade**: só renderiza para `isOfficer()`. Membros comuns não veem essa seção.
-7. **Se não há oportunidades**: seção fica oculta (sem placeholder vazio).
-
-### Critério de aceite
-
-- Dia com 8+ disponíveis (sem evento, contando titular + banco) → aparece para officer/admin na main page
-- Dia com 7 ou menos → não aparece
-- Telegram envia exatamente 1 mensagem por data ao cruzar 8
-- Se cair de 8→7→8, **não** re-envia
-- Se já há evento agendado para o dia, nem painel nem Telegram avisam
-- Botão "Agendar" abre o modal já preenchido com a data correta
+> **Revisão prevista na Fase Q:** a lógica "8+ disponíveis num dia" vira "janela de overlap de ≥ X minutos com 8+ pessoas". Mensagem do Telegram passa a sugerir janela horária específica: `"Oportunidade: sexta 20:30–22:30, 8 disponíveis (2h)."` Botão "Agendar" passa o horário sugerido pré-preenchido no modal.
 
 ---
 
@@ -546,248 +862,14 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 **Concluída em** [PR #18](https://github.com/oscarothon/ffxiv-raid-planner/pull/18) · commit `d10f1a7`
 
-**Objetivo:** o aviso de adiamento já existe em [server/app.py:790-795](server/app.py:790) mas a mensagem atual omite a data anterior. Além disso, **cancelamento (deleção de evento) hoje não dispara nenhuma notificação**. Esta fase corrige os dois.
+**Objetivo:** mensagem de adiamento agora inclui a data anterior; deleção de evento dispara mensagem de cancelamento.
 
-### Adiamento — incluir data anterior na mensagem
+1. `format_event_postponed(prog_name, old_date_str, new_date_str)` — inclui "de X para Y".
+2. `format_event_cancelled(prog_name, date_str)` — nova função.
+3. `_notify_new_raid_events` detecta eventos deletados (ids ausentes em `new_events`).
+4. Edge case: remoção em massa quando prog inteiro é deletado — Opção A (supressão por threshold) implementada.
 
-1. Modificar assinatura de [`format_event_postponed`](server/telegram.py:109) para receber também a data antiga:
-   ```python
-   def format_event_postponed(prog_name, old_date_str, new_date_str):
-       old_pretty = _format_date(old_date_str)
-       new_pretty = _format_date(new_date_str)
-       return (
-           f"<b>Raid adiada</b>\n"
-           f"{prog_name} foi adiada de {old_pretty} para {new_pretty}.\n\n"
-           f"Confirme sua presença em {SITE_URL}."
-       )
-   ```
-2. Em [server/app.py:794](server/app.py:794), passar a data anterior. O `old_evt` já está disponível no escopo (`old_by_id[evt_id]`):
-   ```python
-   old_target = old_evt.get("postponedTo") or old_evt.get("date")
-   msg = tg.format_event_postponed(prog_name, old_target, evt.get("postponedTo"))
-   ```
-3. Observação: se o evento foi adiado várias vezes, `old_target` é sempre a data **anterior ao adiamento atual** (não a data original do agendamento). Isso é o comportamento desejado — o grupo precisa saber de onde *está saindo* a raid agora.
-
-### Cancelamento — nova função + detecção em `_notify_new_raid_events`
-
-4. Nova função em [server/telegram.py](server/telegram.py):
-   ```python
-   def format_event_cancelled(prog_name, date_str):
-       pretty = _format_date(date_str)
-       return f"<b>Raid cancelada</b>\n{prog_name} — {pretty}."
-   ```
-5. Modificar [`_notify_new_raid_events`](server/app.py:769) para também detectar **eventos deletados** — ids que estão em `old_events` mas não em `new_events`:
-   ```python
-   new_ids = {e.get("id") for e in (new_events or []) if isinstance(e, dict)}
-   for old_evt in (old_events or []):
-       if not isinstance(old_evt, dict):
-           continue
-       if old_evt.get("id") not in new_ids:
-           prog_name = old_evt.get("progName") or old_evt.get("progId") or "Raid"
-           target_date = old_evt.get("postponedTo") or old_evt.get("date")
-           msg = tg.format_event_cancelled(prog_name, target_date)
-           tg.send_group_message(chat_id, msg)
-   ```
-
-### Edge case — remoção em massa quando um prog inteiro é deletado
-
-6. Quando um prog é removido da static ([js/app.js:2774](js/app.js:2774)), **todos os seus eventos futuros são apagados de uma vez**. Sem proteção, isso disparaaria múltiplas mensagens de cancelamento no grupo.
-7. **Decisão a tomar durante a fase** (validar com usuário):
-   - **Opção A — supressão por threshold**: se houver >2 cancelamentos no mesmo `save_state`, suprimir todos e enviar 1 mensagem agregada ("X raids canceladas — prog removido"). Simples e seguro.
-   - **Opção B — sem proteção**: cada evento gera 1 mensagem. Pode poluir o grupo se um prog tinha muitos eventos futuros, mas é raro.
-   - Recomendação: **Opção A** com threshold de 2.
-
-### Critério de aceite
-
-- Adiar uma raid: Telegram recebe mensagem mencionando **de X para Y**
-- Cancelar uma raid: Telegram recebe mensagem de cancelamento com data + prog
-- Adiar uma raid já adiada: mensagem mostra "de [data atual antes do novo adiamento] para [nova data]"
-- Remover um prog inteiro com N eventos futuros: ou 1 mensagem agregada (Opção A) ou N mensagens (Opção B), conforme decisão
-
----
-
-## Fase N — Catálogo de Expansões (dropdown + level cap editável)
-
-**Objetivo:** transformar `expansion` (hoje campo de texto livre em `inp-cc-expansion`) em entidade do estado com level cap próprio. Permite dropdown na criação de conteúdo, adição de expansões novas, edição do level cap das existentes, e abre caminho para validação de presença na Fase P.
-
-### Schema
-
-1. Novo objeto no estado: `state.expansions` — array de `{ id, name, levelCap, order, isLimited?: boolean }`.
-2. **Seed da migração** (em [js/app.js](js/app.js) ao carregar state sem `expansions`):
-   ```js
-   state.expansions = state.expansions || [
-     { id: "arr", name: "A Realm Reborn", levelCap: 50,  order: 1 },
-     { id: "hw",  name: "Heavensward",    levelCap: 60,  order: 2 },
-     { id: "sb",  name: "Stormblood",     levelCap: 70,  order: 3 },
-     { id: "shb", name: "Shadowbringers", levelCap: 80,  order: 4 },
-     { id: "ew",  name: "Endwalker",      levelCap: 90,  order: 5 },
-     { id: "dt",  name: "Dawntrail",      levelCap: 100, order: 6 },
-     { id: "limited", name: "Limited Job", levelCap: null, order: 99, isLimited: true }
-   ];
-   ```
-3. **Backfill nos conteúdos existentes** (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`, `state.customContents`): mapear `content.expansion` (string) para `content.expansionId` via helper `getExpansionIdByName(name)`. Itens custom sem match recebem `expansionId: null` e aparecem com tag "Sem expansão definida" no modal de gerenciamento de conteúdos.
-4. Eventos antigos (`raidEvents`) **não** precisam de campo `expansionId` — derivam de `content.expansionId` via lookup. Sem migração de eventos.
-
-### Dropdown na criação de conteúdo
-
-5. Substituir `<input id="inp-cc-expansion">` (campo de texto livre em [index.html:543](index.html:543)) por:
-   - `<select id="sel-cc-expansion">` populado dinamicamente das `state.expansions` ordenadas por `order`
-   - Última opção: `+ Nova expansão` → abre mini-form inline com input `name` (string) + input `levelCap` (number) + botão "Adicionar"
-   - Ao adicionar: cria entrada em `state.expansions` com `order = max(order)+1` e auto-seleciona no dropdown
-6. Em `handleCreateCustomContent` em [js/app.js:2997](js/app.js:2997): mudar `expansion: string` → `expansionId: string` no objeto salvo em `customContents`.
-7. **Compat de leitura**: durante a transição, qualquer código que leia `content.expansion` (string) deve cair em fallback: `state.expansions.find(e => e.id === content.expansionId)?.name || content.expansion`.
-
-### Edição de level cap (admin/officer)
-
-8. Nova seção no modal `modal-content-manager` (ou modal próprio "Expansões"):
-   - Lista de expansões com nome + level cap inline editável
-   - Botão "Salvar" para cada linha
-   - `levelCap` é apenas informativo nesta fase (Fase P usa `order`, não o cap). Mas fica visível e editável para futuras features.
-9. Validação: `levelCap` deve ser positivo OU `null` (Limited Job).
-10. Deletar expansão: **não permitido** se houver pelo menos 1 `content` apontando para ela. Mostrar contador de conteúdos vinculados.
-
-### Critério de aceite
-
-- Conteúdos antigos e custom continuam funcionando após a migração (sem perda de info)
-- Criação de conteúdo usa dropdown; opção "Nova expansão" abre form inline com nome + level cap
-- Admin/officer consegue editar level cap de expansões existentes via modal de Expansões
-- Itens custom sem match na migração aparecem com tag "Sem expansão definida" no manager (officer corrige)
-- Não é possível deletar expansão com conteúdos vinculados
-
----
-
-## Fase O — Aba Personagem + Refactor da Aba Party
-
-**Objetivo:** desacoplar dados *do usuário* (personagem) dos dados *do roster* (party). Hoje, slot do roster = personagem do usuário. Esta fase separa as duas coisas em abas distintas, criando arquitetura extensível para features futuras (mount tracker, minion tracker, achievements, etc).
-
-### Renomeação
-
-1. Aba `roster-tab` em [index.html:140](index.html:140) → renomear:
-   - Botão `data-tab="roster"` → label "Party" (em vez de "Membros")
-   - **Decisão a tomar no início da fase**: manter `id="roster-tab"` por compat ou renomear para `party-tab` (afeta links/bookmarks externos — provavelmente nenhum, então pode renomear).
-2. Conteúdo da aba **Party** após o refactor: continua sendo o lugar onde admin/officer gerencia escalação titular/banco em cada prog. Visualização de jobs, ilvl, status por prog — tudo leitura/apenas-admin para escalação.
-
-### Nova aba "Personagem"
-
-3. Nova tab `data-tab="character"` em [index.html:70](index.html:70):
-   - Label "Personagem"
-   - Ícone próprio (a definir — sugestão: 👤 ou SVG no estilo do design system)
-   - `<section id="character-tab" class="tab-pane" role="tabpanel" hidden>`
-4. **Visibilidade**: aba aparece para qualquer usuário **autenticado** (não-anônimo). O conteúdo é sempre do **próprio usuário** (não há "personagem de outro" — para isso existe a Party).
-
-### Modelo de dados — onde mora o "personagem"
-
-5. **Decisão a tomar no início da fase** (validar com usuário):
-   - **Opção A — campo no `user`**: tabela `users` ganha coluna `character_json` (TEXT). Personagem 1:1 com user. Desacopla user de static, habilita alts/multi-static no futuro.
-   - **Opção B — campo no `roster slot`**: continua acoplado ao slot que o user ocupa na static. Mais simples no MVP, mas dificulta multi-static.
-   - **Recomendação**: **Opção A**.
-6. Schema (Opção A):
-   ```sql
-   ALTER TABLE users ADD COLUMN character_json TEXT;
-   -- {"name": "...", "ilvl": ..., "currentExpansionId": "...", "jobs": [{"id":"WAR","level":100}, ...], "subscribedProgs": ["dsr", ...]}
-   ```
-7. Endpoints novos:
-   - `GET /api/character` — retorna `character_json` do user logado
-   - `PUT /api/character` — substitui (com debounce no front, mesmo padrão do state)
-
-### Migração
-
-8. Para cada user que tem slot no roster (com `name`, `ilvl`, `assignedJobs`, `statusByProg`): popular `character_json` desse user a partir desses campos.
-9. O slot do roster **continua existindo** como container da Party (status titular/banco) — mas o "perfil" (nick, ilvl, classes) passa a ser lido do `character_json` do user que ocupa o slot.
-10. Slots sem user vinculado: dados ficam num campo backup `slot_legacy_json` para o admin migrar manualmente depois (ou ignorar).
-
-### Arquitetura extensível (seções modulares)
-
-11. UI da aba Personagem em **seções modulares**, cada uma um `.ff-panel` separado:
-    - `character-identity-panel` — nome do personagem + expansão atual (dropdown das `state.expansions`) + ilvl
-    - `character-jobs-panel` — lista de classes com level opcional por classe (input numérico ou "—" para não definido)
-    - `character-progs-panel` — checkboxes dos progs ativos da static (subscrição: em quais progs o usuário quer participar)
-    - `character-future-panel` — placeholder com exemplos de "seções futuras" (mounts, minions, achievements). Pode ficar oculto no MVP, mas o sistema de seções já existe.
-12. Cada seção é um componente JS isolado: `renderCharacterIdentity()`, `renderCharacterJobs()`, `renderCharacterProgs()`, etc. Adicionar uma seção nova = criar uma função render + adicionar 1 chamada em `renderCharacterTab()` + 1 painel no HTML.
-13. **Padrão visual**: usar `.ff-panel` + `.panel-header` + `.panel-body` igual aos outros painéis. Fonte Cinzel, paleta dos 3 temas, espaçamentos consistentes.
-14. Salvamento via debounce de 400ms (mesmo padrão do `PUT /api/state`).
-
-### Remoção/migração das features na aba Party
-
-15. **Mover** da aba Party → aba Personagem:
-    - Definição de nome/ilvl/classes (hoje na linha do roster)
-    - Subscrição em progs (status active/bench por prog — hoje no `statusByProg` do roster, vira `subscribedProgs` no character)
-16. **Decisão a tomar no início da fase**: **atribuição de job por prog** (`assignedJobs[progId]`) continua na Party (faz sentido — é decisão de composição) ou vai pra Personagem (faz sentido — é meu personagem)?
-    - **Recomendação**: continuar na Party como decisão de composição do prog, mas com dropdown limitado às classes do `character.jobs` do user vinculado ao slot.
-17. **Permanece** na aba Party:
-    - Visualização da escalação por prog (`comp-visualizer`)
-    - Tabela de roster com status titular/banco por prog
-    - **Visualização** (não-editável) do ilvl e classes — consulta o `character_json` do user vinculado ao slot
-    - Ações de officer/admin para gerenciar a escalação (titular ↔ banco, atribuir job por prog)
-18. **Visibilidade do ilvl/jobs na Party**:
-    - Officer/admin sempre vê todos
-    - Membro comum vê só do próprio personagem e dos jogadores na composição do prog que ele participa
-    - **Decisão a confirmar no início da fase.**
-
-### Critério de aceite
-
-- Usuário logado vê a aba "Personagem" e consegue editar nome, ilvl, expansão atual, classes (com level opcional)
-- Aba Party mostra a escalação igual antes, mas com dados de identidade vindos do `character_json` do user vinculado ao slot
-- Adicionar uma seção nova na Personagem (ex: mount tracker) requer apenas 1 painel HTML + 1 função render + 1 chamada no `renderCharacterTab()`
-- Migração não perde dados existentes (todos os ilvl/jobs do roster atual aparecem no `character_json` dos respectivos users)
-- Slot do roster sem user vinculado mantém os dados antigos em `slot_legacy_json` para o admin migrar depois
-- Design segue padrão visual existente (`.ff-panel`, Cinzel, 3 temas, espaçamentos)
-
----
-
-## Fase P — Validação de Presença por Expansão
-
-**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se a **expansão atual do personagem** for compatível com a **expansão do conteúdo** daquele evento. Bloqueia o caso de membro Heavensward sendo contado como confirmado num evento de Endwalker.
-
-**Depende de:** Fase N (`state.expansions` com `order`) + Fase O (`character.currentExpansionId`).
-
-### Regra de compatibilidade
-
-1. Helper em [js/app.js](js/app.js):
-   ```js
-   function isExpansionCompatible(userExpansionId, contentExpansionId) {
-     if (!userExpansionId || !contentExpansionId) return true; // fallback permissivo (dados faltando)
-     const expById = (state.expansions || []).reduce((a, e) => (a[e.id]=e, a), {});
-     const u = expById[userExpansionId];
-     const c = expById[contentExpansionId];
-     if (!u || !c) return true;
-     if (u.isLimited || c.isLimited) return true; // Limited Job: regra própria, ignora ordem
-     return c.order <= u.order; // pode fazer conteúdo de expansão igual ou anterior à sua
-   }
-   ```
-2. **Limited Job** é exceção: não entra na ordem das expansões normais. Sempre compatível (Limited tem regra própria via `limitedJobId`).
-3. **Fallback permissivo**: se `userExpansionId` ou `contentExpansionId` for `null` (ex: char sem expansão definida, ou conteúdo custom sem expansão), considerar compatível para não bloquear acidentalmente.
-
-### Aplicação da regra (frontend)
-
-4. **Cálculo de confirmados em "Próximos dias de raid"** em [js/app.js:2156](js/app.js:2156): no loop que monta `confTitulares`/`confReservas`/`lateTitulares`/`lateReservas`, só contar um jogador como `avail` se `isExpansionCompatible(user.character.currentExpansionId, event.contentExpansionId)`.
-5. **`getAvailCountForDate(dateKey)`** em [js/app.js:1633](js/app.js:1633): aceita opcionalmente um `contentExpansionId` e filtra. Sem esse parâmetro, mantém comportamento atual (compat para quem chama sem contexto de prog).
-6. **Quorum opportunities (Fase L)**: também aplica — não sugere full party se os 8 disponíveis incluem gente incompatível. Como o evento ainda não existe, a Fase L pode considerar "para qualquer prog ativo" (se há 8 compatíveis com PELO MENOS um prog ativo, sugere).
-
-### Aplicação da regra (backend, para o Telegram)
-
-7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py:782](server/app.py:782):
-   - Buscar `currentExpansionId` do `character_json` do user vinculado a cada slot
-   - Buscar `expansionId` do `content` (de `customContents` ou catálogo built-in espelhado em backend)
-   - Aplicar `is_expansion_compatible` (helper Python espelhado)
-8. Sem isso, os números reportados pelo Telegram (Confirmados X/Y) divergem do site. **Crítico para consistência.**
-
-### Feedback visual
-
-9. Na tabela mensal de schedule ([js/app.js:2160](js/app.js:2160)): célula com `avail` de jogador incompatível para o prog do evento daquele dia:
-   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida)
-   - **Adiciona** indicador discreto sobreposto (sugestão: 🔒 pequeno no canto + tooltip "Não conta — expansão atual: Heavensward, evento: Endwalker")
-   - Cor da célula muda para acinzentada/desaturada para deixar claro que não conta
-10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora da expansão: X" (officer/admin only, para o officer saber quem está marcando mas não pode contar).
-
-### Critério de aceite
-
-- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta para quórum, não aparece na lista de confirmados, célula com indicador 🔒 + tooltip
-- Membro Heavensward marca `avail` num dia de evento Heavensward ou ARR → conta normalmente
-- Conteúdo Limited (Blue Mage): regra de expansão não se aplica, segue a lógica existente do `limitedJobId`
-- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis para pelo menos um prog ativo
-- Telegram reporta os mesmos números do site (`Confirmados: X/Y` consistente front ↔ back)
-- Fallback permissivo: char sem expansão OU conteúdo sem expansão = sempre conta (não bloqueia indevidamente)
+> **Revisão prevista na Fase Q:** templates de adiamento/cancelamento passam a incluir hora (`event.time`) quando presente. Format: `"DSR foi adiada de sexta 20:30 para sábado 21:00."` Quando `time === null`, mantém o formato atual sem horário.
 
 ---
 
@@ -803,7 +885,9 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
-## Considerações Arquiteturais
+# Apêndices
+
+## Considerações Arquiteturais (Strategy Planner)
 
 ### Por que Flask-SocketIO?
 
@@ -836,6 +920,11 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 | Fase | Esforço estimado |
 |---|---|
+| N | 1-2 sessões (Sonnet) — schema + dropdown + admin edit + retrocompat |
+| O | 3-4 sessões (Opus) — refactor grande, nova aba, migração de schema |
+| P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
+| Q | 3-4 sessões (Opus) — widget de horas + overlap + modal + revisão K/L/M |
+| **Subtotal app principal** | **~8-12 sessões** |
 | A | 2-3 sessões (Opus) |
 | B | 3-4 sessões (Opus) |
 | C | 3-4 sessões (Opus) |
@@ -844,15 +933,10 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | F | 1 sessão (Sonnet) |
 | G | 2 sessões (Sonnet) |
 | H | 1-2 sessões (Sonnet) |
-| I | 2 sessões (Opus) — desenho + sync + color picker |
-| J | ✅ concluída (PR #19) |
-| K | ✅ concluída (PR #18) |
-| L | ✅ concluída (PR #18) |
-| M | ✅ concluída (PR #18) |
-| N | 1-2 sessões (Sonnet) — schema + dropdown + admin edit |
-| O | 3-4 sessões (Opus) — refactor grande, nova aba, migração de schema |
-| P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
-| **Total restante** | **~21-29 sessões** |
+| I | 2 sessões (Opus) |
+| **Subtotal Strategy Planner** | **~17-21 sessões** |
+| J, K, L, M | ✅ concluídas |
+| **Total restante** | **~25-33 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
@@ -860,7 +944,8 @@ Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadma
 
 ## Inspirações & Referências
 
-- [raidplan.io](https://raidplan.io) — UX de referência (canvas, timeline, painel de propriedades)
+- [raidplan.io](https://raidplan.io) — UX de referência (canvas, timeline, painel de propriedades) — para o Strategy Planner
+- [When2meet](https://when2meet.com) / [Doodle](https://doodle.com) — UX de referência (grade click+drag de horas) — para a Fase Q
 - [xivapi.com](https://xivapi.com) — CDN de assets oficiais do FFXIV
 - [Flask-SocketIO docs](https://flask-socketio.readthedocs.io/) — guia oficial
 
@@ -868,4 +953,4 @@ Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadma
 
 ## Próximo passo
 
-Iniciar **Fase A** quando o usuário confirmar. Branch: `feature/fase-A-realtime-foundation`.
+Iniciar **Fase N** quando o usuário confirmar. Branch: `feature/fase-N-expansoes-catalogo`.
