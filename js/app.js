@@ -82,7 +82,8 @@ const DEFAULT_STATE = {
     pendingNotifications: [], // [{id, date, progId, createdBy, createdAt}]
     lootPriorities: {}, // Mapeia "progId" -> [memberId em ordem de prioridade]
     roster: [],
-    customContents: [], // [{id, name, partyMode: "full"|"light"|"dynamic", expansion, iconUrl}] — Fase 8
+    customContents: [], // [{id, name, partyMode: "full"|"light"|"dynamic", expansionId, iconUrl}] — Fase 8 / N
+    expansions: [],     // [{id, name, levelCap, order, isLimited?}] — Fase N (seed em hydrateState)
 };
 
 const FLEX_POOLS = {
@@ -345,6 +346,18 @@ function hydrateState(parsed) {
     if (!Array.isArray(state.customContents)) {
         state.customContents = [];
     }
+
+    // Fase N — seed do catálogo de expansões (clona o seed para não compartilhar refs)
+    if (!Array.isArray(state.expansions) || state.expansions.length === 0) {
+        state.expansions = FFXIV_EXPANSIONS_SEED.map(e => ({ ...e }));
+    }
+
+    // Fase N — backfill: customs antigos com `expansion` (string) viram `expansionId`
+    state.customContents.forEach(c => {
+        if (!c.expansionId) {
+            c.expansionId = resolveContentExpansionId(c);
+        }
+    });
 
     state.roster = state.roster.map(player => {
         const id = player.id || "mem_" + Math.random().toString(36).substr(2, 9);
@@ -664,12 +677,70 @@ function setPlayerStatusForProg(player, progId, statusVal) {
     }
 }
 
+// ============================================================================
+// Fase N — Catálogo de Expansões: helpers de retrocompat e lookup
+// ============================================================================
+
+function normalizeExpansionName(name) {
+    return String(name || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function getExpansionById(id) {
+    if (!id) return null;
+    const list = (state && Array.isArray(state.expansions)) ? state.expansions : [];
+    return list.find(e => e.id === id) || null;
+}
+
+function getExpansionIdByName(name) {
+    if (!name) return null;
+    const norm = normalizeExpansionName(name);
+    const list = (state && Array.isArray(state.expansions)) ? state.expansions : [];
+    const direct = list.find(e => normalizeExpansionName(e.name) === norm);
+    if (direct) return direct.id;
+    if (typeof EXPANSION_ALIASES !== "undefined" && EXPANSION_ALIASES[norm]) {
+        return EXPANSION_ALIASES[norm];
+    }
+    return null;
+}
+
+// Resolve em camadas: expansionId direto → nome+aliases → heurística por nome do
+// conteúdo → fallback permissivo (expansão mais recente). Nunca retorna null para
+// conteúdos válidos (PLANNING_V2 Fase N: "nenhum conteúdo fica sem expansão").
+function resolveContentExpansionId(content) {
+    if (!content) return null;
+    if (content.expansionId) return content.expansionId;
+    const fromName = getExpansionIdByName(content.expansion);
+    if (fromName) return fromName;
+    const cname = content.name || content.id || "";
+    if (typeof CONTENT_NAME_EXPANSION_HINTS !== "undefined") {
+        for (const hint of CONTENT_NAME_EXPANSION_HINTS) {
+            if (hint.match.test(cname)) return hint.expId;
+        }
+    }
+    const list = (state && Array.isArray(state.expansions)) ? state.expansions : [];
+    const normal = list.filter(e => !e.isLimited);
+    if (normal.length > 0) {
+        return normal.reduce((a, b) => (a.order > b.order ? a : b)).id;
+    }
+    return null;
+}
+
+function getExpansionDisplayName(content) {
+    if (!content) return "";
+    const id = resolveContentExpansionId(content);
+    if (id) {
+        const exp = getExpansionById(id);
+        if (exp) return exp.name;
+    }
+    return content.expansion || "";
+}
+
 function getProgObj(progId) {
-    if (progId === "geral") return { id: "geral", name: "Geral Padrão", expansion: "Todas" };
+    if (progId === "geral") return { id: "geral", name: "Geral Padrão", expansionId: null };
     const customs = Array.isArray(state.customContents) ? state.customContents : [];
     const limited = Array.isArray(FFXIV_LIMITED_CONTENTS) ? FFXIV_LIMITED_CONTENTS : [];
     const allTargets = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...limited, ...customs];
-    return allTargets.find(t => t.id === progId) || { id: progId, name: progId, expansion: "" };
+    return allTargets.find(t => t.id === progId) || { id: progId, name: progId, expansionId: null };
 }
 
 // Fase 8 — Modo de party do conteúdo
@@ -904,7 +975,7 @@ function buildProgCard(progId, canManage) {
     const dynamic = mode === "dynamic";
     const fullName = progObj.name || progId;
     const shortName = fullName.split(" (")[0];
-    const expansion = progObj.expansion || "";
+    const expansion = progId === "geral" ? "Todas" : getExpansionDisplayName(progObj);
 
     // Status: próximo raid event
     const raidEvt = getRaidEventForProg(progId);
@@ -1059,7 +1130,7 @@ function renderContentPicker() {
         card.innerHTML = `
             <img class="content-picker-card-icon" src="${iconPath}" alt="" onerror="this.style.display='none'">
             <span class="content-picker-card-name">${escapeHtml(shortName)}</span>
-            ${item.expansion ? `<span class="content-picker-card-meta">${escapeHtml(item.expansion)}</span>` : ''}
+            ${(() => { const ex = getExpansionDisplayName(item); return ex ? `<span class="content-picker-card-meta">${escapeHtml(ex)}</span>` : ''; })()}
             ${isActive ? `<span class="content-picker-card-tag">Em uso</span>` : ''}
         `;
         if (!isActive) {
@@ -2970,12 +3041,17 @@ function openContentManagerModal() {
     if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
     // Limpa o form
     const nameEl = document.getElementById("inp-cc-name");
-    const expEl  = document.getElementById("inp-cc-expansion");
+    const selEl  = document.getElementById("sel-cc-expansion");
     if (nameEl) nameEl.value = "";
-    if (expEl)  expEl.value  = "";
+    if (selEl)  selEl.value  = "";
     const fullRadio = modal.querySelector('input[name="cc-party-mode"][value="full"]');
     if (fullRadio) fullRadio.checked = true;
+    // Fecha o form inline de nova expansão (se ficou aberto da última vez)
+    const inline = document.getElementById("cc-new-expansion-inline");
+    if (inline) inline.hidden = true;
+    renderExpansionDropdown();
     renderContentManagerList();
+    renderExpansionManagerList();
     modal.hidden = false;
     playSfx('tab');
 }
@@ -3006,7 +3082,7 @@ function renderContentManagerList() {
                 <span class="content-manager-row-name">${escapeHtml(c.name || c.id)}</span>
                 <div class="content-manager-row-meta">
                     <span class="pill mode-${mode}">${modeLabel[mode]} · ${partySize}</span>
-                    ${c.expansion ? `<span>${escapeHtml(c.expansion)}</span>` : ''}
+                    ${(() => { const ex = getExpansionDisplayName(c); return ex ? `<span>${escapeHtml(ex)}</span>` : ''; })()}
                     ${inUse ? `<span style="color: var(--color-avail);">Em uso</span>` : ''}
                 </div>
             </div>
@@ -3056,16 +3132,17 @@ function handleCreateCustomContent() {
     if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
 
     const nameEl = document.getElementById("inp-cc-name");
-    const expEl  = document.getElementById("inp-cc-expansion");
+    const selEl  = document.getElementById("sel-cc-expansion");
     const modeEl = document.querySelector('input[name="cc-party-mode"]:checked');
 
     const name = (nameEl?.value || "").trim();
-    const expansion = (expEl?.value || "").trim();
+    const expansionId = (selEl?.value || "").trim();
     const partyMode = modeEl?.value || "full";
 
     if (!name) { showErr("Informe um nome para o conteúdo."); return; }
     if (name.length > 80) { showErr("Nome muito longo (máx 80 caracteres)."); return; }
     if (!["full", "light", "dynamic"].includes(partyMode)) { showErr("Modo de party inválido."); return; }
+    if (expansionId === "__new__") { showErr("Confirme a nova expansão antes de adicionar o conteúdo."); return; }
 
     // Gera id determinístico e único
     let baseId = "custom_" + (name.toLowerCase()
@@ -3085,14 +3162,14 @@ function handleCreateCustomContent() {
     }
 
     const newContent = { id, name, partyMode };
-    if (expansion) newContent.expansion = expansion;
+    if (expansionId) newContent.expansionId = expansionId;
 
     if (!Array.isArray(state.customContents)) state.customContents = [];
     state.customContents.push(newContent);
     saveState();
 
     if (nameEl) nameEl.value = "";
-    if (expEl)  expEl.value  = "";
+    if (selEl)  selEl.value  = "";
     const fullRadio = document.querySelector('input[name="cc-party-mode"][value="full"]');
     if (fullRadio) fullRadio.checked = true;
 
@@ -3100,6 +3177,183 @@ function handleCreateCustomContent() {
     renderActiveProgsPanel();
     playSfx('success');
     showToast(`Conteúdo "${name}" criado.`, { type: "success", title: "Conteúdo adicionado" });
+}
+
+// ============================================================================
+// Fase N — UI do catálogo de expansões
+// ============================================================================
+
+function renderExpansionDropdown() {
+    const sel = document.getElementById("sel-cc-expansion");
+    if (!sel) return;
+    const list = (state.expansions || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    const prev = sel.value;
+    sel.innerHTML = "";
+    const optBlank = document.createElement("option");
+    optBlank.value = "";
+    optBlank.textContent = "— Selecione —";
+    sel.appendChild(optBlank);
+    list.forEach(exp => {
+        const o = document.createElement("option");
+        o.value = exp.id;
+        const cap = exp.levelCap ? ` (lvl ${exp.levelCap})` : "";
+        o.textContent = `${exp.name}${cap}`;
+        sel.appendChild(o);
+    });
+    const optNew = document.createElement("option");
+    optNew.value = "__new__";
+    optNew.textContent = "+ Nova expansão…";
+    sel.appendChild(optNew);
+    if (prev && Array.from(sel.options).some(o => o.value === prev)) {
+        sel.value = prev;
+    }
+}
+
+function handleNewExpansionInline() {
+    const errEl = document.getElementById("new-exp-error");
+    const showErr = (msg) => { if (errEl) { errEl.textContent = msg; errEl.hidden = false; } };
+    if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+
+    const nameEl = document.getElementById("inp-new-exp-name");
+    const capEl  = document.getElementById("inp-new-exp-levelcap");
+    const name = (nameEl?.value || "").trim();
+    const capRaw = (capEl?.value || "").trim();
+
+    if (!name) { showErr("Informe o nome da expansão."); return; }
+    if (name.length > 40) { showErr("Nome muito longo (máx 40 caracteres)."); return; }
+    const norm = normalizeExpansionName(name);
+    const exists = (state.expansions || []).some(e => normalizeExpansionName(e.name) === norm);
+    if (exists) { showErr("Já existe uma expansão com esse nome."); return; }
+
+    let levelCap = null;
+    if (capRaw !== "") {
+        const n = parseInt(capRaw, 10);
+        if (!Number.isFinite(n) || n <= 0) { showErr("Level cap deve ser um número positivo."); return; }
+        levelCap = n;
+    }
+
+    const baseId = norm.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "exp";
+    let id = baseId;
+    let suffix = 1;
+    const idsExist = new Set((state.expansions || []).map(e => e.id));
+    while (idsExist.has(id)) id = `${baseId}_${suffix++}`;
+
+    // Nova expansão entra logo após a última normal; Limited(s) são empurradas
+    // sempre para o final da lista.
+    const nonLimited = (state.expansions || []).filter(e => !e.isLimited);
+    const maxNonLimited = nonLimited.reduce((m, e) => Math.max(m, e.order || 0), 0);
+    const newOrder = maxNonLimited + 1;
+    const newExp = { id, name, levelCap, order: newOrder };
+    state.expansions.push(newExp);
+    (state.expansions || [])
+        .filter(e => e.isLimited)
+        .forEach((e, i) => { e.order = newOrder + 100 + i; });
+    saveState();
+
+    renderExpansionDropdown();
+    renderExpansionManagerList();
+    const sel = document.getElementById("sel-cc-expansion");
+    if (sel) sel.value = id;
+
+    if (nameEl) nameEl.value = "";
+    if (capEl) capEl.value = "";
+    const inline = document.getElementById("cc-new-expansion-inline");
+    if (inline) inline.hidden = true;
+    playSfx('success');
+    showToast(`Expansão "${name}" adicionada.`, { type: "success", title: "Expansão criada" });
+}
+
+function renderExpansionManagerList() {
+    const cont = document.getElementById("expansion-manager-list");
+    if (!cont) return;
+    const list = (state.expansions || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    cont.innerHTML = "";
+    if (list.length === 0) {
+        cont.innerHTML = `<div class="content-manager-empty">Nenhuma expansão cadastrada.</div>`;
+        return;
+    }
+    // Contar conteúdos vinculados a cada expansão
+    const allContents = [...FFXIV_RAIDS, ...FFXIV_ULTIMATES, ...FFXIV_LIMITED_CONTENTS, ...(state.customContents || [])];
+    const usageById = {};
+    allContents.forEach(c => {
+        const expId = resolveContentExpansionId(c);
+        if (expId) usageById[expId] = (usageById[expId] || 0) + 1;
+    });
+
+    list.forEach(exp => {
+        const usage = usageById[exp.id] || 0;
+        const row = document.createElement("div");
+        row.className = "content-manager-row";
+        row.innerHTML = `
+            <div class="content-manager-row-info">
+                <span class="content-manager-row-name">${escapeHtml(exp.name)}</span>
+                <div class="content-manager-row-meta" style="gap: 10px; align-items: center;">
+                    <label style="font-size:0.8rem; color: var(--text-muted);">Level cap:</label>
+                    <input type="number" class="ff-input exp-levelcap-input" data-id="${exp.id}"
+                           value="${exp.levelCap ?? ''}" min="1" max="999"
+                           placeholder="${exp.isLimited ? '—' : ''}"
+                           style="width: 80px; padding: 4px 8px; font-size: 0.85rem;"
+                           ${exp.isLimited ? 'disabled title="Limited Jobs não têm level cap"' : ''}>
+                    <span style="font-size:0.75rem; color: var(--text-muted);">
+                        ${usage} conteúdo${usage === 1 ? '' : 's'} vinculado${usage === 1 ? '' : 's'}
+                    </span>
+                </div>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button class="ff-btn-small btn-exp-save" data-id="${exp.id}" ${exp.isLimited ? 'disabled' : ''}>Salvar</button>
+                <button class="ff-btn-small btn-exp-delete" data-id="${exp.id}" ${(usage > 0 || exp.isLimited) ? 'disabled' : ''}
+                        title="${exp.isLimited ? 'Não é possível remover Limited Job' : (usage > 0 ? 'Não é possível remover: há conteúdos vinculados' : 'Remover expansão')}">
+                    <img src="assets/icons/dictionary/exit_game.png" alt="Remover" style="width:16px;height:16px;">
+                </button>
+            </div>
+        `;
+        cont.appendChild(row);
+    });
+
+    cont.querySelectorAll(".btn-exp-save").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const id = btn.dataset.id;
+            const inp = cont.querySelector(`.exp-levelcap-input[data-id="${id}"]`);
+            if (!inp) return;
+            const exp = (state.expansions || []).find(e => e.id === id);
+            if (!exp) return;
+            const raw = (inp.value || "").trim();
+            let newCap = null;
+            if (raw !== "") {
+                const n = parseInt(raw, 10);
+                if (!Number.isFinite(n) || n <= 0) {
+                    showToast("Level cap deve ser positivo.", { type: "error", title: "Valor inválido" });
+                    return;
+                }
+                newCap = n;
+            }
+            exp.levelCap = newCap;
+            saveState();
+            playSfx('click');
+            showToast(`Level cap atualizado para ${exp.name}.`, { type: "success" });
+        });
+    });
+
+    cont.querySelectorAll(".btn-exp-delete").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const exp = (state.expansions || []).find(e => e.id === id);
+            if (!exp) return;
+            const ok = await showConfirm({
+                title: "Remover expansão",
+                message: `Remover a expansão "${exp.name}"?`,
+                detail: "Esta ação não pode ser desfeita.",
+                danger: true,
+                confirmText: "Remover",
+            });
+            if (!ok) return;
+            state.expansions = (state.expansions || []).filter(e => e.id !== id);
+            saveState();
+            renderExpansionDropdown();
+            renderExpansionManagerList();
+            playSfx('click');
+        });
+    });
 }
 
 // Escape simples para conteúdo dinâmico em innerHTML
@@ -3748,6 +4002,43 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (e.key === "Enter") { e.preventDefault(); handleCreateCustomContent(); }
         });
     }
+
+    // Fase N — handlers do dropdown de expansão e do form inline "nova expansão"
+    const selCcExp = document.getElementById("sel-cc-expansion");
+    if (selCcExp) {
+        selCcExp.addEventListener("change", () => {
+            const inline = document.getElementById("cc-new-expansion-inline");
+            if (selCcExp.value === "__new__") {
+                if (inline) inline.hidden = false;
+                document.getElementById("inp-new-exp-name")?.focus();
+            } else {
+                if (inline) inline.hidden = true;
+            }
+        });
+    }
+    const btnNewExpAdd = document.getElementById("btn-new-exp-add");
+    if (btnNewExpAdd) btnNewExpAdd.addEventListener("click", handleNewExpansionInline);
+    const btnNewExpCancel = document.getElementById("btn-new-exp-cancel");
+    if (btnNewExpCancel) {
+        btnNewExpCancel.addEventListener("click", () => {
+            const inline = document.getElementById("cc-new-expansion-inline");
+            if (inline) inline.hidden = true;
+            const sel = document.getElementById("sel-cc-expansion");
+            if (sel && sel.value === "__new__") sel.value = "";
+            const nameEl = document.getElementById("inp-new-exp-name");
+            const capEl = document.getElementById("inp-new-exp-levelcap");
+            const errEl = document.getElementById("new-exp-error");
+            if (nameEl) nameEl.value = "";
+            if (capEl) capEl.value = "";
+            if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
+        });
+    }
+    ["inp-new-exp-name", "inp-new-exp-levelcap"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); handleNewExpansionInline(); }
+        });
+    });
 
     // Fechar qualquer modal via data-target="modal-xxx" no .btn-close-modal
     document.querySelectorAll(".btn-close-modal[data-target]").forEach(btn => {

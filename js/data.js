@@ -45,48 +45,83 @@ const FFXIV_JOBS = [
     { id: "BLU", name: "Blue Mage", role: "limited", icon: "🔵", iconUrl: "assets/icons/dictionary/blue_mage_v11.png" }
 ];
 
+// Fase N — Catálogo de Expansões (seed). state.expansions é o catálogo runtime
+// (editável por admin/officer no modal de gerenciamento). Este array fica como
+// fonte da verdade para o seed inicial em hydrateState.
+const FFXIV_EXPANSIONS_SEED = [
+    { id: "arr", name: "A Realm Reborn", levelCap: 50,  order: 1 },
+    { id: "hw",  name: "Heavensward",    levelCap: 60,  order: 2 },
+    { id: "sb",  name: "Stormblood",     levelCap: 70,  order: 3 },
+    { id: "shb", name: "Shadowbringers", levelCap: 80,  order: 4 },
+    { id: "ew",  name: "Endwalker",      levelCap: 90,  order: 5 },
+    { id: "dt",  name: "Dawntrail",      levelCap: 100, order: 6 },
+    { id: "limited", name: "Limited Job", levelCap: null, order: 99, isLimited: true }
+];
+
+// Fase N — Aliases para retrocompat. Chaves são nomes normalizados (lowercase, trim).
+const EXPANSION_ALIASES = {
+    "arr": "arr", "a realm reborn": "arr", "realm reborn": "arr",
+    "hw":  "hw",  "heavensward": "hw",
+    "sb":  "sb",  "stormblood": "sb",
+    "shb": "shb", "shadowbringers": "shb", "shadow bringers": "shb",
+    "ew":  "ew",  "endwalker": "ew", "end walker": "ew",
+    "dt":  "dt",  "dawntrail": "dt", "dawn trail": "dt",
+    "blu": "limited", "blue mage": "limited", "limited": "limited", "limited job": "limited"
+};
+
+// Fase N — Heurística por nome do conteúdo quando o campo `expansion` está ausente
+// ou ininteligível. Avaliado em ordem; primeiro match vence.
+const CONTENT_NAME_EXPANSION_HINTS = [
+    { match: /arcadion|light[-\s]?heavyweight|cruiserweight|fru|futures rewritten/i, expId: "dt" },
+    { match: /pand[aæ]monium|anabaseios|abyssos|asphodelos|dsr|dragonsong|\btop\b|omega protocol/i, expId: "ew" },
+    { match: /\beden\b|\btea\b|epic of alexander/i, expId: "shb" },
+    { match: /omega:?\s*(alpha|sigma|delta)scape|\buwu\b|weapon'?s refrain/i, expId: "sb" },
+    { match: /alexander|\bucob\b|unending coil/i, expId: "hw" },
+    { match: /coil of bahamut/i, expId: "arr" }
+];
+
 const FFXIV_ULTIMATES = [
-    { id: "UCOB", name: "The Unending Coil of Bahamut (UCOB)", expansion: "Stormblood" },
-    { id: "UWU", name: "The Weapon's Refrain (UWU)", expansion: "Stormblood" },
-    { id: "TEA", name: "The Epic of Alexander (TEA)", expansion: "Shadowbringers" },
-    { id: "DSR", name: "Dragonsong's Reprise (DSR)", expansion: "Endwalker" },
-    { id: "TOP", name: "The Omega Protocol (TOP)", expansion: "Endwalker" },
-    { id: "FRU", name: "Futures Rewritten (FRU)", expansion: "Dawntrail" }
+    { id: "UCOB", name: "The Unending Coil of Bahamut (UCOB)", expansionId: "sb" },
+    { id: "UWU", name: "The Weapon's Refrain (UWU)", expansionId: "sb" },
+    { id: "TEA", name: "The Epic of Alexander (TEA)", expansionId: "shb" },
+    { id: "DSR", name: "Dragonsong's Reprise (DSR)", expansionId: "ew" },
+    { id: "TOP", name: "The Omega Protocol (TOP)", expansionId: "ew" },
+    { id: "FRU", name: "Futures Rewritten (FRU)", expansionId: "dt" }
 ];
 
 const FFXIV_RAIDS = [
     // Dawntrail
-    { id: "arcadion_lh", name: "AAC Light-heavyweight (Savage)", expansion: "Dawntrail", encounters: ["M1S", "M2S", "M3S", "M4S"] },
-    
+    { id: "arcadion_lh", name: "AAC Light-heavyweight (Savage)", expansionId: "dt", encounters: ["M1S", "M2S", "M3S", "M4S"] },
+
     // Endwalker
-    { id: "anabaseios", name: "Pandæmonium: Anabaseios (Savage)", expansion: "Endwalker", encounters: ["P9S", "P10S", "P11S", "P12S"] },
-    { id: "abyssos", name: "Pandæmonium: Abyssos (Savage)", expansion: "Endwalker", encounters: ["P5S", "P6S", "P7S", "P8S"] },
-    { id: "asphodelos", name: "Pandæmonium: Asphodelos (Savage)", expansion: "Endwalker", encounters: ["P1S", "P2S", "P3S", "P4S"] },
+    { id: "anabaseios", name: "Pandæmonium: Anabaseios (Savage)", expansionId: "ew", encounters: ["P9S", "P10S", "P11S", "P12S"] },
+    { id: "abyssos", name: "Pandæmonium: Abyssos (Savage)", expansionId: "ew", encounters: ["P5S", "P6S", "P7S", "P8S"] },
+    { id: "asphodelos", name: "Pandæmonium: Asphodelos (Savage)", expansionId: "ew", encounters: ["P1S", "P2S", "P3S", "P4S"] },
 
     // Shadowbringers
-    { id: "eden_promise", name: "Eden's Promise (Savage)", expansion: "Shadowbringers", encounters: ["E9S", "E10S", "E11S", "E12S"] },
-    { id: "eden_verse", name: "Eden's Verse (Savage)", expansion: "Shadowbringers", encounters: ["E5S", "E6S", "E7S", "E8S"] },
-    { id: "eden_gate", name: "Eden's Gate (Savage)", expansion: "Shadowbringers", encounters: ["E1S", "E2S", "E3S", "E4S"] },
+    { id: "eden_promise", name: "Eden's Promise (Savage)", expansionId: "shb", encounters: ["E9S", "E10S", "E11S", "E12S"] },
+    { id: "eden_verse", name: "Eden's Verse (Savage)", expansionId: "shb", encounters: ["E5S", "E6S", "E7S", "E8S"] },
+    { id: "eden_gate", name: "Eden's Gate (Savage)", expansionId: "shb", encounters: ["E1S", "E2S", "E3S", "E4S"] },
 
     // Stormblood
-    { id: "omega_alpha", name: "Omega: Alphascape (Savage)", expansion: "Stormblood", encounters: ["O9S", "O10S", "O11S", "O12S"] },
-    { id: "omega_sigma", name: "Omega: Sigmascape (Savage)", expansion: "Stormblood", encounters: ["O5S", "O6S", "O7S", "O8S"] },
-    { id: "omega_delta", name: "Omega: Deltascape (Savage)", expansion: "Stormblood", encounters: ["O1S", "O2S", "O3S", "O4S"] },
+    { id: "omega_alpha", name: "Omega: Alphascape (Savage)", expansionId: "sb", encounters: ["O9S", "O10S", "O11S", "O12S"] },
+    { id: "omega_sigma", name: "Omega: Sigmascape (Savage)", expansionId: "sb", encounters: ["O5S", "O6S", "O7S", "O8S"] },
+    { id: "omega_delta", name: "Omega: Deltascape (Savage)", expansionId: "sb", encounters: ["O1S", "O2S", "O3S", "O4S"] },
 
     // Heavensward
-    { id: "alex_creator", name: "Alexander: The Creator (Savage)", expansion: "Heavensward", encounters: ["A9S", "A10S", "A11S", "A12S"] },
-    { id: "alex_midas", name: "Alexander: Midas (Savage)", expansion: "Heavensward", encounters: ["A5S", "A6S", "A7S", "A8S"] },
-    { id: "alex_gordias", name: "Alexander: Gordias (Savage)", expansion: "Heavensward", encounters: ["A1S", "A2S", "A3S", "A4S"] },
+    { id: "alex_creator", name: "Alexander: The Creator (Savage)", expansionId: "hw", encounters: ["A9S", "A10S", "A11S", "A12S"] },
+    { id: "alex_midas", name: "Alexander: Midas (Savage)", expansionId: "hw", encounters: ["A5S", "A6S", "A7S", "A8S"] },
+    { id: "alex_gordias", name: "Alexander: Gordias (Savage)", expansionId: "hw", encounters: ["A1S", "A2S", "A3S", "A4S"] },
 
     // A Realm Reborn
-    { id: "coil_final", name: "Final Coil of Bahamut", expansion: "A Realm Reborn", encounters: ["T10", "T11", "T12", "T13"] },
-    { id: "coil_second", name: "Second Coil of Bahamut (Savage)", expansion: "A Realm Reborn", encounters: ["T6S", "T7S", "T8S", "T9S"] },
-    { id: "coil_binding", name: "Binding Coil of Bahamut", expansion: "A Realm Reborn", encounters: ["T1", "T2", "T3", "T4", "T5"] }
+    { id: "coil_final", name: "Final Coil of Bahamut", expansionId: "arr", encounters: ["T10", "T11", "T12", "T13"] },
+    { id: "coil_second", name: "Second Coil of Bahamut (Savage)", expansionId: "arr", encounters: ["T6S", "T7S", "T8S", "T9S"] },
+    { id: "coil_binding", name: "Binding Coil of Bahamut", expansionId: "arr", encounters: ["T1", "T2", "T3", "T4", "T5"] }
 ];
 
 // Fase 14 — Conteúdos de Limited Job (hardcoded, não editáveis pelo usuário)
 const FFXIV_LIMITED_CONTENTS = [
-    { id: "blue_mage_raid", name: "Blue Mage", expansion: "Limited Job", partyMode: "limited", limitedJobId: "BLU", partySize: 8 }
+    { id: "blue_mage_raid", name: "Blue Mage", expansionId: "limited", partyMode: "limited", limitedJobId: "BLU", partySize: 8 }
     // Beastmaster será adicionado quando o job for lançado pela Square Enix.
 ];
 
