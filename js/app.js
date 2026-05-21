@@ -1824,25 +1824,25 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
     let selectedProg = currentProgId || (progs[0] || null);
     refreshQuorumUI(selectedProg);
     body.querySelectorAll(".sched-opt-btn").forEach(btn => {
+        // Confirmar agendamento ao clicar no prog (double-click)
+        btn.addEventListener("dblclick", confirmSchedule);
+
+        // Clique único: seleciona o prog; segundo clique no mesmo prog confirma.
+        // Capturamos wasAlreadyActive ANTES de modificar as classes para evitar
+        // que o mesmo clique que seleciona o prog já dispare confirmSchedule.
         btn.addEventListener("click", () => {
+            const wasAlreadyActive = btn.classList.contains("sched-opt-active") && btn.dataset.prog === selectedProg;
             body.querySelectorAll(".sched-opt-btn").forEach(b => b.classList.remove("sched-opt-active"));
             btn.classList.add("sched-opt-active");
             selectedProg = btn.dataset.prog;
             refreshQuorumUI(selectedProg);
-        });
-    });
 
-    // Confirmar agendamento ao clicar no prog (fecha o modal)
-    body.querySelectorAll(".sched-opt-btn").forEach(btn => {
-        btn.addEventListener("dblclick", confirmSchedule);
-    });
-
-    // Botão confirmar implícito: clique em prog já selecionado
-    body.querySelectorAll(".sched-opt-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-            if (btn.dataset.prog === selectedProg && btn.classList.contains("sched-opt-active")) {
+            if (wasAlreadyActive) {
                 // segundo clique no mesmo prog = confirmar
                 if (existingEvt && existingEvt.progId === selectedProg) return; // sem mudança
+                // Se há campo de data visível mas ainda vazio, aguarda o usuário preenchê-lo
+                const sessDateEl = body.querySelector("#inp-sched-session-date");
+                if (sessDateEl && !sessDateEl.value.trim()) return;
                 confirmSchedule();
             }
         });
@@ -2235,6 +2235,14 @@ function renderScheduleTable() {
                     else if (statusVal === "avail") player.monthlySchedule[dateKey] = "late";
                     else if (statusVal === "late") player.monthlySchedule[dateKey] = "unavail";
                     else delete player.monthlySchedule[dateKey];
+
+                    const newStatus = player.monthlySchedule[dateKey] || "";
+                    if (newStatus === "avail" || newStatus === "late") {
+                        (state.pendingNotifications || [])
+                            .filter(n => n.date === dateKey)
+                            .forEach(n => markNotificationSeen(n.id));
+                        renderNotificationBanner();
+                    }
 
                     saveState();
                     renderScheduleTable();
