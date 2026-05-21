@@ -1843,6 +1843,9 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             if (btn.dataset.prog === selectedProg && btn.classList.contains("sched-opt-active")) {
                 // segundo clique no mesmo prog = confirmar
                 if (existingEvt && existingEvt.progId === selectedProg) return; // sem mudança
+                // Se há campo de data visível mas ainda vazio, aguarda o usuário preenchê-lo
+                const sessDateEl = body.querySelector("#inp-sched-session-date");
+                if (sessDateEl && !sessDateEl.value.trim()) return;
                 confirmSchedule();
             }
         });
