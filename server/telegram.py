@@ -107,10 +107,10 @@ def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, 
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
     if dynamic:
-        body = f"📅 <b>Raid agendada!</b>\n{prog_name} — {pretty_date}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
+        body = f"📅 <b>Evento Planejado</b>\n{prog_name} — {pretty_date}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
     else:
         body = (
-            f"📅 <b>Raid agendada!</b>\n"
+            f"📅 <b>Evento Planejado</b>\n"
             f"{prog_name} — {pretty_date}.{details}\n\n"
             f"Confirmados: {confirmed}/{quorum}.\n"
             f"Acesse {SITE_URL} e marque se vai ou não."
