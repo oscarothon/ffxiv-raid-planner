@@ -2236,6 +2236,14 @@ function renderScheduleTable() {
                     else if (statusVal === "late") player.monthlySchedule[dateKey] = "unavail";
                     else delete player.monthlySchedule[dateKey];
 
+                    const newStatus = player.monthlySchedule[dateKey] || "";
+                    if (newStatus === "avail" || newStatus === "late") {
+                        (state.pendingNotifications || [])
+                            .filter(n => n.date === dateKey)
+                            .forEach(n => markNotificationSeen(n.id));
+                        renderNotificationBanner();
+                    }
+
                     saveState();
                     renderScheduleTable();
                 });
