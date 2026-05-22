@@ -3593,6 +3593,23 @@ label {
     border-color: var(--color-avail, #4ade80);
     background: rgba(20, 40, 25, 0.4);
 }
+.char-prog-row.is-blocked {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(35, 20, 20, 0.45);
+    border-color: rgba(165, 53, 53, 0.4);
+}
+.char-prog-row.is-blocked:hover {
+    border-color: rgba(165, 53, 53, 0.55);
+}
+.char-prog-row.is-blocked input[type="checkbox"] {
+    cursor: not-allowed;
+}
+.char-prog-blocked-icon {
+    margin-left: 4px;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
 .char-prog-row input[type="checkbox"] {
     cursor: pointer;
 }
