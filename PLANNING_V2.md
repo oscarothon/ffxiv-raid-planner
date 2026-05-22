@@ -14,13 +14,12 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 Ordem prevista:
 
-1. **Fase N** — Catálogo de Expansões (dropdown + level cap)
-2. **Fase O** — Aba Personagem + Refactor Party
-3. **Fase P** — Validação de Presença por Expansão
-4. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
-5. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
+1. **Fase O** — Aba Personagem + Refactor Party
+2. **Fase P** — Validação de Presença por Expansão
+3. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
+4. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M.
+Concluídas: J, K, L, M, N.
 
 ---
 
@@ -34,12 +33,12 @@ Concluídas: J, K, L, M.
 | K | Lista Talvez/Atraso | Listar nicks na mensagem de atenção (status incerto, não confirmados) | ✅ | Sonnet |
 | L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
 | M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
+| N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin + retrocompat aprimorada | ✅ | Sonnet |
 
 ### Pendentes — App Principal (prioridade)
 
 | # | Fase | Descrição | Status | Modelo |
 |---|------|-----------|:------:|:------:|
-| N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin + retrocompat aprimorada | ⏳ | Sonnet |
 | O | Aba Personagem + Refactor Party | Renomeia "Membros"→"Party", cria aba "Personagem" (ilvl/jobs/expansão por user), arquitetura extensível | ⏳ | Opus |
 | P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
 | Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
@@ -63,84 +62,6 @@ Concluídas: J, K, L, M.
 ---
 
 # PARTE 1 — Pendentes do App Principal (Prioridade)
-
-## Fase N — Catálogo de Expansões (dropdown + level cap editável)
-
-**Objetivo:** transformar `expansion` (hoje campo de texto livre em `inp-cc-expansion`) em entidade do estado com level cap próprio. Permite dropdown na criação de conteúdo, adição de expansões novas, edição do level cap das existentes, e abre caminho para validação de presença na Fase P.
-
-### Schema
-
-1. Novo objeto no estado: `state.expansions` — array de `{ id, name, levelCap, order, isLimited?: boolean }`.
-2. **Seed da migração** (em [js/app.js](js/app.js) ao carregar state sem `expansions`):
-   ```js
-   state.expansions = state.expansions || [
-     { id: "arr", name: "A Realm Reborn", levelCap: 50,  order: 1 },
-     { id: "hw",  name: "Heavensward",    levelCap: 60,  order: 2 },
-     { id: "sb",  name: "Stormblood",     levelCap: 70,  order: 3 },
-     { id: "shb", name: "Shadowbringers", levelCap: 80,  order: 4 },
-     { id: "ew",  name: "Endwalker",      levelCap: 90,  order: 5 },
-     { id: "dt",  name: "Dawntrail",      levelCap: 100, order: 6 },
-     { id: "limited", name: "Limited Job", levelCap: null, order: 99, isLimited: true }
-   ];
-   ```
-
-### Retrocompat — converter conteúdos existentes (estratégia aprimorada)
-
-3. Built-ins (`FFXIV_RAIDS`, `FFXIV_ULTIMATES`) já têm `expansion` canônica em código — match direto via `getExpansionIdByName(name)`.
-4. Customs em `state.customContents` passam por backfill em camadas:
-   - **(a) Match exato** (case-insensitive, trim) contra `expansions[].name`.
-   - **(b) Aliases comuns**: tabela explícita de abreviações e variações:
-     ```
-     "arr" | "a realm reborn" | "realm reborn"       → arr
-     "hw"  | "heavensward"                            → hw
-     "sb"  | "stormblood"                             → sb
-     "shb" | "shadowbringers" | "shadow bringers"    → shb
-     "ew"  | "endwalker" | "end walker"               → ew
-     "dt"  | "dawntrail" | "dawn trail"               → dt
-     "blu" | "blue mage" | "limited"                  → limited
-     ```
-   - **(c) Heurística por nome do conteúdo**: se o nome do prog contém marcador conhecido de raid tier, deduzir:
-     - "Pandæmonium" / "Pandaemonium" → `ew`
-     - "Anabaseios" / "Abyssos" / "Asphodelos" → `ew`
-     - "Arcadion" / "Light-heavyweight" / "Cruiserweight" → `dt`
-     - "Eden" → `shb`
-     - "Omega" → `sb`
-     - "Alexander" → `hw`
-     - "DSR" / "Dragonsong" → `ew` (Endwalker patch)
-     - "TOP" / "Omega Protocol" → `ew`
-     - "FRU" / "Futures Rewritten" → `dt`
-     - "UCOB" → `hw`, "UWU" → `sb`, "TEA" → `shb`
-   - **(d) Fallback permissivo**: se nada bate, atribuir a expansão **mais recente** (`dt`). Melhor permissivo do que travar o usuário — admin pode corrigir depois no modal de Expansões.
-5. **Aplicar mesma estratégia em personagens** (Fase O) para `character.currentExpansion` (texto livre legado, se houver).
-6. Eventos antigos (`raidEvents`) **não** precisam de campo `expansionId` — derivam de `content.expansionId` via lookup. Sem migração de eventos.
-
-### Dropdown na criação de conteúdo
-
-7. Substituir `<input id="inp-cc-expansion">` (campo de texto livre em [index.html:543](index.html:543)) por:
-   - `<select id="sel-cc-expansion">` populado dinamicamente das `state.expansions` ordenadas por `order`
-   - Última opção: `+ Nova expansão` → abre mini-form inline com input `name` (string) + input `levelCap` (number) + botão "Adicionar"
-   - Ao adicionar: cria entrada em `state.expansions` com `order = max(order)+1` e auto-seleciona no dropdown
-8. Em `handleCreateCustomContent` em [js/app.js:2997](js/app.js:2997): mudar `expansion: string` → `expansionId: string` no objeto salvo em `customContents`.
-9. **Compat de leitura**: durante a transição, qualquer código que leia `content.expansion` (string) deve cair em fallback: `state.expansions.find(e => e.id === content.expansionId)?.name || content.expansion`.
-
-### Edição de level cap (admin/officer)
-
-10. Nova seção no modal `modal-content-manager` (ou modal próprio "Expansões"):
-    - Lista de expansões com nome + level cap inline editável
-    - Botão "Salvar" para cada linha
-    - `levelCap` é apenas informativo nesta fase (Fase P usa `order`, não o cap). Mas fica visível e editável para futuras features.
-11. Validação: `levelCap` deve ser positivo OU `null` (Limited Job).
-12. Deletar expansão: **não permitido** se houver pelo menos 1 `content` apontando para ela. Mostrar contador de conteúdos vinculados.
-
-### Critério de aceite
-
-- Conteúdos antigos e custom são **convertidos automaticamente** via match exato → alias → heurística → fallback `dt`. Nenhum conteúdo fica com "Sem expansão definida".
-- Criação de conteúdo usa dropdown; opção "Nova expansão" abre form inline com nome + level cap.
-- Admin/officer consegue editar level cap de expansões existentes via modal de Expansões.
-- Não é possível deletar expansão com conteúdos vinculados.
-- Personagens (quando Fase O chegar) usam a mesma estratégia de retrocompat para `currentExpansion`.
-
----
 
 ## Fase O — Aba Personagem + Refactor da Aba Party
 
@@ -873,6 +794,33 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase N — Catálogo de Expansões (dropdown + level cap editável) ✅
+
+**Concluída em** [PR #21](https://github.com/oscarothon/ffxiv-raid-planner/pull/21) · commit `ad60326`
+
+**Objetivo:** transformar `expansion` (texto livre em conteúdos) em entidade do estado com level cap próprio. Permite dropdown na criação, edição admin do level cap e abre caminho para a Fase P (validação por expansão).
+
+### Schema
+
+1. Novo `state.expansions`: array de `{ id, name, levelCap, order, isLimited?: boolean }`. Seed inicial em `hydrateState` com ARR (50) → DT (100) + Limited Job.
+2. Built-ins (`FFXIV_RAIDS`/`FFXIV_ULTIMATES`/`FFXIV_LIMITED_CONTENTS`) migrados de `expansion` (string) → `expansionId` (referência ao catálogo).
+
+### Retrocompat — converter conteúdos existentes (estratégia em camadas)
+
+3. Customs com `expansion` (string) são convertidos para `expansionId` no `hydrateState` via `resolveContentExpansionId`. Camadas: (a) match exato → (b) aliases (ARR/HW/SB/ShB/EW/DT + variações como "Shadow Bringers", "Dawn Trail") → (c) heurística por nome do conteúdo (Pandæmonium → ew, Arcadion → dt, DSR/TOP → ew, FRU → dt, Eden → shb, Omega → sb, Alexander → hw, UCOB → hw, UWU → sb, TEA → shb) → (d) fallback permissivo para expansão mais recente.
+4. Nenhum conteúdo fica "Sem expansão definida".
+5. Estratégia exposta em `EXPANSION_ALIASES` + `CONTENT_NAME_EXPANSION_HINTS` em `data.js` — reaproveitável pela Fase O para `character.currentExpansion`.
+
+### UI
+
+6. `<input id="inp-cc-expansion">` substituído por `<select id="sel-cc-expansion">` populado de `state.expansions` ordenado por `order`. Última opção: `+ Nova expansão` → form inline (nome + level cap).
+7. `handleCreateCustomContent` salva `expansionId` no custom.
+8. Helper `getExpansionDisplayName(content)` usado nos pontos de leitura (card do prog ativo, picker, content manager).
+9. Modal "Gerenciamento de Conteúdos" ganha seção **Expansões cadastradas**: edição inline de level cap + contador de conteúdos vinculados + remoção (bloqueada para Limited Job e para expansões com vinculados).
+10. Nova expansão criada via dropdown entra logo após a última normal; Limited Job é reposicionada para ficar sempre no fim.
+
+---
+
 ## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
 
 **Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
@@ -920,11 +868,10 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 | Fase | Esforço estimado |
 |---|---|
-| N | 1-2 sessões (Sonnet) — schema + dropdown + admin edit + retrocompat |
 | O | 3-4 sessões (Opus) — refactor grande, nova aba, migração de schema |
 | P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
 | Q | 3-4 sessões (Opus) — widget de horas + overlap + modal + revisão K/L/M |
-| **Subtotal app principal** | **~8-12 sessões** |
+| **Subtotal app principal** | **~7-10 sessões** |
 | A | 2-3 sessões (Opus) |
 | B | 3-4 sessões (Opus) |
 | C | 3-4 sessões (Opus) |
@@ -935,8 +882,8 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) |
 | **Subtotal Strategy Planner** | **~17-21 sessões** |
-| J, K, L, M | ✅ concluídas |
-| **Total restante** | **~25-33 sessões** |
+| J, K, L, M, N | ✅ concluídas |
+| **Total restante** | **~24-31 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
@@ -953,4 +900,4 @@ Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadma
 
 ## Próximo passo
 
-Iniciar **Fase N** quando o usuário confirmar. Branch: `feature/fase-N-expansoes-catalogo`.
+Iniciar **Fase O** quando o usuário confirmar. Branch: `feature/fase-O-personagem-refactor-party`.
