@@ -743,6 +743,194 @@ function getProgObj(progId) {
     return allTargets.find(t => t.id === progId) || { id: progId, name: progId, expansionId: null };
 }
 
+// ============================================================================
+// Fase O — Personagem (1:1 com o user logado, vive em users.character_json)
+// ============================================================================
+
+let currentCharacter = null; // {name, ilvl, currentExpansionId, jobs:[{id,level?}], subscribedProgs:[]}
+let _characterSaveTimer = null;
+
+function emptyCharacter() {
+    return { name: "", ilvl: null, currentExpansionId: null, jobs: [], subscribedProgs: [] };
+}
+
+async function loadCharacter() {
+    try {
+        const data = await API.getCharacter();
+        currentCharacter = {
+            ...emptyCharacter(),
+            ...(data || {}),
+            jobs: Array.isArray(data?.jobs) ? data.jobs : [],
+            subscribedProgs: Array.isArray(data?.subscribedProgs) ? data.subscribedProgs : [],
+        };
+    } catch (err) {
+        console.warn("loadCharacter falhou:", err);
+        currentCharacter = emptyCharacter();
+    }
+}
+
+function saveCharacterDebounced() {
+    if (!currentCharacter) return;
+    if (_characterSaveTimer) clearTimeout(_characterSaveTimer);
+    _characterSaveTimer = setTimeout(async () => {
+        try {
+            await API.putCharacter(currentCharacter);
+            showCharacterSaveIndicator();
+        } catch (err) {
+            console.warn("saveCharacter falhou:", err);
+            showToast("Não foi possível salvar o personagem.", { type: "error" });
+        }
+    }, 400);
+}
+
+function showCharacterSaveIndicator() {
+    const el = document.getElementById("char-save-indicator");
+    if (!el) return;
+    el.hidden = false;
+    el.classList.remove("is-fading");
+    clearTimeout(el._fadeTimer);
+    el._fadeTimer = setTimeout(() => {
+        el.classList.add("is-fading");
+        setTimeout(() => { el.hidden = true; }, 400);
+    }, 1500);
+}
+
+function renderCharacterTab() {
+    if (!currentCharacter) return;
+    renderCharacterIdentity();
+    renderCharacterJobs();
+    renderCharacterProgs();
+}
+
+function renderCharacterIdentity() {
+    const nameEl = document.getElementById("char-name");
+    const ilvlEl = document.getElementById("char-ilvl");
+    const expSel = document.getElementById("char-expansion");
+    if (!nameEl || !ilvlEl || !expSel) return;
+
+    nameEl.value = currentCharacter.name || "";
+    ilvlEl.value = currentCharacter.ilvl ?? "";
+
+    // Popula expansões ordenadas (Limited Job vai pro fim)
+    expSel.innerHTML = "";
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "— Selecione —";
+    expSel.appendChild(blank);
+    (state.expansions || []).slice()
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .forEach(exp => {
+            const o = document.createElement("option");
+            o.value = exp.id;
+            const cap = exp.levelCap ? ` (lvl ${exp.levelCap})` : "";
+            o.textContent = `${exp.name}${cap}`;
+            expSel.appendChild(o);
+        });
+    expSel.value = currentCharacter.currentExpansionId || "";
+}
+
+function renderCharacterJobs() {
+    const grid = document.getElementById("char-jobs-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    const byId = new Map((currentCharacter.jobs || []).map(j => [j.id, j]));
+
+    FFXIV_JOBS.forEach(job => {
+        const selected = byId.has(job.id);
+        const charJob = byId.get(job.id);
+        const card = document.createElement("div");
+        card.className = `char-job-card${selected ? ' is-selected' : ''}`;
+        card.dataset.jobId = job.id;
+        card.innerHTML = `
+            <img src="${job.iconUrl}" alt="${job.id}" onerror="this.style.display='none'">
+            <span class="char-job-id">${job.id}</span>
+            <input type="number" class="char-job-level" min="1" max="100" placeholder="lvl"
+                   value="${charJob?.level ?? ''}" aria-label="Level de ${job.name}">
+        `;
+        card.addEventListener("click", (e) => {
+            // Click no input não toggla
+            if (e.target.classList.contains("char-job-level")) return;
+            toggleCharacterJob(job.id);
+        });
+        const lvlInput = card.querySelector(".char-job-level");
+        lvlInput.addEventListener("input", () => {
+            const j = (currentCharacter.jobs || []).find(jj => jj.id === job.id);
+            if (!j) return;
+            const v = parseInt(lvlInput.value, 10);
+            if (Number.isFinite(v) && v > 0) j.level = v;
+            else delete j.level;
+            saveCharacterDebounced();
+        });
+        lvlInput.addEventListener("click", e => e.stopPropagation());
+        grid.appendChild(card);
+    });
+}
+
+function toggleCharacterJob(jobId) {
+    if (!currentCharacter) return;
+    if (!Array.isArray(currentCharacter.jobs)) currentCharacter.jobs = [];
+    const idx = currentCharacter.jobs.findIndex(j => j.id === jobId);
+    if (idx >= 0) currentCharacter.jobs.splice(idx, 1);
+    else currentCharacter.jobs.push({ id: jobId });
+    saveCharacterDebounced();
+    renderCharacterJobs();
+}
+
+function renderCharacterProgs() {
+    const cont = document.getElementById("char-progs-list");
+    if (!cont) return;
+    cont.innerHTML = "";
+    const active = Array.isArray(state.activeProgs) ? state.activeProgs : [];
+    if (active.length === 0) {
+        cont.innerHTML = `<div class="character-progs-empty">Nenhum prog ativo na static.</div>`;
+        return;
+    }
+    const subs = new Set(currentCharacter.subscribedProgs || []);
+    active.forEach(progId => {
+        const prog = getProgObj(progId);
+        const expName = getExpansionDisplayName(prog) || "";
+        const subscribed = subs.has(progId);
+        const row = document.createElement("label");
+        row.className = `char-prog-row${subscribed ? ' is-subscribed' : ''}`;
+        row.innerHTML = `
+            <input type="checkbox" ${subscribed ? 'checked' : ''} data-prog-id="${progId}">
+            <span class="char-prog-name">${escapeHtml(prog.name || progId)}</span>
+            ${expName ? `<span class="char-prog-meta">${escapeHtml(expName)}</span>` : ''}
+        `;
+        const cb = row.querySelector("input");
+        cb.addEventListener("change", () => {
+            const list = currentCharacter.subscribedProgs = Array.isArray(currentCharacter.subscribedProgs)
+                ? currentCharacter.subscribedProgs : [];
+            const idx = list.indexOf(progId);
+            if (cb.checked && idx < 0) list.push(progId);
+            else if (!cb.checked && idx >= 0) list.splice(idx, 1);
+            saveCharacterDebounced();
+            row.classList.toggle("is-subscribed", cb.checked);
+        });
+        cont.appendChild(row);
+    });
+}
+
+// Listeners dos inputs de identidade (configurados 1x no DOMContentLoaded)
+function bindCharacterIdentityListeners() {
+    const nameEl = document.getElementById("char-name");
+    const ilvlEl = document.getElementById("char-ilvl");
+    const expSel = document.getElementById("char-expansion");
+    if (nameEl) nameEl.addEventListener("input", () => {
+        currentCharacter.name = nameEl.value;
+        saveCharacterDebounced();
+    });
+    if (ilvlEl) ilvlEl.addEventListener("input", () => {
+        const v = parseInt(ilvlEl.value, 10);
+        currentCharacter.ilvl = Number.isFinite(v) && v >= 0 ? v : null;
+        saveCharacterDebounced();
+    });
+    if (expSel) expSel.addEventListener("change", () => {
+        currentCharacter.currentExpansionId = expSel.value || null;
+        saveCharacterDebounced();
+    });
+}
+
 // Fase 8 — Modo de party do conteúdo
 // Hardcoded Savage/Ultimate = "full" (8 titulares). Limited Jobs = "limited".
 // Customs definem "full" | "light" | "dynamic" via state.customContents.
@@ -1426,7 +1614,7 @@ function renderRosterTables() {
 }
 
 function bindRosterTableEvents() {
-    const container = document.getElementById("roster-tab");
+    const container = document.getElementById("party-tab");
     if (!container) return;
 
     container.querySelectorAll(".direct-pool-job-btn").forEach(btn => {
@@ -1714,7 +1902,7 @@ function renderDashboardVisualizer() {
             emptyCard.innerHTML = `<div class="empty-slot-txt">Vaga Livre ${i + 1}</div>`;
             emptyCard.style.cursor = "pointer";
             emptyCard.addEventListener("click", () => {
-                const rosterTabBtn = document.querySelector(".tab-btn[data-tab='roster']");
+                const rosterTabBtn = document.querySelector(".tab-btn[data-tab='party']");
                 if (rosterTabBtn) rosterTabBtn.click();
             });
             container.appendChild(emptyCard);
@@ -3651,6 +3839,7 @@ async function bootstrapAfterAuth() {
     }
     hideAuthModal();
     updateUserPill();
+    await loadCharacter();
     renderAllAfterLoad();
     startPolling();
 }
@@ -3660,6 +3849,7 @@ function renderAllAfterLoad() {
     renderProgTabsBar();
     renderRosterTables();
     renderEquipmentPanel();
+    renderCharacterTab();
 
     const btnSoundToggle = document.getElementById("btn-sound-toggle");
     if (btnSoundToggle) btnSoundToggle.classList.toggle("active", localSfxEnabled);
@@ -3871,18 +4061,27 @@ document.addEventListener("DOMContentLoaded", async () => {
                 b.classList.remove("active");
                 b.setAttribute("aria-selected", "false");
             });
-            
+
             tabPanes.forEach(p => p.hidden = true);
 
             btn.classList.add("active");
             btn.setAttribute("aria-selected", "true");
-            
+
             const targetPane = document.getElementById(`${targetTab}-tab`);
             if (targetPane) {
                 targetPane.hidden = false;
             }
+
+            // Fase O — re-renderiza a aba Personagem ao entrar (state pode ter
+            // mudado, ex: novos progs ativos para a seção de subscrição).
+            if (targetTab === "character") {
+                renderCharacterTab();
+            }
         });
     });
+
+    // Fase O — listeners dos inputs de identidade (uma vez no boot)
+    bindCharacterIdentityListeners();
 
     const btnResetRoster = document.getElementById("btn-reset-roster");
     if (btnResetRoster) {

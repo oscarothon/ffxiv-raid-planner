@@ -67,8 +67,11 @@
             <button class="tab-btn active" data-tab="dashboard" aria-selected="true" aria-controls="dashboard-tab">
                 Visão Geral
             </button>
-            <button class="tab-btn" data-tab="roster" aria-selected="false" aria-controls="roster-tab">
-                Membros (Roster)
+            <button class="tab-btn" data-tab="party" aria-selected="false" aria-controls="party-tab">
+                Party
+            </button>
+            <button class="tab-btn" data-tab="character" aria-selected="false" aria-controls="character-tab">
+                Personagem
             </button>
             <button class="tab-btn" data-tab="equipment" aria-selected="false" aria-controls="equipment-tab">
                 Equipamentos
@@ -136,8 +139,8 @@
                 </div>
             </section>
 
-            <!-- ABA 2: MEMBROS (ROSTER) -->
-            <section id="roster-tab" class="tab-pane" role="tabpanel" hidden>
+            <!-- ABA 2: PARTY (escalação por prog) — antes "Membros (Roster)" -->
+            <section id="party-tab" class="tab-pane" role="tabpanel" hidden>
                 <div class="panel-header-action">
                     <h2>Gerenciamento de Elenco (Little Ala Mhigos)</h2>
                     <button id="btn-reset-roster" class="ff-btn-danger">Limpar Todos</button>
@@ -262,6 +265,70 @@
                             <!-- Gerado dinamicamente -->
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+            <!-- ABA 2.5: PERSONAGEM (Fase O) — perfil 1:1 com o user logado -->
+            <section id="character-tab" class="tab-pane" role="tabpanel" hidden>
+                <div class="panel-header-action">
+                    <h2>Meu Personagem</h2>
+                    <span id="char-save-indicator" class="character-save-indicator" hidden>Salvo</span>
+                </div>
+                <p class="section-desc">Configure seu personagem (nome, ilvl, classes, expansão atual). Esses dados aparecem na aba Party quando você está escalado em um prog.</p>
+
+                <div class="character-sections-grid">
+                    <!-- Painel: Identidade -->
+                    <div class="ff-panel" id="character-identity-panel">
+                        <div class="panel-header">
+                            <h2>Identidade</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="form-group">
+                                <label for="char-name">Nome do personagem</label>
+                                <input id="char-name" type="text" class="ff-input" maxlength="80" placeholder="Ex: WoL Azem">
+                            </div>
+                            <div class="form-group">
+                                <label for="char-expansion">Expansão atual</label>
+                                <select id="char-expansion" class="ff-select">
+                                    <!-- preenchido via renderCharacterIdentity() -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="char-ilvl">Item Level (iLvl)</label>
+                                <input id="char-ilvl" type="number" class="ff-input" min="1" max="999" placeholder="Ex: 710">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Painel: Classes -->
+                    <div class="ff-panel" id="character-jobs-panel">
+                        <div class="panel-header">
+                            <h2>Classes</h2>
+                        </div>
+                        <div class="panel-body">
+                            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">
+                                Marque as classes que você joga. O level é opcional.
+                            </p>
+                            <div id="char-jobs-grid" class="character-jobs-grid">
+                                <!-- preenchido via renderCharacterJobs() -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Painel: Subscrição em progs -->
+                    <div class="ff-panel" id="character-progs-panel">
+                        <div class="panel-header">
+                            <h2>Progs ativos</h2>
+                        </div>
+                        <div class="panel-body">
+                            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">
+                                Marque os progs em que você quer participar. O officer/admin usa isso para montar a escalação.
+                            </p>
+                            <div id="char-progs-list" class="character-progs-list">
+                                <!-- preenchido via renderCharacterProgs() -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
