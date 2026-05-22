@@ -18,7 +18,7 @@ Ordem prevista:
 2. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
 3. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário).
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes).
 
 ---
 
@@ -36,6 +36,7 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 | O | Aba Personagem (parte 1) | `users.character_json` + endpoints + migração + nova aba "Personagem" (identidade/jobs/progs) + renomeia "Membros"→"Party" + tabs responsivas | ✅ | Opus |
 | O.5 | Validações na Personagem | ILVL Máximo + Eventos Ativos + validação por expansão/Limited + auto-desmarca silenciosa | ✅ | Sonnet |
 | O.2 | Refactor Party + Calendário + Claim | Cadastro manual removido; slots com `user_id` lêem identidade do `character_json`; botão Claim em slots legados (`POST /api/character/claim-slot`); calendário global | ✅ | Sonnet |
+| O.6 | Limited multi-evento + bugfixes | `limitedJobMinLevel`+`eventLabel` por evento (não por conteúdo); Blue Mage pode ter N eventos paralelos com requisitos distintos; Eventos Ativos lista por evento; `state.progNotes` eliminado (descrição não persistia após delete) | ✅ | Sonnet |
 
 ### Pendentes — App Principal (prioridade)
 
@@ -64,59 +65,55 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 
 # PARTE 1 — Pendentes do App Principal (Prioridade)
 
-## Fase P — Validação de Presença por Expansão
+## Fase P — Validação de Presença (Expansão + Limited level)
 
-**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se a **expansão atual do personagem** for compatível com a **expansão do conteúdo** daquele evento. Bloqueia o caso de membro Heavensward sendo contado como confirmado num evento de Endwalker.
+**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se o personagem é compatível com o **evento específico** daquele dia. Dois critérios:
 
-**Depende de:** Fase N (`state.expansions` com `order`) + Fase O (`character.currentExpansionId`).
+1. **Eventos normais (não-Limited):** `character.currentExpansionId` tem `order` ≥ `order` da expansão do conteúdo.
+2. **Eventos Limited:** o character tem o `prog.limitedJobId` em `jobs` E o level desse job ≥ `event.limitedJobMinLevel` (definido pelo officer no agendamento).
+
+Sem isso, é possível um membro Heavensward ser contado como confirmado numa raid Endwalker, ou um player com BLU 60 num evento Blue Mage Lv 80+.
+
+**Depende de:** Fase N (catálogo de expansões) + Fase O (`character_json`) + Fase O.5 (já reusa o helper `isContentMarkableForCharacter`) + bugfix Limited (`event.limitedJobMinLevel`).
 
 ### Regra de compatibilidade
 
-1. Helper em [js/app.js](js/app.js):
-   ```js
-   function isExpansionCompatible(userExpansionId, contentExpansionId) {
-     if (!userExpansionId || !contentExpansionId) return true; // fallback permissivo (dados faltando)
-     const expById = (state.expansions || []).reduce((a, e) => (a[e.id]=e, a), {});
-     const u = expById[userExpansionId];
-     const c = expById[contentExpansionId];
-     if (!u || !c) return true;
-     if (u.isLimited || c.isLimited) return true; // Limited Job: regra própria, ignora ordem
-     return c.order <= u.order; // pode fazer conteúdo de expansão igual ou anterior à sua
-   }
-   ```
-2. **Limited Job** é exceção: não entra na ordem das expansões normais. Sempre compatível (Limited tem regra própria via `limitedJobId`).
-3. **Fallback permissivo**: se `userExpansionId` ou `contentExpansionId` for `null`, considerar compatível para não bloquear acidentalmente. Com a retrocompat da Fase N, esses `null` devem ser raros.
+1. Reusar o helper `isContentMarkableForCharacter(target, character)` já implementado em [js/app.js](js/app.js):
+   - Aceita um `content` (não-Limited) OU um `raidEvent` (Limited).
+   - Retorna `{markable, reason}`.
+2. Para a Fase P, o input é sempre o **`raidEvent`** (porque a checagem é por evento, não por conteúdo). Pra evento não-Limited, o helper olha `getProgObj(event.progId)` internamente; pra Limited, usa `event.limitedJobMinLevel` direto.
+3. **Fallback permissivo**: char sem `currentExpansionId` ou evento sem `expansionId` resolvível → conta como compatível. Limited sem `limitedJobMinLevel` (eventos legados) → conta se char tem o job.
 
 ### Aplicação da regra (frontend)
 
-4. **Cálculo de confirmados em "Próximos dias de raid"** em [js/app.js:2156](js/app.js:2156): no loop que monta `confTitulares`/`confReservas`/etc., só contar um jogador como `avail` se `isExpansionCompatible(user.character.currentExpansionId, event.contentExpansionId)`.
-5. **`getAvailCountForDate(dateKey)`** em [js/app.js:1633](js/app.js:1633): aceita opcionalmente um `contentExpansionId` e filtra. Sem esse parâmetro, mantém comportamento atual (compat para quem chama sem contexto de prog).
-6. **Quorum opportunities (Fase L)**: também aplica — não sugere full party se os 8 disponíveis incluem gente incompatível. A Fase Q vai refinar isso (considerando overlap + expansão).
+4. **Cálculo de confirmados em "Próximos dias de raid"**: no loop que monta `confTitulares`/`confReservas`, só conta um jogador como `avail` se `isContentMarkableForCharacter(event, character).markable === true`.
+5. **`getAvailCountForDate(dateKey)`**: aceita opcionalmente um `event` (em vez de só `dateKey`) e filtra.
+6. **Quorum opportunities (Fase L)**: aplica — não sugere full party se os 8 disponíveis incluem gente incompatível com o prog candidato.
 
 ### Aplicação da regra (backend, para o Telegram)
 
-7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py:782](server/app.py:782):
-   - Buscar `currentExpansionId` do `character_json` do user vinculado a cada slot
-   - Buscar `expansionId` do `content` (de `customContents` ou catálogo built-in espelhado em backend)
-   - Aplicar `is_expansion_compatible` (helper Python espelhado)
+7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py](server/app.py):
+   - Buscar `character_json` do user vinculado a cada slot (já vem do `characters` enriquecido).
+   - Buscar `event` do dia (já no estado).
+   - Aplicar `is_event_compatible(event, character)` (helper Python espelhado).
 8. Sem isso, os números reportados pelo Telegram (Confirmados X/Y) divergem do site. **Crítico para consistência.**
 
 ### Feedback visual
 
-9. Na tabela mensal de schedule ([js/app.js:2160](js/app.js:2160)): célula com `avail` de jogador incompatível para o prog do evento daquele dia:
-   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida)
-   - **Adiciona** indicador discreto sobreposto (cadeado pequeno no canto + tooltip "Não conta — expansão atual: Heavensward, evento: Endwalker")
-   - Cor da célula muda para acinzentada/desaturada para deixar claro que não conta
-10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora da expansão: X" (officer/admin only, para o officer saber quem está marcando mas não pode contar).
+9. Na tabela mensal de schedule: célula com `avail` de jogador incompatível com o evento daquele dia:
+   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida).
+   - **Adiciona** indicador discreto (cadeado pequeno + tooltip "Não conta — sua expansão atual é Heavensward; evento exige Endwalker" / "Não conta — BLU nível 65; evento exige 80+").
+   - Cor da célula muda para acinzentada/desaturada.
+10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora dos requisitos: X" (officer/admin only).
 
 ### Critério de aceite
 
-- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta para quórum, não aparece na lista de confirmados, célula com indicador + tooltip
-- Membro Heavensward marca `avail` num dia de evento Heavensward ou ARR → conta normalmente
-- Conteúdo Limited (Blue Mage): regra de expansão não se aplica, segue a lógica existente do `limitedJobId`
-- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis para pelo menos um prog ativo
-- Telegram reporta os mesmos números do site (`Confirmados: X/Y` consistente front ↔ back)
-- Fallback permissivo: char sem expansão OU conteúdo sem expansão = sempre conta (não bloqueia indevidamente)
+- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta, célula com indicador + tooltip.
+- Membro com BLU 65 marca `avail` num dia de evento Blue Mage Lv 80+ → não conta, tooltip explicativo.
+- Mesmo membro num evento Blue Mage Lv 60+ no mesmo dia → conta normalmente (eventos paralelos podem ter requisitos diferentes).
+- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis.
+- Telegram reporta os mesmos números do site (helpers JS e Python espelhados).
+- Fallback permissivo: dados ausentes não bloqueiam indevidamente.
 
 ---
 
@@ -848,8 +845,39 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 ### Pontos abertos (não bloqueantes — backlog futuro)
 
 - Users que entraram na static via convite mas ainda não claimaram slot **não aparecem no calendário**. Para esses, seria necessário gerar uma linha "virtual" do roster.
-- Card de Blue Mage na Visão Geral ainda mostra "Limited Job" como expansão (poderia mostrar `BLU · Lv. 80+` igual o painel Eventos Ativos faz).
+- Card de Blue Mage na Visão Geral ainda mostra "Limited Job" como expansão (poderia mostrar `BLU · Lv. mín` baseado no evento mais próximo).
 - Dropdown de `assignedJob` por prog ainda não filtra pelas classes do `character.jobs`.
+
+---
+
+## Fase O.6 — Limited multi-evento + bugfixes ✅
+
+**Objetivo:** corrigir 2 bugs reportados pelo usuário e reformar a modelagem de Limited Jobs para refletir o uso real.
+
+### Bug 1 — `state.progNotes` eliminado
+
+1. Descrição de evento estava sendo salva como "nota persistente do prog" em `state.progNotes[progId]` quando o user salvava o modal sem definir data. A nota sobrevivia após o evento ser deletado, então um novo evento criado depois exibia a descrição antiga.
+2. Fix: removido o save em `state.progNotes` em `confirmSchedule` (modal exige data agora). Leitura em `renderQuickSchedule` removida. Migração em `hydrateState` deleta `state.progNotes` legado.
+
+### Bug 2 — Limited com multi-evento e level por evento
+
+3. `FFXIV_LIMITED_CONTENTS.blue_mage_raid` **não tem mais `limitedJobMinLevel`**. O level agora vive no `raidEvent`.
+4. `raidEvent` ganha (opcional, só Limited):
+   - `limitedJobMinLevel: number` — definido pelo officer no modal de agendamento (1-100, obrigatório).
+   - `eventLabel?: string` — rótulo opcional ("Run treino", "Sessão final"), max 50 chars.
+5. **Multi-evento paralelo apenas para Limited**: `upsertRaidEvent` deixou de filtrar `raidEvents` pelo `progId` quando o prog é Limited. Conteúdos normais continuam com "1 evento futuro por prog" (comportamento atual).
+6. ID do evento Limited ganha sufixo de timestamp em base36 para permitir múltiplos eventos na mesma data: `evt_blue_mage_raid_20260525_mph5rmcx`.
+7. Modal de agendamento mostra inputs "Nível mínimo {jobId}" + "Rótulo opcional" só quando prog selecionado é Limited.
+
+### Aba Personagem — Eventos Ativos
+
+8. Painel "Eventos Ativos" agora distingue:
+   - **Não-Limited:** 1 linha por prog (como antes; marca por `progId`).
+   - **Limited:** 1 linha por **evento futuro**, com display `Blue Mage — 25/05 · Lv. 70+ · Run treino`. Limited sem eventos não aparece. Marca por `eventId`.
+9. `character.subscribedProgs` passa a aceitar mix de progIds (normal) e eventIds (Limited Limited). `revalidateSubscribedProgs` resolve via `state.raidEvents.find(e => e.id === subId)` antes de cair pra `getProgObj`.
+10. Helper `isContentMarkableForCharacter(target, character)` agora aceita um `raidEvent` (com `limitedJobMinLevel`) E um `content`. Para Limited, valida `char.jobs[limitedJobId].level >= event.limitedJobMinLevel`.
+11. Auto-desmarca silenciosa cobre o caso de reduzir level do job Limited (subscribedProgs com aquele eventId é removida).
+12. Ao deletar um evento Limited, `removeRaidEventById` limpa também o eventId dos subscribedProgs do user logado.
 
 ---
 
@@ -913,7 +941,7 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) |
 | **Subtotal Strategy Planner** | **~17-21 sessões** |
-| J, K, L, M, N, O, O.5, O.2 | ✅ concluídas |
+| J, K, L, M, N, O, O.5, O.2, O.6 | ✅ concluídas |
 | **Total restante** | **~21-27 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
