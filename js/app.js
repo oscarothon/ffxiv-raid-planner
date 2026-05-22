@@ -802,6 +802,48 @@ function renderCharacterTab() {
     renderCharacterProgs();
 }
 
+// Avalia se o personagem do user atende aos requisitos para marcar um conteúdo
+// como "Evento Ativo". Retorna { markable: boolean, reason?: string }.
+//
+// Regras:
+//  - Limited (partyMode === "limited"): personagem precisa ter o job
+//    correspondente E o level desse job ≥ content.limitedJobMinLevel.
+//  - Normal: character.currentExpansionId precisa estar definido e a expansão
+//    do personagem deve ter order ≥ order da expansão do conteúdo.
+//  - Conteúdo sem expansionId resolvível (raro após Fase N): sempre permite.
+function isContentMarkableForCharacter(content, character) {
+    if (!content || !character) return { markable: false, reason: "Dados ausentes." };
+
+    // Limited tem regra própria (não usa ordem de expansão)
+    if (content.partyMode === "limited" && content.limitedJobId) {
+        const jobs = Array.isArray(character.jobs) ? character.jobs : [];
+        const ownsJob = jobs.find(j => j && j.id === content.limitedJobId);
+        if (!ownsJob) {
+            return { markable: false, reason: `Você precisa ter ${content.limitedJobId} em suas classes para participar.` };
+        }
+        const minLevel = content.limitedJobMinLevel || 1;
+        const level = Number(ownsJob.level || 0);
+        if (level < minLevel) {
+            return { markable: false, reason: `Seu ${content.limitedJobId} está no nível ${level || "—"}; este conteúdo requer nível ${minLevel}.` };
+        }
+        return { markable: true };
+    }
+
+    // Normal: compara order da expansão atual com a do conteúdo
+    const contentExpId = resolveContentExpansionId(content);
+    if (!contentExpId) return { markable: true };
+    if (!character.currentExpansionId) {
+        return { markable: false, reason: "Defina sua expansão atual na seção Identidade para liberar este evento." };
+    }
+    const charExp = getExpansionById(character.currentExpansionId);
+    const contentExp = getExpansionById(contentExpId);
+    if (!charExp || !contentExp) return { markable: true };
+    if ((charExp.order || 0) < (contentExp.order || 0)) {
+        return { markable: false, reason: `Você precisa estar em ${contentExp.name} ou superior (sua atual: ${charExp.name}).` };
+    }
+    return { markable: true };
+}
+
 function renderCharacterIdentity() {
     const nameEl = document.getElementById("char-name");
     const ilvlEl = document.getElementById("char-ilvl");
@@ -811,13 +853,15 @@ function renderCharacterIdentity() {
     nameEl.value = currentCharacter.name || "";
     ilvlEl.value = currentCharacter.ilvl ?? "";
 
-    // Popula expansões ordenadas (Limited Job vai pro fim)
+    // Popula expansões normais (sem Limited Job — Limited tem validação própria
+    // baseada no level do job, não na ordem da expansão)
     expSel.innerHTML = "";
     const blank = document.createElement("option");
     blank.value = "";
     blank.textContent = "— Selecione —";
     expSel.appendChild(blank);
     (state.expansions || []).slice()
+        .filter(exp => !exp.isLimited)
         .sort((a, b) => (a.order || 0) - (b.order || 0))
         .forEach(exp => {
             const o = document.createElement("option");
@@ -860,6 +904,9 @@ function renderCharacterJobs() {
             if (Number.isFinite(v) && v > 0) j.level = v;
             else delete j.level;
             saveCharacterDebounced();
+            // Se este job é o de algum Limited subscribed, pode ter caído
+            // abaixo do mínimo — revalidar.
+            revalidateSubscribedProgs();
         });
         lvlInput.addEventListener("click", e => e.stopPropagation());
         grid.appendChild(card);
@@ -874,6 +921,46 @@ function toggleCharacterJob(jobId) {
     else currentCharacter.jobs.push({ id: jobId });
     saveCharacterDebounced();
     renderCharacterJobs();
+    // Limited pode ter virado incompatível (perda do job) — revalidar.
+    revalidateSubscribedProgs();
+}
+
+// Após mudança em currentExpansionId, jobs ou level: remove silenciosamente
+// dos subscribedProgs aqueles que deixaram de ser compatíveis e re-renderiza
+// a lista de progs (pois eventos antes bloqueados podem ter virado elegíveis).
+// Mostra toast agregado se houver remoções.
+function revalidateSubscribedProgs() {
+    if (!currentCharacter) return;
+    const subs = Array.isArray(currentCharacter.subscribedProgs) ? currentCharacter.subscribedProgs : [];
+
+    const removed = [];
+    if (subs.length > 0) {
+        const kept = [];
+        subs.forEach(progId => {
+            const prog = getProgObj(progId);
+            if (!prog) { kept.push(progId); return; }
+            const elig = isContentMarkableForCharacter(prog, currentCharacter);
+            if (elig.markable) kept.push(progId);
+            else removed.push(prog.name || progId);
+        });
+        if (removed.length > 0) {
+            currentCharacter.subscribedProgs = kept;
+            saveCharacterDebounced();
+        }
+    }
+
+    // Sempre re-renderiza: mudanças em jobs/expansão podem desbloquear eventos
+    // antes inacessíveis, mesmo sem remover nada.
+    renderCharacterProgs();
+
+    if (removed.length > 0) {
+        const list = removed.join(", ");
+        const word = removed.length === 1 ? "evento" : "eventos";
+        showToast(`${removed.length} ${word} removido(s) de Eventos Ativos: ${list}`, {
+            type: "info",
+            title: "Incompatibilidade detectada",
+        });
+    }
 }
 
 function renderCharacterProgs() {
@@ -882,23 +969,37 @@ function renderCharacterProgs() {
     cont.innerHTML = "";
     const active = Array.isArray(state.activeProgs) ? state.activeProgs : [];
     if (active.length === 0) {
-        cont.innerHTML = `<div class="character-progs-empty">Nenhum prog ativo na static.</div>`;
+        cont.innerHTML = `<div class="character-progs-empty">Nenhum evento ativo na static.</div>`;
         return;
     }
     const subs = new Set(currentCharacter.subscribedProgs || []);
     active.forEach(progId => {
         const prog = getProgObj(progId);
-        const expName = getExpansionDisplayName(prog) || "";
+        const isLimited = prog.partyMode === "limited";
+        // Meta: para Limited mostra "Blue Mage · Lv. 80+"; para normal mostra expansão.
+        let metaText = "";
+        if (isLimited && prog.limitedJobId) {
+            const lvlPart = prog.limitedJobMinLevel ? ` · Lv. ${prog.limitedJobMinLevel}+` : "";
+            metaText = `${prog.limitedJobId}${lvlPart}`;
+        } else {
+            metaText = getExpansionDisplayName(prog) || "";
+        }
         const subscribed = subs.has(progId);
+        const eligibility = isContentMarkableForCharacter(prog, currentCharacter);
+        const blocked = !eligibility.markable;
+
         const row = document.createElement("label");
-        row.className = `char-prog-row${subscribed ? ' is-subscribed' : ''}`;
+        row.className = `char-prog-row${subscribed ? ' is-subscribed' : ''}${blocked ? ' is-blocked' : ''}`;
+        if (blocked) row.title = eligibility.reason || "";
         row.innerHTML = `
-            <input type="checkbox" ${subscribed ? 'checked' : ''} data-prog-id="${progId}">
+            <input type="checkbox" ${subscribed ? 'checked' : ''} ${blocked ? 'disabled' : ''} data-prog-id="${progId}">
             <span class="char-prog-name">${escapeHtml(prog.name || progId)}</span>
-            ${expName ? `<span class="char-prog-meta">${escapeHtml(expName)}</span>` : ''}
+            ${metaText ? `<span class="char-prog-meta">${escapeHtml(metaText)}</span>` : ''}
+            ${blocked ? `<span class="char-prog-blocked-icon" aria-label="Bloqueado">🔒</span>` : ''}
         `;
         const cb = row.querySelector("input");
         cb.addEventListener("change", () => {
+            if (blocked) { cb.checked = false; return; }
             const list = currentCharacter.subscribedProgs = Array.isArray(currentCharacter.subscribedProgs)
                 ? currentCharacter.subscribedProgs : [];
             const idx = list.indexOf(progId);
@@ -928,6 +1029,9 @@ function bindCharacterIdentityListeners() {
     if (expSel) expSel.addEventListener("change", () => {
         currentCharacter.currentExpansionId = expSel.value || null;
         saveCharacterDebounced();
+        // Pode ter reduzido a expansão atual — desmarca eventos incompatíveis
+        // automaticamente e re-renderiza a seção de progs.
+        revalidateSubscribedProgs();
     });
 }
 

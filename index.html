@@ -294,8 +294,9 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label for="char-ilvl">Item Level (iLvl)</label>
+                                <label for="char-ilvl">Item Level Máximo (iLvl)</label>
                                 <input id="char-ilvl" type="number" class="ff-input" min="1" max="999" placeholder="Ex: 710">
+                                <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; display:block;">O maior iLvl entre suas classes.</span>
                             </div>
                         </div>
                     </div>
@@ -315,14 +316,14 @@
                         </div>
                     </div>
 
-                    <!-- Painel: Subscrição em progs -->
+                    <!-- Painel: Subscrição em eventos -->
                     <div class="ff-panel" id="character-progs-panel">
                         <div class="panel-header">
-                            <h2>Progs ativos</h2>
+                            <h2>Eventos Ativos</h2>
                         </div>
                         <div class="panel-body">
                             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">
-                                Marque os progs em que você quer participar. O officer/admin usa isso para montar a escalação.
+                                Marque os eventos em que você quer participar. Sua expansão atual e classes determinam quais são elegíveis.
                             </p>
                             <div id="char-progs-list" class="character-progs-list">
                                 <!-- preenchido via renderCharacterProgs() -->
