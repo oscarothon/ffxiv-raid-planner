@@ -4,8 +4,24 @@ import json
 import secrets
 import sqlite3
 import hashlib
+from datetime import datetime, timezone, timedelta
 from flask import Flask, request, jsonify, session, send_from_directory, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# Timezone do app — usuários da static estão em horário brasileiro. Lembretes
+# do Telegram ("24h antes" e "no dia") são calculados a partir desta tz, não
+# do clock do servidor (Railway roda em UTC). Configurável via env, default
+# America/Manaus (GMT-4) que é o que o admin pediu.
+#
+# Brasil não usa DST desde 2019, então um offset fixo basta — sem precisar
+# de zoneinfo (que pode não estar disponível em todas as imagens).
+APP_TZ_OFFSET_HOURS = int(os.environ.get("APP_TZ_OFFSET_HOURS", "-4"))
+APP_TZ = timezone(timedelta(hours=APP_TZ_OFFSET_HOURS))
+
+
+def _today_local():
+    """Data 'hoje' na timezone do app (não UTC)."""
+    return datetime.now(APP_TZ).date()
 
 from .db import ROOT_DIR, init_db, get_conn, db_conn, VALID_ROLES, ROLE_ADMIN, ROLE_OFFICER, ROLE_MEMBER
 from .auth import login_required, current_user, get_user_role, role_at_least, require_role
@@ -979,10 +995,146 @@ def _set_static_telegram_chat_id(static_id, chat_id):
         )
 
 
-def _count_confirmed_for_date(state_data, date_str):
+# ---------- Fase P — Validação de presença por expansão / Limited level ----------
+# Espelha o helper JS `isContentMarkableForCharacter` (js/app.js). Permite que
+# a contagem de confirmados no Telegram bata com a do site: jogadores que
+# marcaram `avail` mas não atendem aos requisitos do evento não contam.
+
+# Catálogo built-in: progs hardcoded em data.js (FFXIV_RAIDS, FFXIV_ULTIMATES,
+# FFXIV_LIMITED_CONTENTS). Customs vêm do `state.customContents`. Mantemos só
+# o necessário para resolver expansionId e limitedJobId.
+_BUILT_IN_PROGS = {
+    # Ultimates
+    "UCOB": {"expansionId": "sb"},
+    "UWU":  {"expansionId": "sb"},
+    "TEA":  {"expansionId": "shb"},
+    "DSR":  {"expansionId": "ew"},
+    "TOP":  {"expansionId": "ew"},
+    "FRU":  {"expansionId": "dt"},
+    # Savage raids
+    "arcadion_lh":   {"expansionId": "dt"},
+    "anabaseios":    {"expansionId": "ew"},
+    "abyssos":       {"expansionId": "ew"},
+    "asphodelos":    {"expansionId": "ew"},
+    "eden_promise":  {"expansionId": "shb"},
+    "eden_verse":    {"expansionId": "shb"},
+    "eden_gate":     {"expansionId": "shb"},
+    "omega_alpha":   {"expansionId": "sb"},
+    "omega_sigma":   {"expansionId": "sb"},
+    "omega_delta":   {"expansionId": "sb"},
+    "alex_creator":  {"expansionId": "hw"},
+    "alex_midas":    {"expansionId": "hw"},
+    "alex_gordias":  {"expansionId": "hw"},
+    "coil_final":    {"expansionId": "arr"},
+    "coil_second":   {"expansionId": "arr"},
+    "coil_binding":  {"expansionId": "arr"},
+    # Limited
+    "blue_mage_raid": {"partyMode": "limited", "limitedJobId": "BLU"},
+}
+
+# Ordens de expansão do seed (FFXIV_EXPANSIONS_SEED em data.js). Fallback
+# quando state.expansions não está disponível ou foi customizada.
+_SEED_EXPANSION_ORDERS = {
+    "arr": 1, "hw": 2, "sb": 3, "shb": 4, "ew": 5, "dt": 6, "limited": 99,
+}
+
+
+def _resolve_prog(state_data, prog_id):
+    """Retorna metadados de um prog (customContents ou built-in catalog)."""
+    if not prog_id:
+        return None
+    customs = state_data.get("customContents") or []
+    for c in customs:
+        if isinstance(c, dict) and c.get("id") == prog_id:
+            return c
+    return _BUILT_IN_PROGS.get(prog_id)
+
+
+def _expansion_order(state_data, expansion_id):
+    """Resolve order de uma expansão; cai no seed se state.expansions
+    não tem a entrada."""
+    if not expansion_id:
+        return None
+    exps = state_data.get("expansions") or []
+    for e in exps:
+        if isinstance(e, dict) and e.get("id") == expansion_id:
+            order = e.get("order")
+            if isinstance(order, (int, float)):
+                return order
+    return _SEED_EXPANSION_ORDERS.get(expansion_id)
+
+
+def _is_event_compatible(state_data, event, character):
+    """Mirror Python de isContentMarkableForCharacter para validar se um
+    jogador (via seu character_json) atende aos requisitos de um raidEvent.
+
+    Regras (espelhadas do JS):
+      - Limited (event tem `limitedJobMinLevel`): char.jobs precisa ter o
+        `prog.limitedJobId` E `level >= limitedJobMinLevel`.
+      - Normal: char.currentExpansionId definido E order >= order do conteúdo.
+
+    Fallback permissivo (retorna True):
+      - Sem event ou sem character.
+      - Prog desconhecido (não está em customContents nem no catálogo built-in).
+      - Sem expansionId resolvível para o conteúdo.
+      - Event Limited sem `limitedJobMinLevel` (eventos legados).
+    """
+    if not event or not character:
+        return True
+    prog = _resolve_prog(state_data, event.get("progId"))
+
+    min_level = event.get("limitedJobMinLevel")
+    is_limited_event = isinstance(min_level, (int, float)) and min_level > 0
+
+    if is_limited_event:
+        job_id = prog.get("limitedJobId") if isinstance(prog, dict) else None
+        if not job_id:
+            return True  # prog desconhecido / sem job de referência
+        jobs = character.get("jobs") if isinstance(character, dict) else None
+        if not isinstance(jobs, list):
+            return False
+        owned = next((j for j in jobs if isinstance(j, dict) and j.get("id") == job_id), None)
+        if not owned:
+            return False
+        level = owned.get("level") or 0
+        try:
+            level = int(level)
+        except (TypeError, ValueError):
+            level = 0
+        return level >= int(min_level)
+
+    # Conteúdo Limited sem level no evento (legacy): fallback permissivo
+    if isinstance(prog, dict) and prog.get("partyMode") == "limited":
+        return True
+
+    # Normal: compara order da expansão
+    if not isinstance(prog, dict):
+        return True  # prog desconhecido — não bloqueia
+    content_exp_id = prog.get("expansionId") or prog.get("expansion")
+    if not content_exp_id:
+        return True
+    char_exp_id = character.get("currentExpansionId") if isinstance(character, dict) else None
+    # Fase P — fallback permissivo: char sem currentExpansionId (legado /
+    # produção pré-Fase O) NÃO é bloqueado. PLANNING_V2: "char sem
+    # currentExpansionId... → conta como compatível."
+    if not char_exp_id:
+        return True
+    content_order = _expansion_order(state_data, content_exp_id)
+    char_order = _expansion_order(state_data, char_exp_id)
+    if content_order is None or char_order is None:
+        return True
+    return char_order >= content_order
+
+
+def _count_confirmed_for_date(state_data, date_str, event=None, characters=None):
     """Conta jogadores com 'avail' no monthlySchedule da data.
 
     'late' (Talvez/Atraso) é status incerto e não conta como confirmação.
+
+    Fase P — quando `event` e `characters` (map {user_id: character_json}) são
+    fornecidos, filtra por compatibilidade: jogadores incompatíveis (expansão
+    abaixo ou level Limited insuficiente) não são contados. Sem esses
+    argumentos, comportamento legado (conta todos os avail).
     """
     roster = state_data.get("roster") or []
     count = 0
@@ -990,8 +1142,15 @@ def _count_confirmed_for_date(state_data, date_str):
         if not isinstance(p, dict):
             continue
         sched = p.get("monthlySchedule") or {}
-        if sched.get(date_str) == "avail":
-            count += 1
+        if sched.get(date_str) != "avail":
+            continue
+        if event is not None and characters:
+            uid = p.get("user_id")
+            character = characters.get(uid) if uid is not None else None
+            # Slots legados sem character: fallback permissivo (conta)
+            if character is not None and not _is_event_compatible(state_data, event, character):
+                continue
+        count += 1
     return count
 
 
@@ -1010,6 +1169,14 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
     if not chat_id or not tg.is_configured():
         return
 
+    # Fase P — carrega character_json dos members para filtrar avail por
+    # compatibilidade (mesmas regras do site).
+    conn = get_conn()
+    try:
+        characters = _load_characters_for_static(conn, static_id)
+    finally:
+        conn.close()
+
     old_by_id = {e.get("id"): e for e in (old_events or []) if isinstance(e, dict)}
     new_by_id = {e.get("id"): e for e in (new_events or []) if isinstance(e, dict)}
 
@@ -1024,7 +1191,7 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
         if evt_id not in old_by_id:
             # Evento novo
             target_date = evt.get("postponedTo") or evt.get("date")
-            confirmed = _count_confirmed_for_date(state_data, target_date)
+            confirmed = _count_confirmed_for_date(state_data, target_date, event=evt, characters=characters)
             description = evt.get("description")
             msg = tg.format_event_created(prog_name, target_date, confirmed, quorum, dynamic=dynamic, description=description)
             tg.send_group_message(chat_id, msg)
@@ -1056,13 +1223,16 @@ def _evaluate_quorum_opportunities(state_data, static_id):
 
     Dispara apenas uma vez por (data) usando state.quorumSuggestionsSent como flag.
     Modifica state_data in-place. Retorna True se houve mudanças que precisam ser persistidas.
+
+    Fase P — só sugere quando há 8+ jogadores compatíveis com pelo menos um
+    prog Full Party ativo. Sem prog Full Party ativo, mantém o comportamento
+    permissivo (conta todos os avail).
     """
     chat_id = _get_static_telegram_chat_id(static_id)
     if not chat_id or not tg.is_configured():
         return False
 
-    from datetime import date, timedelta
-    today = date.today()
+    today = _today_local()
     today_iso = today.isoformat()
 
     booked_dates = set()
@@ -1071,6 +1241,27 @@ def _evaluate_quorum_opportunities(state_data, static_id):
             d = evt.get("postponedTo") or evt.get("date")
             if d:
                 booked_dates.add(d)
+
+    # Resolve progs ativos candidatos (exclui Limited e Dynamic). Cada um carrega
+    # seu próprio threshold (Full Party = 8, Light Party = 4) para a Fase P.
+    active_prog_ids = state_data.get("activeProgs") or []
+    candidate_progs = []
+    for pid in active_prog_ids:
+        if not isinstance(pid, str):
+            continue
+        prog = _resolve_prog(state_data, pid)
+        if not isinstance(prog, dict):
+            continue
+        if prog.get("partyMode") == "limited" or _is_dynamic_prog(state_data, pid):
+            continue
+        threshold = 4 if prog.get("partyMode") == "light" else 8
+        candidate_progs.append((pid, threshold))
+
+    conn = get_conn()
+    try:
+        characters = _load_characters_for_static(conn, static_id)
+    finally:
+        conn.close()
 
     sent_in = state_data.get("quorumSuggestionsSent") or {}
     # Housekeeping: descarta entradas com data passada
@@ -1081,11 +1272,17 @@ def _evaluate_quorum_opportunities(state_data, static_id):
         d = (today + timedelta(days=delta)).isoformat()
         if d in booked_dates or d in sent:
             continue
-        count = _count_confirmed_for_date(state_data, d)
-        if count >= 8:
-            if tg.send_group_message(chat_id, tg.format_quorum_suggestion(d, count)):
-                sent[d] = True
-                changed = True
+        triggered_count = None
+        for (pid, threshold) in candidate_progs:
+            synthetic = {"progId": pid}
+            c = _count_confirmed_for_date(state_data, d, event=synthetic, characters=characters)
+            if c >= threshold and (triggered_count is None or c > triggered_count):
+                triggered_count = c
+        if triggered_count is None:
+            continue
+        if tg.send_group_message(chat_id, tg.format_quorum_suggestion(d, triggered_count)):
+            sent[d] = True
+            changed = True
 
     if changed:
         state_data["quorumSuggestionsSent"] = sent
@@ -1101,9 +1298,9 @@ def _maybe_send_reminders(static_id):
     if not chat_id or not tg.is_configured():
         return
 
-    from datetime import date, timedelta
-    today = date.today().isoformat()
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    today_d = _today_local()
+    today = today_d.isoformat()
+    tomorrow = (today_d + timedelta(days=1)).isoformat()
 
     conn = get_conn()
     try:
@@ -1122,6 +1319,13 @@ def _maybe_send_reminders(static_id):
     if not events:
         return
 
+    # Fase P — carrega character_json para a contagem por compatibilidade.
+    rconn = get_conn()
+    try:
+        characters = _load_characters_for_static(rconn, static_id)
+    finally:
+        rconn.close()
+
     changed = False
     for evt in events:
         if not isinstance(evt, dict):
@@ -1130,7 +1334,7 @@ def _maybe_send_reminders(static_id):
         prog_name = evt.get("progName") or evt.get("progId") or "Raid"
         quorum = evt.get("quorum") or 0
         dynamic = _is_dynamic_prog(data, evt.get("progId"))
-        confirmed = _count_confirmed_for_date(data, target_date)
+        confirmed = _count_confirmed_for_date(data, target_date, event=evt, characters=characters)
 
         description = evt.get("description")
         if target_date == tomorrow and not evt.get("reminder24hSent"):
