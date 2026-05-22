@@ -627,6 +627,72 @@ def put_state():
     return resp
 
 
+# ---------- Personagem (Fase O) ----------
+# character_json mora em users.character_json e é 1:1 com o usuário (independente
+# de static). Permite que o mesmo user mantenha um único personagem mesmo se
+# trocar de static no futuro (alts/multi-static).
+@app.get("/api/character")
+@login_required
+def get_character():
+    user_id = session["user_id"]
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT character_json FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "user_not_found"}), 404
+    raw = row["character_json"]
+    if not raw:
+        return jsonify({})
+    try:
+        return jsonify(json.loads(raw))
+    except (TypeError, ValueError):
+        return jsonify({})
+
+
+@app.put("/api/character")
+@login_required
+def put_character():
+    user_id = session["user_id"]
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_json"}), 400
+
+    # Validação leve: o frontend é a fonte da verdade da estrutura, aqui só
+    # protegemos contra payloads absurdamente grandes ou tipos errados.
+    serialized = json.dumps(payload, ensure_ascii=False)
+    if len(serialized) > 20000:  # 20KB é folgado para um perfil pessoal
+        return jsonify({"error": "payload_too_large"}), 413
+
+    # Sanity checks dos campos opcionais — qualquer um pode estar ausente
+    name = payload.get("name")
+    if name is not None and not isinstance(name, str):
+        return jsonify({"error": "invalid_name"}), 400
+    if isinstance(name, str) and len(name) > 80:
+        return jsonify({"error": "name_too_long"}), 400
+
+    ilvl = payload.get("ilvl")
+    if ilvl is not None and not (isinstance(ilvl, int) and ilvl >= 0):
+        return jsonify({"error": "invalid_ilvl"}), 400
+
+    jobs = payload.get("jobs")
+    if jobs is not None and not isinstance(jobs, list):
+        return jsonify({"error": "invalid_jobs"}), 400
+
+    subs = payload.get("subscribedProgs")
+    if subs is not None and not isinstance(subs, list):
+        return jsonify({"error": "invalid_subscribedProgs"}), 400
+
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE users SET character_json = ? WHERE id = ?",
+            (serialized, user_id),
+        )
+    return jsonify({"ok": True})
+
+
 # ---------- Gerenciamento de Membros (admin) ----------
 @app.get("/api/statics/<int:static_id>/members")
 @login_required
