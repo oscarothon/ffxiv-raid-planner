@@ -347,6 +347,10 @@ function hydrateState(parsed) {
         state.customContents = [];
     }
 
+    // Bugfix: progNotes (descrição persistente do prog) foi removido — só
+    // raidEvent.description existe. Limpa entradas legadas no estado.
+    if (state.progNotes) delete state.progNotes;
+
     // Fase N — seed do catálogo de expansões (clona o seed para não compartilhar refs)
     if (!Array.isArray(state.expansions) || state.expansions.length === 0) {
         state.expansions = FFXIV_EXPANSIONS_SEED.map(e => ({ ...e }));
@@ -861,35 +865,44 @@ function renderCharacterTab() {
     renderCharacterProgs();
 }
 
-// Avalia se o personagem do user atende aos requisitos para marcar um conteúdo
-// como "Evento Ativo". Retorna { markable: boolean, reason?: string }.
+// Avalia se o personagem atende aos requisitos para marcar uma linha como
+// "Evento Ativo". Pode receber um content (não-Limited) OU um evento Limited.
+// Retorna { markable: boolean, reason?: string }.
 //
 // Regras:
-//  - Limited (partyMode === "limited"): personagem precisa ter o job
-//    correspondente E o level desse job ≥ content.limitedJobMinLevel.
-//  - Normal: character.currentExpansionId precisa estar definido e a expansão
-//    do personagem deve ter order ≥ order da expansão do conteúdo.
+//  - Para evento Limited específico: char tem o job E level ≥ event.limitedJobMinLevel.
+//  - Para conteúdo normal: char.currentExpansionId definido E order ≥ order do conteúdo.
 //  - Conteúdo sem expansionId resolvível (raro após Fase N): sempre permite.
-function isContentMarkableForCharacter(content, character) {
-    if (!content || !character) return { markable: false, reason: "Dados ausentes." };
+function isContentMarkableForCharacter(target, character) {
+    if (!target || !character) return { markable: false, reason: "Dados ausentes." };
 
-    // Limited tem regra própria (não usa ordem de expansão)
-    if (content.partyMode === "limited" && content.limitedJobId) {
+    // Detecta se é um raidEvent Limited (tem progId + limitedJobMinLevel)
+    const isLimitedEvent = !!(target.progId && Number.isFinite(target.limitedJobMinLevel));
+    if (isLimitedEvent) {
+        const prog = getProgObj(target.progId);
+        const jobId = prog && prog.limitedJobId;
+        if (!jobId) return { markable: true };
         const jobs = Array.isArray(character.jobs) ? character.jobs : [];
-        const ownsJob = jobs.find(j => j && j.id === content.limitedJobId);
+        const ownsJob = jobs.find(j => j && j.id === jobId);
         if (!ownsJob) {
-            return { markable: false, reason: `Você precisa ter ${content.limitedJobId} em suas classes para participar.` };
+            return { markable: false, reason: `Você precisa ter ${jobId} em suas classes para participar.` };
         }
-        const minLevel = content.limitedJobMinLevel || 1;
+        const minLevel = target.limitedJobMinLevel || 1;
         const level = Number(ownsJob.level || 0);
         if (level < minLevel) {
-            return { markable: false, reason: `Seu ${content.limitedJobId} está no nível ${level || "—"}; este conteúdo requer nível ${minLevel}.` };
+            return { markable: false, reason: `Seu ${jobId} está no nível ${level || "—"}; este evento requer nível ${minLevel}.` };
         }
         return { markable: true };
     }
 
+    // Conteúdo Limited sem evento associado: nada a marcar (Eventos Ativos
+    // de Limited só listam eventos individuais)
+    if (target.partyMode === "limited") {
+        return { markable: false, reason: "Limited só pode ser marcado por evento específico." };
+    }
+
     // Normal: compara order da expansão atual com a do conteúdo
-    const contentExpId = resolveContentExpansionId(content);
+    const contentExpId = resolveContentExpansionId(target);
     if (!contentExpId) return { markable: true };
     if (!character.currentExpansionId) {
         return { markable: false, reason: "Defina sua expansão atual na seção Identidade para liberar este evento." };
@@ -986,21 +999,36 @@ function toggleCharacterJob(jobId) {
 
 // Após mudança em currentExpansionId, jobs ou level: remove silenciosamente
 // dos subscribedProgs aqueles que deixaram de ser compatíveis e re-renderiza
-// a lista de progs (pois eventos antes bloqueados podem ter virado elegíveis).
-// Mostra toast agregado se houver remoções.
+// a lista (pois eventos antes bloqueados podem ter virado elegíveis).
+// subscribedProgs pode conter progIds (não-Limited) ou eventIds (Limited).
 function revalidateSubscribedProgs() {
     if (!currentCharacter) return;
     const subs = Array.isArray(currentCharacter.subscribedProgs) ? currentCharacter.subscribedProgs : [];
+    const events = Array.isArray(state.raidEvents) ? state.raidEvents : [];
 
     const removed = [];
     if (subs.length > 0) {
         const kept = [];
-        subs.forEach(progId => {
-            const prog = getProgObj(progId);
-            if (!prog) { kept.push(progId); return; }
+        subs.forEach(subId => {
+            // Tenta resolver como eventId primeiro (Limited)
+            const evt = events.find(e => e && e.id === subId);
+            if (evt) {
+                const elig = isContentMarkableForCharacter(evt, currentCharacter);
+                if (elig.markable) kept.push(subId);
+                else {
+                    const prog = getProgObj(evt.progId);
+                    const date = evt.postponedTo || evt.date || "";
+                    const dd = date.split("-").reverse().slice(0, 2).join("/");
+                    removed.push(`${prog.name || evt.progId} (${dd})`);
+                }
+                return;
+            }
+            // Senão tenta como progId
+            const prog = getProgObj(subId);
+            if (!prog) { kept.push(subId); return; }
             const elig = isContentMarkableForCharacter(prog, currentCharacter);
-            if (elig.markable) kept.push(progId);
-            else removed.push(prog.name || progId);
+            if (elig.markable) kept.push(subId);
+            else removed.push(prog.name || subId);
         });
         if (removed.length > 0) {
             currentCharacter.subscribedProgs = kept;
@@ -1008,8 +1036,6 @@ function revalidateSubscribedProgs() {
         }
     }
 
-    // Sempre re-renderiza: mudanças em jobs/expansão podem desbloquear eventos
-    // antes inacessíveis, mesmo sem remover nada.
     renderCharacterProgs();
 
     if (removed.length > 0) {
@@ -1032,28 +1058,69 @@ function renderCharacterProgs() {
         return;
     }
     const subs = new Set(currentCharacter.subscribedProgs || []);
+    const events = Array.isArray(state.raidEvents) ? state.raidEvents : [];
+
+    // Acumula linhas pra ordenar consistentemente: não-Limited primeiro, depois
+    // Limited por data crescente.
+    const rows = [];
+
     active.forEach(progId => {
         const prog = getProgObj(progId);
         const isLimited = prog.partyMode === "limited";
-        // Meta: para Limited mostra "Blue Mage · Lv. 80+"; para normal mostra expansão.
-        let metaText = "";
-        if (isLimited && prog.limitedJobId) {
-            const lvlPart = prog.limitedJobMinLevel ? ` · Lv. ${prog.limitedJobMinLevel}+` : "";
-            metaText = `${prog.limitedJobId}${lvlPart}`;
-        } else {
-            metaText = getExpansionDisplayName(prog) || "";
-        }
-        const subscribed = subs.has(progId);
-        const eligibility = isContentMarkableForCharacter(prog, currentCharacter);
-        const blocked = !eligibility.markable;
 
+        if (isLimited) {
+            // Para Limited, listamos uma linha por EVENTO futuro daquele prog.
+            // Sem evento agendado, o conteúdo não aparece.
+            const progEvents = events
+                .filter(e => e && e.progId === progId)
+                .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+            progEvents.forEach(evt => {
+                const subId = evt.id;
+                const date = evt.postponedTo || evt.date || "";
+                const [yy, mm, dd] = date.split("-");
+                const dateLabel = (dd && mm) ? `${dd}/${mm}` : date;
+                const lvlPart = Number.isFinite(evt.limitedJobMinLevel) ? ` · Lv. ${evt.limitedJobMinLevel}+` : "";
+                const labelPart = evt.eventLabel ? ` · ${evt.eventLabel}` : "";
+                const eventDisplay = `${prog.name} — ${dateLabel}${lvlPart}${labelPart}`;
+                const eligibility = isContentMarkableForCharacter(evt, currentCharacter);
+                rows.push({
+                    sortKey: `1_${date}_${prog.name}`,
+                    subId,
+                    display: eventDisplay,
+                    meta: prog.limitedJobId || "",
+                    eligibility,
+                });
+            });
+        } else {
+            // Não-Limited: linha por prog (1 sub por progId)
+            const eligibility = isContentMarkableForCharacter(prog, currentCharacter);
+            rows.push({
+                sortKey: `0_${prog.name}`,
+                subId: progId,
+                display: prog.name || progId,
+                meta: getExpansionDisplayName(prog) || "",
+                eligibility,
+            });
+        }
+    });
+
+    if (rows.length === 0) {
+        cont.innerHTML = `<div class="character-progs-empty">Nenhum evento elegível.</div>`;
+        return;
+    }
+
+    rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+    rows.forEach(({ subId, display, meta, eligibility }) => {
+        const subscribed = subs.has(subId);
+        const blocked = !eligibility.markable;
         const row = document.createElement("label");
         row.className = `char-prog-row${subscribed ? ' is-subscribed' : ''}${blocked ? ' is-blocked' : ''}`;
         if (blocked) row.title = eligibility.reason || "";
         row.innerHTML = `
-            <input type="checkbox" ${subscribed ? 'checked' : ''} ${blocked ? 'disabled' : ''} data-prog-id="${progId}">
-            <span class="char-prog-name">${escapeHtml(prog.name || progId)}</span>
-            ${metaText ? `<span class="char-prog-meta">${escapeHtml(metaText)}</span>` : ''}
+            <input type="checkbox" ${subscribed ? 'checked' : ''} ${blocked ? 'disabled' : ''} data-sub-id="${escapeHtml(subId)}">
+            <span class="char-prog-name">${escapeHtml(display)}</span>
+            ${meta ? `<span class="char-prog-meta">${escapeHtml(meta)}</span>` : ''}
             ${blocked ? `<span class="char-prog-blocked-icon" aria-label="Bloqueado">🔒</span>` : ''}
         `;
         const cb = row.querySelector("input");
@@ -1061,8 +1128,8 @@ function renderCharacterProgs() {
             if (blocked) { cb.checked = false; return; }
             const list = currentCharacter.subscribedProgs = Array.isArray(currentCharacter.subscribedProgs)
                 ? currentCharacter.subscribedProgs : [];
-            const idx = list.indexOf(progId);
-            if (cb.checked && idx < 0) list.push(progId);
+            const idx = list.indexOf(subId);
+            if (cb.checked && idx < 0) list.push(subId);
             else if (!cb.checked && idx >= 0) list.splice(idx, 1);
             saveCharacterDebounced();
             row.classList.toggle("is-subscribed", cb.checked);
@@ -2116,18 +2183,38 @@ function getAvailCountForDate(dateKey) {
     ).length;
 }
 
-function upsertRaidEvent(dateKey, progId, quorum, description) {
+// Cria ou atualiza um evento agendado.
+// `extra` opcional: { limitedJobMinLevel?: number, eventLabel?: string }
+// Para conteúdos Limited, múltiplos eventos paralelos no mesmo progId são
+// permitidos (cada um com `limitedJobMinLevel` próprio). Para os demais,
+// continua valendo "1 evento futuro por progId".
+function upsertRaidEvent(dateKey, progId, quorum, description, extra) {
     if (!state.raidEvents) state.raidEvents = [];
-    const existing = state.raidEvents.find(e => (e.postponedTo || e.date) === dateKey && e.progId === progId);
+    const limited = isLimitedProg(progId);
+    extra = extra || {};
+
+    // Procura existente — pra Limited, precisa bater (date + progId + label/level)
+    // pra evitar colisão; pra não-Limited, basta progId + date.
+    const existing = limited
+        ? null  // edição de evento Limited específico é por id (openScheduleModal passa)
+        : state.raidEvents.find(e => (e.postponedTo || e.date) === dateKey && e.progId === progId);
     if (existing) {
         existing.quorum = quorum;
         if (description !== undefined) existing.description = description;
         return existing;
     }
-    // Remove evento anterior para o mesmo progId (só um evento futuro por prog)
-    state.raidEvents = state.raidEvents.filter(e => e.progId !== progId);
+
+    // Para conteúdos não-Limited, mantém "1 evento futuro por prog"
+    if (!limited) {
+        state.raidEvents = state.raidEvents.filter(e => e.progId !== progId);
+    }
+
+    // ID único: pra Limited, sufixa timestamp pra permitir múltiplos na mesma data
+    const baseId = `evt_${progId}_${dateKey.replace(/-/g, '')}`;
+    const eventId = limited ? `${baseId}_${Date.now().toString(36)}` : baseId;
+
     const evt = {
-        id: `evt_${progId}_${dateKey.replace(/-/g, '')}`,
+        id: eventId,
         progId,
         progName: getProgObj(progId).name,
         date: dateKey,
@@ -2141,6 +2228,11 @@ function upsertRaidEvent(dateKey, progId, quorum, description) {
         reminder24hSent: false,
         reminderTodaySent: false,
     };
+    if (limited) {
+        const lvl = parseInt(extra.limitedJobMinLevel, 10);
+        evt.limitedJobMinLevel = Number.isFinite(lvl) && lvl > 0 ? lvl : 1;
+        if (extra.eventLabel) evt.eventLabel = String(extra.eventLabel).slice(0, 50);
+    }
     state.raidEvents.push(evt);
     return evt;
 }
@@ -2158,8 +2250,22 @@ function postponeRaidEvent(dateKey, newDate) {
 function removeRaidEvent(dateKey) {
     const evt = getRaidEventForDate(dateKey);
     if (!evt) return;
-    state.raidEvents = state.raidEvents.filter(e => e.id !== evt.id);
+    removeRaidEventById(evt.id);
     removeScheduleNotification(dateKey);
+}
+
+// Remove um evento específico pelo id (usado para eventos Limited multi-evento)
+// e limpa referências em subscribedProgs do character logado.
+function removeRaidEventById(eventId) {
+    if (!eventId) return;
+    state.raidEvents = (state.raidEvents || []).filter(e => e.id !== eventId);
+    if (currentCharacter && Array.isArray(currentCharacter.subscribedProgs)) {
+        const before = currentCharacter.subscribedProgs.length;
+        currentCharacter.subscribedProgs = currentCharacter.subscribedProgs.filter(id => id !== eventId);
+        if (currentCharacter.subscribedProgs.length !== before) {
+            saveCharacterDebounced();
+        }
+    }
 }
 
 // ==========================================================================
@@ -2214,6 +2320,26 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             <label class="sched-quorum-label" for="inp-sched-quorum">Quorum mínimo:</label>
             <input id="inp-sched-quorum" type="number" min="1" max="${initialMax}" value="${initialQuorum}" class="ff-input sched-quorum-input">
             <span class="sched-quorum-hint">players</span>
+        </div>`;
+
+    // Bug 2 — campos específicos de Limited: nível mínimo do job + label opcional.
+    // Visíveis só quando prog selecionado é Limited (toggle via JS abaixo).
+    const initialLimited = isLimitedProg(currentProgId);
+    const initialLimitedJobId = initialLimited ? getLimitedJob(currentProgId) : "";
+    const currentMinLevel = (existingEvt && Number.isFinite(existingEvt.limitedJobMinLevel)) ? existingEvt.limitedJobMinLevel : "";
+    const currentLabel = (existingEvt && existingEvt.eventLabel) ? existingEvt.eventLabel : "";
+    html += `
+        <div class="sched-limited-row" id="sched-limited-row" style="${initialLimited ? '' : 'display:none;'}margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+            <div style="flex:0 0 130px;">
+                <label for="inp-sched-limited-level" style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:4px;">
+                    Nível mínimo <span id="sched-limited-job-label" style="color:var(--gold-bright);">${escapeHtml(initialLimitedJobId)}</span>
+                </label>
+                <input id="inp-sched-limited-level" type="number" class="ff-input" min="1" max="100" value="${currentMinLevel}" placeholder="Ex: 70">
+            </div>
+            <div style="flex:1;min-width:160px;">
+                <label for="inp-sched-event-label" style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:4px;">Rótulo do evento (opcional)</label>
+                <input id="inp-sched-event-label" type="text" class="ff-input" maxlength="50" placeholder="Ex: Run de treino" value="${escapeHtml(currentLabel)}">
+            </div>
         </div>`;
 
     // Descrição do evento (Fase J): visível para criação nova e para quem pode editar
@@ -2294,9 +2420,23 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
         if (v > max) input.value = max;
     }
 
+    // Bug 2 — mostra/esconde a row de Limited (nível mín + label) conforme prog
+    function refreshLimitedUI(progId) {
+        const row = body.querySelector("#sched-limited-row");
+        const jobLabel = body.querySelector("#sched-limited-job-label");
+        if (!row) return;
+        if (isLimitedProg(progId)) {
+            row.style.display = "flex";
+            if (jobLabel) jobLabel.textContent = getLimitedJob(progId) || "";
+        } else {
+            row.style.display = "none";
+        }
+    }
+
     // Toggle seleção de prog
     let selectedProg = currentProgId || (progs[0] || null);
     refreshQuorumUI(selectedProg);
+    refreshLimitedUI(selectedProg);
     body.querySelectorAll(".sched-opt-btn").forEach(btn => {
         // Confirmar agendamento ao clicar no prog (double-click)
         btn.addEventListener("dblclick", confirmSchedule);
@@ -2310,6 +2450,7 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             btn.classList.add("sched-opt-active");
             selectedProg = btn.dataset.prog;
             refreshQuorumUI(selectedProg);
+            refreshLimitedUI(selectedProg);
 
             if (wasAlreadyActive) {
                 // segundo clique no mesmo prog = confirmar
@@ -2328,17 +2469,13 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             const dateEl = body.querySelector("#inp-sched-session-date");
             const dateVal = (dateEl?.value || "").trim();
             if (!dateVal) {
-                // Sem data — salva descrição como nota do prog (se preenchida)
-                const descInput = body.querySelector("#inp-sched-description");
-                const description = descInput ? descInput.value.trim() : "";
-                if (description) {
-                    if (!state.progNotes) state.progNotes = {};
-                    state.progNotes[selectedProg] = description;
-                    saveState();
-                    renderQuickSchedule();
+                // Sem data — descarta. Descrição só vive em raidEvent.description;
+                // não persistimos mais como "nota do prog" porque sobreviveria
+                // ao delete do evento (bug).
+                if (dateEl) {
+                    dateEl.style.borderColor = "var(--color-late)";
+                    setTimeout(() => { dateEl.style.borderColor = ""; }, 1500);
                 }
-                modal.hidden = true;
-                playSfx('success');
                 return;
             }
             const parts = dateVal.split("/");
@@ -2357,7 +2494,27 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             : (parseInt(body.querySelector("#inp-sched-quorum")?.value || "6", 10) || 6);
         const descInput = body.querySelector("#inp-sched-description");
         const description = descInput ? descInput.value : undefined;
-        upsertRaidEvent(resolvedDateKey, selectedProg, quorum, description);
+
+        // Bug 2 — campos extras pra Limited (validação client-side aqui)
+        const extra = {};
+        if (isLimitedProg(selectedProg)) {
+            const lvlEl = body.querySelector("#inp-sched-limited-level");
+            const lvlVal = parseInt(lvlEl?.value || "", 10);
+            if (!Number.isFinite(lvlVal) || lvlVal < 1 || lvlVal > 100) {
+                if (lvlEl) {
+                    lvlEl.style.borderColor = "var(--color-late)";
+                    setTimeout(() => { lvlEl.style.borderColor = ""; }, 1500);
+                    lvlEl.focus();
+                }
+                showToast(`Informe o nível mínimo (1-100) de ${getLimitedJob(selectedProg)} para este evento.`, { type: "error", title: "Nível obrigatório" });
+                return;
+            }
+            extra.limitedJobMinLevel = lvlVal;
+            const labelEl = body.querySelector("#inp-sched-event-label");
+            const labelVal = (labelEl?.value || "").trim();
+            if (labelVal) extra.eventLabel = labelVal;
+        }
+        upsertRaidEvent(resolvedDateKey, selectedProg, quorum, description, extra);
         addScheduleNotification(resolvedDateKey, selectedProg);
         saveState();
         renderScheduleTable();
@@ -2942,11 +3099,7 @@ function renderQuickSchedule() {
         } else {
             const noEvtMsg = raidEvt
                 ? `Evento agendado para ${(raidEvt.postponedTo || raidEvt.date).split("-").reverse().join("/")} — sem confirmações ainda.`
-                : "Nenhuma data de raid agendada para este conteúdo.";
-            const progNote = state.progNotes && state.progNotes[progId] ? state.progNotes[progId] : "";
-            const progNoteHtml = progNote
-                ? `<div style="font-size:0.8rem;color:var(--text-main);margin-top:6px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:var(--radius-sm);white-space:pre-wrap;">${escapeHtml(progNote)}</div>`
-                : "";
+                : "Nenhuma data agendada para este conteúdo.";
             const quickSchedFormHtml = (!raidEvt && isOfficer())
                 ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
                        <input type="text" class="ff-input inp-quick-sched-date" placeholder="DD/MM/AAAA" maxlength="10" inputmode="numeric" style="flex:1;font-size:0.82rem;padding:5px 8px;">
@@ -2956,7 +3109,6 @@ function renderQuickSchedule() {
             raidBlock.innerHTML = `
                 ${headerHtml}
                 <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">${noEvtMsg}</div>
-                ${progNoteHtml}
                 ${quickSchedFormHtml}
             `;
         }

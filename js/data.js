@@ -120,12 +120,11 @@ const FFXIV_RAIDS = [
 ];
 
 // Fase 14 — Conteúdos de Limited Job (hardcoded, não editáveis pelo usuário)
-// Limited NÃO usa a ordem de expansão para validação — usa o level do job
-// específico (limitedJobId) do personagem comparado com `limitedJobMinLevel`.
-// `expansionId` fica null/limited só para retrocompat; a UI do dropdown de
-// "expansão atual" filtra `isLimited` fora.
+// Limited NÃO usa a ordem de expansão para validação — cada EVENTO carrega o
+// próprio `limitedJobMinLevel` (definido pelo officer no agendamento). Aqui
+// só guardamos o job referência (`limitedJobId`).
 const FFXIV_LIMITED_CONTENTS = [
-    { id: "blue_mage_raid", name: "Blue Mage", expansionId: "limited", partyMode: "limited", limitedJobId: "BLU", limitedJobMinLevel: 80, partySize: 8 }
+    { id: "blue_mage_raid", name: "Blue Mage", expansionId: "limited", partyMode: "limited", limitedJobId: "BLU", partySize: 8 }
     // Beastmaster será adicionado quando o job for lançado pela Square Enix.
 ];
 
