@@ -1809,9 +1809,10 @@ function renderRosterTables() {
             const identity = getSlotIdentity(player);
             const locked = !!player.user_id;
             const canEdit = !locked && canEditPlayer(player);
+            const canPickJob = canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
             const lockedHint = locked ? '<span class="slot-locked-hint" title="Edite seus dados na aba Personagem">🔗</span>' : '';
-            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
+            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canPickJob);
 
             tr.innerHTML = `
                 <td data-label="rank" style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
@@ -1851,9 +1852,10 @@ function renderRosterTables() {
             const identity = getSlotIdentity(player);
             const locked = !!player.user_id;
             const canEdit = !locked && canEditPlayer(player);
+            const canPickJob = canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
             const lockedHint = locked ? '<span class="slot-locked-hint" title="Edite seus dados na aba Personagem">🔗</span>' : '';
-            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
+            const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canPickJob);
 
             tr.innerHTML = `
                 <td data-label="Jogador">
