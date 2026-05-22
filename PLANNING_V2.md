@@ -16,10 +16,9 @@ Ordem prevista:
 
 1. **Fase P** — Validação de Presença por Expansão
 2. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
-3. **Fase O.2** — Refactor da aba Party (ler identidade do `character_json`) — polimento, pode ser feita depois de P/Q
-4. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
+3. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M, N, O (parte 1: aba Personagem).
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário).
 
 ---
 
@@ -35,6 +34,8 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem).
 | M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
 | N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin + retrocompat aprimorada | ✅ | Sonnet |
 | O | Aba Personagem (parte 1) | `users.character_json` + endpoints + migração + nova aba "Personagem" (identidade/jobs/progs) + renomeia "Membros"→"Party" + tabs responsivas | ✅ | Opus |
+| O.5 | Validações na Personagem | ILVL Máximo + Eventos Ativos + validação por expansão/Limited + auto-desmarca silenciosa | ✅ | Sonnet |
+| O.2 | Refactor Party + Calendário + Claim | Cadastro manual removido; slots com `user_id` lêem identidade do `character_json`; botão Claim em slots legados (`POST /api/character/claim-slot`); calendário global | ✅ | Sonnet |
 
 ### Pendentes — App Principal (prioridade)
 
@@ -42,7 +43,6 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem).
 |---|------|-----------|:------:|:------:|
 | P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
 | Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
-| O.2 | Refactor aba Party | Slot do roster vinculado a `user_id` passa a ler `name`/`ilvl`/`jobs` do `character_json`; dropdown de `assignedJob` limita às classes do character; visibilidade de ilvl/jobs restrita aos escalados no prog selecionado | ⏳ | Sonnet |
 
 ### Backlog — Strategy Planner (executar por último)
 
@@ -803,6 +803,56 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase O.5 — Validações na aba Personagem ✅
+
+**Concluída em** [PR #24](https://github.com/oscarothon/ffxiv-raid-planner/pull/24) · commit `b3f2919`
+
+**Objetivo:** responder a 2 bugs urgentes na aba Personagem.
+
+1. Labels: "ILVL" → "Item Level Máximo (iLvl)" (hint "O maior iLvl entre suas classes"); "Progs Ativos" → "Eventos Ativos" (estamos planejando além de raids).
+2. Limited Job sai do dropdown de "Expansão Atual" (Limited tem validação própria, não usa ordem de expansão). `state.expansions` mantém Limited internamente para retrocompat mas filtra do dropdown do user.
+3. Blue Mage ganha `limitedJobMinLevel: 80` em `FFXIV_LIMITED_CONTENTS`. Meta na linha de evento mostra `BLU · Lv. 80+` em vez de "Limited Job".
+4. Helper `isContentMarkableForCharacter(content, character)` retorna `{markable, reason}`:
+   - Limited → precisa ter o job E level ≥ mínimo.
+   - Normal → precisa ter `currentExpansionId` E `order` ≥ do conteúdo.
+5. Checkbox de Eventos Ativos fica `disabled` + tooltip + 🔒 quando bloqueado.
+6. Auto-desmarca silenciosa de subscribedProgs incompatíveis ao reduzir expansão, remover job ou reduzir level. Toast agregado lista os removidos.
+
+---
+
+## Fase O.2 — Refactor da aba Party + Claim + Calendário Global ✅
+
+**Concluída em** [PR #25](https://github.com/oscarothon/ffxiv-raid-planner/pull/25) · commit `f450305`
+
+**Objetivo:** responder aos 2 bugs urgentes restantes (cadastro manual + agenda derivada de characters) e completar a transição iniciada na Fase O.
+
+### Aba Party
+
+1. **Cadastro manual "Cadastrar Novo Jogador" removido completamente** (qualquer cargo). Form some do HTML. Identidade do jogador vive em `character_json` (aba Personagem); slots novos surgem via Claim.
+2. Slots com `user_id` vinculado → identidade (nome/ilvl/jobsPool) vem do `character_json` via novo helper `getSlotIdentity(player)`. Inputs ficam disabled (edição é na aba Personagem). Marcador "(você)" se for o próprio user.
+3. Slots sem `user_id` (legados) → editáveis pelo officer + botão **"📥 Claim"** dourado para qualquer member logado que ainda não tem slot na static.
+
+### Claim flow
+
+4. `POST /api/character/claim-slot` com `slot_id`. Backend valida (slot existe, está livre, user é membro, user ainda não tem outro slot) e migra `name`/`ilvl`/`jobsPool` para `character_json` do user (jobs sem level, pra preenchimento posterior). Mescla preservando edits prévios do user. Seta `slot.user_id = user.id`. Atomico (1 transação).
+5. Frontend recarrega state, toast confirmando.
+
+### Calendário (Agenda Semanal)
+
+6. Agora é **global**: lista todos os jogadores do roster sem filtrar pelo prog inspecionado, sem header "Substitutos (Banco)". Identidade vem do `character_json` para slots vinculados. Ordem alfabética por nome.
+
+### Distribuição de characters
+
+7. `GET /api/state` retorna `characters: {user_id: character_json}` para todos os members da static — front lê via `getSlotIdentity`.
+
+### Pontos abertos (não bloqueantes — backlog futuro)
+
+- Users que entraram na static via convite mas ainda não claimaram slot **não aparecem no calendário**. Para esses, seria necessário gerar uma linha "virtual" do roster.
+- Card de Blue Mage na Visão Geral ainda mostra "Limited Job" como expansão (poderia mostrar `BLU · Lv. 80+` igual o painel Eventos Ativos faz).
+- Dropdown de `assignedJob` por prog ainda não filtra pelas classes do `character.jobs`.
+
+---
+
 ## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
 
 **Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
@@ -852,8 +902,7 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 |---|---|
 | P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
 | Q | 3-4 sessões (Opus) — widget de horas + overlap + modal + revisão K/L/M |
-| O.2 | 1-2 sessões (Sonnet) — refactor leitura na Party para usar `character_json` |
-| **Subtotal app principal** | **~5-8 sessões** |
+| **Subtotal app principal** | **~4-6 sessões** |
 | A | 2-3 sessões (Opus) |
 | B | 3-4 sessões (Opus) |
 | C | 3-4 sessões (Opus) |
@@ -864,8 +913,8 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) |
 | **Subtotal Strategy Planner** | **~17-21 sessões** |
-| J, K, L, M, N, O | ✅ concluídas |
-| **Total restante** | **~22-29 sessões** |
+| J, K, L, M, N, O, O.5, O.2 | ✅ concluídas |
+| **Total restante** | **~21-27 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
