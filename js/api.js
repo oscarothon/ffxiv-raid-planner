@@ -75,5 +75,6 @@ const API = (() => {
         telegramUnbind: ()         => request("/api/telegram/unbind", { method: "POST" }),
         getCharacter:  ()                 => request("/api/character"),
         putCharacter:  (character)        => request("/api/character",       { method: "PUT", body: character }),
+        claimSlot:     (slot_id)          => request("/api/character/claim-slot", { method: "POST", body: { slot_id } }),
     };
 })();

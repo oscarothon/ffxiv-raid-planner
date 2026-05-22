@@ -3610,6 +3610,33 @@ label {
     font-size: 0.85rem;
     opacity: 0.85;
 }
+
+/* Fase O.2 — botão "Claim" em slots livres do roster */
+.btn-claim-slot {
+    background: linear-gradient(180deg, rgba(255, 217, 106, 0.35) 0%, rgba(200, 160, 50, 0.55) 100%);
+    border: 1px solid var(--gold-bright, #ffd96a);
+    color: var(--gold-bright, #ffd96a);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+.btn-claim-slot:hover {
+    background: linear-gradient(180deg, rgba(255, 217, 106, 0.55) 0%, rgba(200, 160, 50, 0.75) 100%);
+    box-shadow: 0 0 8px rgba(255, 217, 106, 0.4);
+}
+
+/* Ícone "🔗" que marca slot vinculado a um user (identidade vem do Personagem) */
+.slot-locked-hint {
+    margin-left: 6px;
+    font-size: 0.8rem;
+    opacity: 0.6;
+    cursor: help;
+}
 .char-prog-row input[type="checkbox"] {
     cursor: pointer;
 }
