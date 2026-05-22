@@ -1024,10 +1024,40 @@ function buildProgCard(progId, canManage) {
     `;
 
     if (canManage) {
-        card.querySelector(".prog-card-remove").addEventListener("click", (e) => {
+        card.querySelector(".prog-card-remove").addEventListener("click", async (e) => {
             e.stopPropagation();
             playSfx('click');
+
+            // Detecta agendamentos futuros desse prog — se houver, confirma com aviso
+            // de que serão cancelados (e o grupo notificado no Telegram via Fase M).
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const futureEvents = (state.raidEvents || []).filter(ev =>
+                ev.progId === progId && (ev.postponedTo || ev.date) >= todayStr
+            );
+            if (futureEvents.length > 0) {
+                const dates = futureEvents
+                    .map(ev => {
+                        const d = ev.postponedTo || ev.date;
+                        const [y, m, day] = d.split("-");
+                        return `${day}/${m}`;
+                    })
+                    .join(", ");
+                const ok = await showConfirm({
+                    title: "Desativar conteúdo",
+                    message: `Desativar "${fullName}"?`,
+                    detail: `Há ${futureEvents.length} agendamento${futureEvents.length === 1 ? '' : 's'} futuro${futureEvents.length === 1 ? '' : 's'} (${dates}). ${futureEvents.length === 1 ? 'Ele será cancelado' : 'Eles serão cancelados'} e o grupo será notificado no Telegram.`,
+                    danger: true,
+                    confirmText: "Desativar",
+                });
+                if (!ok) return;
+            }
+
             state.activeProgs = state.activeProgs.filter(id => id !== progId);
+            // Limpa raidEvents e pendingNotifications órfãos — sem isso, o
+            // scheduler do servidor continua disparando lembretes 24h/today
+            // (server/app.py:_maybe_send_reminders itera por state.raidEvents).
+            state.raidEvents = (state.raidEvents || []).filter(ev => ev.progId !== progId);
+            state.pendingNotifications = (state.pendingNotifications || []).filter(n => n.progId !== progId);
             if (state.inspectedProgId === progId) {
                 state.inspectedProgId = state.activeProgs[0] || "geral";
             }
