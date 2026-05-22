@@ -2059,6 +2059,21 @@ label {
 .cell-status.late { background: rgba(245, 158, 11, 0.1); }
 .cell-status.unavail { background: rgba(239, 68, 68, 0.1); }
 
+/* Fase P — célula com avail mas jogador incompatível com o evento daquele dia
+   (expansão atual abaixo da exigida ou level do Limited job insuficiente).
+   Mantém o ✔️ mas desatura a cor e adiciona cadeado. */
+.cell-status.cell-incompat {
+    background: rgba(148, 163, 184, 0.18) !important;
+    filter: grayscale(0.7);
+    position: relative;
+}
+.cell-incompat-lock {
+    margin-left: 2px;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    vertical-align: super;
+}
+
 /* Dia com raid agendada — destaque dourado no th */
 .calendar-table th.day-scheduled {
     background: rgba(212, 175, 55, 0.12);

@@ -14,11 +14,10 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 Ordem prevista:
 
-1. **Fase P** — Validação de Presença por Expansão
-2. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
-3. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
+1. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
+2. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes), O.7 (polimento Party + toasts).
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes), O.7 (polimento Party + toasts), P (validação de presença + retrocompat + tz GMT-4).
 
 ---
 
@@ -38,12 +37,12 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 | O.2 | Refactor Party + Calendário + Claim | Cadastro manual removido; slots com `user_id` lêem identidade do `character_json`; botão Claim em slots legados (`POST /api/character/claim-slot`); calendário global | ✅ | Sonnet |
 | O.6 | Limited multi-evento + bugfixes | `limitedJobMinLevel`+`eventLabel` por evento (não por conteúdo); Blue Mage pode ter N eventos paralelos com requisitos distintos; Eventos Ativos lista por evento; `state.progNotes` eliminado (descrição não persistia após delete) | ✅ | Sonnet |
 | O.7 | Polimento Party + toasts intermitentes | Botão Editar removido; Excluir vira "remover do prog" (slot continua nos outros); helper `isPlayerInProg`; throttle no toast de erro; `applyRemoteState` atualiza `currentCharacters` | ✅ | Sonnet |
+| P | Validação de Presença + bugfixes paralelos | `avail` filtrado por compatibilidade (expansão / Limited level); cap defensivo de partySize; reminders Telegram em GMT-4; retrocompat para chars sem `currentExpansionId` | ✅ | Opus |
 
 ### Pendentes — App Principal (prioridade)
 
 | # | Fase | Descrição | Status | Modelo |
 |---|------|-----------|:------:|:------:|
-| P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
 | Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
 
 ### Backlog — Strategy Planner (executar por último)
@@ -65,58 +64,6 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 ---
 
 # PARTE 1 — Pendentes do App Principal (Prioridade)
-
-## Fase P — Validação de Presença (Expansão + Limited level)
-
-**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se o personagem é compatível com o **evento específico** daquele dia. Dois critérios:
-
-1. **Eventos normais (não-Limited):** `character.currentExpansionId` tem `order` ≥ `order` da expansão do conteúdo.
-2. **Eventos Limited:** o character tem o `prog.limitedJobId` em `jobs` E o level desse job ≥ `event.limitedJobMinLevel` (definido pelo officer no agendamento).
-
-Sem isso, é possível um membro Heavensward ser contado como confirmado numa raid Endwalker, ou um player com BLU 60 num evento Blue Mage Lv 80+.
-
-**Depende de:** Fase N (catálogo de expansões) + Fase O (`character_json`) + Fase O.5 (já reusa o helper `isContentMarkableForCharacter`) + bugfix Limited (`event.limitedJobMinLevel`).
-
-### Regra de compatibilidade
-
-1. Reusar o helper `isContentMarkableForCharacter(target, character)` já implementado em [js/app.js](js/app.js):
-   - Aceita um `content` (não-Limited) OU um `raidEvent` (Limited).
-   - Retorna `{markable, reason}`.
-2. Para a Fase P, o input é sempre o **`raidEvent`** (porque a checagem é por evento, não por conteúdo). Pra evento não-Limited, o helper olha `getProgObj(event.progId)` internamente; pra Limited, usa `event.limitedJobMinLevel` direto.
-3. **Fallback permissivo**: char sem `currentExpansionId` ou evento sem `expansionId` resolvível → conta como compatível. Limited sem `limitedJobMinLevel` (eventos legados) → conta se char tem o job.
-
-### Aplicação da regra (frontend)
-
-4. **Cálculo de confirmados em "Próximos dias de raid"**: no loop que monta `confTitulares`/`confReservas`, só conta um jogador como `avail` se `isContentMarkableForCharacter(event, character).markable === true`.
-5. **`getAvailCountForDate(dateKey)`**: aceita opcionalmente um `event` (em vez de só `dateKey`) e filtra.
-6. **Quorum opportunities (Fase L)**: aplica — não sugere full party se os 8 disponíveis incluem gente incompatível com o prog candidato.
-
-### Aplicação da regra (backend, para o Telegram)
-
-7. Mesma lógica em `_count_confirmed_for_date` em [server/app.py](server/app.py):
-   - Buscar `character_json` do user vinculado a cada slot (já vem do `characters` enriquecido).
-   - Buscar `event` do dia (já no estado).
-   - Aplicar `is_event_compatible(event, character)` (helper Python espelhado).
-8. Sem isso, os números reportados pelo Telegram (Confirmados X/Y) divergem do site. **Crítico para consistência.**
-
-### Feedback visual
-
-9. Na tabela mensal de schedule: célula com `avail` de jogador incompatível com o evento daquele dia:
-   - Mantém o ✔️ (jogador marcou disponibilidade — é informação válida).
-   - **Adiciona** indicador discreto (cadeado pequeno + tooltip "Não conta — sua expansão atual é Heavensward; evento exige Endwalker" / "Não conta — BLU nível 65; evento exige 80+").
-   - Cor da célula muda para acinzentada/desaturada.
-10. Em "Próximos dias de raid": jogadores incompatíveis **não** aparecem na lista de confirmados. Aparecem numa lista separada "Disponíveis mas fora dos requisitos: X" (officer/admin only).
-
-### Critério de aceite
-
-- Membro Heavensward marca `avail` num dia de evento Endwalker → não conta, célula com indicador + tooltip.
-- Membro com BLU 65 marca `avail` num dia de evento Blue Mage Lv 80+ → não conta, tooltip explicativo.
-- Mesmo membro num evento Blue Mage Lv 60+ no mesmo dia → conta normalmente (eventos paralelos podem ter requisitos diferentes).
-- Quórum opportunity (Fase L) só sugere full party quando há 8 compatíveis.
-- Telegram reporta os mesmos números do site (helpers JS e Python espelhados).
-- Fallback permissivo: dados ausentes não bloqueiam indevidamente.
-
----
 
 ## Fase Q — Disponibilidade por Horário (popover do dia + janelas de overlap)
 
@@ -906,6 +853,43 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 ### Pontos abertos (não bloqueantes)
 
 - `getPlayerStatusForProg` ainda faz fallback para `"active"` quando `statusByProg[progId]` é vazio — slots legados são auto-incluídos em progs novos. Pode virar issue se quisermos transição completa para "Party derivada de subscribedProgs".
+
+---
+
+## Fase P — Validação de Presença + bugfixes paralelos ✅
+
+**Objetivo:** disponibilidade ("avail") de um jogador num dia só conta para quórum/escalação se o personagem é compatível com o **evento específico** daquele dia (expansão ≥ exigida ou Limited job no level mínimo). Telegram e site reportam o mesmo número.
+
+### Frontend ([js/app.js](js/app.js))
+
+1. Helpers novos: `getCharacterForPlayer(player)` (resolve `currentCharacters[user_id]`, prefere `currentCharacter` para o user logado para refletir edições antes do poll) e `isPlayerCompatibleWithTarget(player, target)`.
+2. `getAvailCountForDate(dateKey, target?)` — quando `target` é passado, filtra por compatibilidade; sem target, mantém comportamento legado (todos `avail`).
+3. `renderQuickSchedule` — `confTitulares`/`confReservas` não incluem incompatíveis; nova lista "Disponíveis mas fora dos requisitos" visível só para officer/admin.
+4. `renderQuorumOpportunities` — threshold passa de hardcoded 8 para `getPartySize(prog)` (4 para Light, 8 para Full); só sugere quando há ≥ partySize compatíveis com pelo menos um prog ativo não-Limited/não-Dynamic; o prog candidato é pré-selecionado no modal de agendamento.
+5. `renderScheduleTable` — célula com `avail` e jogador incompatível ganha `🔒`, tooltip explicativo e classe `cell-incompat` (CSS desaturado em [css/styles.css](css/styles.css)).
+6. `saveCharacterDebounced` — sincroniza `currentCharacters[currentUserId]` localmente e dispara `renderScheduleTable` + `renderQuickSchedule` para refletir mudanças sem esperar o próximo poll (~5s).
+
+### Backend ([server/app.py](server/app.py))
+
+7. Catálogo built-in espelhado em Python (`_BUILT_IN_PROGS`, `_SEED_EXPANSION_ORDERS`) + helpers `_resolve_prog`, `_expansion_order`, `_is_event_compatible(state_data, event, character)`.
+8. `_count_confirmed_for_date(state_data, date_str, event=None, characters=None)` — filtro opcional por compatibilidade; chamadas atualizadas em `_notify_new_raid_events` e `_maybe_send_reminders` carregam `characters` via `_load_characters_for_static` antes de contar.
+9. `_evaluate_quorum_opportunities` — espelha o threshold por partySize do front; loop sobre todos os progs ativos buscando o de maior count ≥ próprio threshold.
+
+### Fallbacks (retrocompat com produção)
+
+10. **Char sem `currentExpansionId`** (users pré-Fase O): **conta como compatível** — PLANNING_V2 define explicitamente como fallback permissivo. Aplicado JS + Python.
+11. **`raidEvent` Limited sem `limitedJobMinLevel`** (eventos pré-Fase O.6): conta se char tem o job. Sem job: bloqueado (consistente com Fase O.5).
+12. **Slot sem `user_id`** (legados): conta (não há character para validar).
+13. **Prog sem expansionId resolvível**: conta. **Built-in desconhecido**: conta.
+
+### Bugfixes paralelos pegos durante validação
+
+14. **Cap defensivo de Light Party** (`renderRosterTables`): se `statusByProg` tem mais actives que `partySize` (ex: dados legados, seeds, migração direta), só os primeiros `partySize` aparecem como titulares; o restante é exibido como reserva (sem mutação) e o contador ganha `title` avisando o officer a reorganizar.
+15. **Timezone do Telegram** (`server/app.py`): novo `_today_local()` em GMT-4 (env `APP_TZ_OFFSET_HOURS`, default `-4`). `_maybe_send_reminders` e `_evaluate_quorum_opportunities` passam a usar — antes disparavam até 4h antes do esperado em servidores UTC (Railway).
+
+### Backlog de testes
+
+- `scripts/seed_test_users.py` cria 11 usuários (`t_pld`, `t_drk`, `t_whm`, `t_ast`, `t_mnk`, `t_nin`, `t_brd`, `t_blm`, `t_bench`, `t_ew_only`, `t_blu_mid`, senha `test1234`) cobrindo Full Party / Light Party / Banco e os cenários de Fase P (EW-only para expansão; BLU L75 para Limited level). Idempotente e com `--reset` para limpar.
 
 ---
 

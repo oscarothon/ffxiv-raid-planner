@@ -861,6 +861,21 @@ async function claimRosterSlot(slotId) {
 
 function saveCharacterDebounced() {
     if (!currentCharacter) return;
+    // Fase P — sincroniza o map distribuído (`currentCharacters`) com o estado
+    // local do user logado, para que consumidores que leem do map (ex.: outros
+    // pontos da UI) também enxerguem a edição antes do próximo polling.
+    if (currentUserId != null) {
+        if (!currentCharacters || typeof currentCharacters !== "object") currentCharacters = {};
+        currentCharacters[currentUserId] = currentCharacter;
+    }
+    // Re-renderiza views que dependem da identidade/compatibilidade do char.
+    // Sem isso, mudar expansão/level do Limited não reflete na agenda mensal
+    // nem em "Próximos dias de raid" até o próximo poll (~5s).
+    try {
+        if (typeof renderScheduleTable === "function") renderScheduleTable();
+        if (typeof renderQuickSchedule === "function") renderQuickSchedule();
+    } catch (e) { /* renderers ainda não montados */ }
+
     if (_characterSaveTimer) clearTimeout(_characterSaveTimer);
     _characterSaveTimer = setTimeout(async () => {
         try {
@@ -936,9 +951,12 @@ function isContentMarkableForCharacter(target, character) {
     // Normal: compara order da expansão atual com a do conteúdo
     const contentExpId = resolveContentExpansionId(target);
     if (!contentExpId) return { markable: true };
-    if (!character.currentExpansionId) {
-        return { markable: false, reason: "Defina sua expansão atual na seção Identidade para liberar este evento." };
-    }
+    // Fase P — fallback permissivo: char sem currentExpansionId (legado /
+    // produção pré-Fase O) NÃO é bloqueado. O PLANNING_V2 define
+    // explicitamente: "char sem currentExpansionId... → conta como
+    // compatível." Para esses casos a UI da aba Personagem pede pro user
+    // definir, mas a contagem de quórum não pune retroativamente.
+    if (!character.currentExpansionId) return { markable: true };
     const charExp = getExpansionById(character.currentExpansionId);
     const contentExp = getExpansionById(contentExpId);
     if (!charExp || !contentExp) return { markable: true };
@@ -1437,7 +1455,7 @@ function buildProgCard(progId, canManage) {
         const dObj = new Date(date + "T00:00:00");
         const wkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
         const dateStr = `${wkNames[dObj.getDay()]}, ${d}/${m}`;
-        const avail = getAvailCountForDate(date);
+        const avail = getAvailCountForDate(date, raidEvt);
         if (dynamic) {
             statusDot = "status-info";
             statusText = `${dateStr} · ${avail} confirmado${avail === 1 ? '' : 's'}`;
@@ -1767,7 +1785,7 @@ function renderRosterTables() {
     const slotsInProg = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) !== "removed");
 
     // Separação por Conteúdo: Avalia o statusByProg da Raid ativa
-    const activeMembers = slotsInProg
+    const allActiveMembers = slotsInProg
         .filter(p => getPlayerStatusForProg(p, activeProgId) === "active")
         .sort((a, b) => {
             const assignedA = getAssignedJobForProg(a, activeProgId);
@@ -1779,12 +1797,32 @@ function renderRosterTables() {
             return weightA - weightB;
         });
 
-    const benchMembers = slotsInProg.filter(p => getPlayerStatusForProg(p, activeProgId) !== "active");
-
     const partySize = getPartySize(activeProgId);
+    const dynamic = isDynamicProg(activeProgId);
+
+    // Cap defensivo: se a data tem mais actives que partySize (ex: dados
+    // legados, seeds, migrações), só os primeiros partySize entram em
+    // "Titulares". O restante é exibido como "Excedente" no banco — não
+    // mutamos o dado (officer decide o que fazer manualmente).
+    const overflowMembers = (!dynamic && allActiveMembers.length > partySize)
+        ? allActiveMembers.slice(partySize)
+        : [];
+    const activeMembers = (!dynamic && allActiveMembers.length > partySize)
+        ? allActiveMembers.slice(0, partySize)
+        : allActiveMembers;
+
+    const benchMembers = slotsInProg
+        .filter(p => getPlayerStatusForProg(p, activeProgId) !== "active")
+        .concat(overflowMembers);
+
     if (activeCountText) {
         activeCountText.textContent = `${activeMembers.length} / ${partySize}`;
         activeCountText.style.color = activeMembers.length >= partySize ? "var(--color-avail)" : "var(--gold-bright)";
+        if (overflowMembers.length > 0) {
+            activeCountText.title = `Atenção: ${overflowMembers.length} slot(s) marcado(s) como ativo(s) acima do limite de ${partySize}. Foram exibidos como reservas — reorganize o roster.`;
+        } else {
+            activeCountText.title = "";
+        }
     }
 
     if (activeMembers.length === 0) {
@@ -2227,10 +2265,43 @@ function getRaidEventForProg(progId) {
     );
 }
 
-function getAvailCountForDate(dateKey) {
-    return (state.roster || []).filter(p =>
-        p.monthlySchedule && p.monthlySchedule[dateKey] === "avail"
-    ).length;
+// Resolve o character_json vinculado a um slot do roster (via player.user_id).
+// Retorna null se o slot é legado (sem user_id) ou se o map ainda não trouxe
+// aquele character. Usado pela Fase P para validar compatibilidade.
+//
+// Para o user logado, prefere `currentCharacter` (estado local) — assim
+// edições na aba Personagem refletem imediatamente em calendário/Próximos
+// dias sem ter que esperar o próximo poll de `/api/state` (~5s).
+function getCharacterForPlayer(player) {
+    if (!player) return null;
+    const uid = player.user_id;
+    if (uid == null) return null;
+    if (uid === currentUserId && currentCharacter) return currentCharacter;
+    return (currentCharacters && currentCharacters[uid]) || null;
+}
+
+// Fase P — valida se um slot do roster é compatível com um evento (Limited
+// considera level mínimo do job; não-Limited compara order da expansão).
+// `target` é um raidEvent (preferencial) OU um content/prog. Slots sem
+// character vinculado caem no fallback permissivo (contam como compatíveis).
+function isPlayerCompatibleWithTarget(player, target) {
+    if (!target) return { compatible: true };
+    const character = getCharacterForPlayer(player);
+    if (!character) return { compatible: true };
+    const elig = isContentMarkableForCharacter(target, character);
+    return { compatible: !!elig.markable, reason: elig.reason };
+}
+
+// Fase P — getAvailCountForDate pode receber um event/target opcional. Quando
+// fornecido, só conta jogadores cujo character é compatível com aquele evento
+// (ex: heavensward não conta numa raid endwalker; BLU 65 não conta num
+// evento Blue Mage Lv 80+). Sem target, comportamento legado.
+function getAvailCountForDate(dateKey, target = null) {
+    return (state.roster || []).filter(p => {
+        if (!p.monthlySchedule || p.monthlySchedule[dateKey] !== "avail") return false;
+        if (!target) return true;
+        return isPlayerCompatibleWithTarget(p, target).compatible;
+    }).length;
 }
 
 // Cria ou atualiza um evento agendado.
@@ -2807,7 +2878,7 @@ function renderScheduleTable() {
         const canSched = canScheduleDate();
 
         if (raidEvt) {
-            const avail = getAvailCountForDate(dateKey);
+            const avail = getAvailCountForDate(dateKey, raidEvt);
             const dynamicEvt = isDynamicProg(raidEvt.progId);
             th.classList.add("day-scheduled");
             let tip;
@@ -2895,10 +2966,31 @@ function renderScheduleTable() {
             else if (statusVal === "late") { statusText = "⚠️"; statusClass = "late"; }
             else if (statusVal === "unavail") { statusText = "❌"; statusClass = "unavail"; }
 
+            // Fase P — sinaliza visualmente quando o jogador marcou avail mas
+            // não atende aos requisitos do evento daquele dia (expansão atual
+            // menor que a do conteúdo, ou level do Limited job abaixo do
+            // mínimo). Mantém o ✔️ mas adiciona cadeado + tooltip + desatura.
+            let incompatReason = "";
+            if (statusVal === "avail") {
+                const evtOfDay = getRaidEventForDate(dateKey);
+                if (evtOfDay) {
+                    const check = isPlayerCompatibleWithTarget(player, evtOfDay);
+                    if (!check.compatible) {
+                        statusClass += " cell-incompat";
+                        incompatReason = check.reason || "Não atende aos requisitos do evento.";
+                    }
+                }
+            }
+
             const tdDay = document.createElement("td");
             tdDay.className = `cell-status ${statusClass}${canTogglePlayer ? '' : ' cell-readonly'}`;
-            tdDay.textContent = statusText;
-            tdDay.title = canTogglePlayer ? `Dia ${d}: Clique para alternar` : `Dia ${d}: somente o próprio jogador ou officer pode alterar`;
+            if (incompatReason) {
+                tdDay.innerHTML = `${statusText}<span class="cell-incompat-lock" aria-hidden="true">🔒</span>`;
+                tdDay.title = `Não conta — ${incompatReason}`;
+            } else {
+                tdDay.textContent = statusText;
+                tdDay.title = canTogglePlayer ? `Dia ${d}: Clique para alternar` : `Dia ${d}: somente o próprio jogador ou officer pode alterar`;
+            }
 
             if (canTogglePlayer) {
                 tdDay.addEventListener("click", () => {
@@ -2941,13 +3033,33 @@ function renderQuorumOpportunities(container) {
     today.setHours(0, 0, 0, 0);
     const shortWkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+    // Fase P — sugere agendamento apenas quando há jogadores compatíveis
+    // suficientes para preencher pelo menos um prog ativo (Full Party = 8,
+    // Light Party = 4). Limited e Dynamic não disparam oportunidade.
+    const candidateProgs = (state.activeProgs || [])
+        .map(pid => ({ id: pid, obj: getProgObj(pid) }))
+        .filter(({ id, obj }) => obj && !isLimitedProg(id) && !isDynamicProg(id))
+        .map(({ id, obj }) => ({ ...obj, _threshold: getPartySize(id) }));
+
     const opportunities = [];
     for (let delta = 0; delta < 14; delta++) {
         const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + delta);
         const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         if (getRaidEventForDate(dateKey)) continue;
-        const count = getAvailCountForDate(dateKey);
-        if (count >= 8) opportunities.push({ dateKey, dateObj: d, count });
+
+        // Busca o "melhor" prog candidato para esta data: o que tem mais
+        // compatíveis acima do próprio threshold. Empata pelo maior excedente.
+        let best = null;
+        candidateProgs.forEach(prog => {
+            const c = getAvailCountForDate(dateKey, prog);
+            if (c >= prog._threshold) {
+                const surplus = c - prog._threshold;
+                if (!best || surplus > best.surplus) {
+                    best = { count: c, prog, surplus, threshold: prog._threshold };
+                }
+            }
+        });
+        if (best) opportunities.push({ dateKey, dateObj: d, count: best.count, prog: best.prog, threshold: best.threshold });
     }
 
     if (opportunities.length === 0) return;
@@ -2961,15 +3073,18 @@ function renderQuorumOpportunities(container) {
     block.style.marginBottom = "12px";
 
     let html = `<div style="font-weight: 700; color: var(--color-avail); font-size: 0.9rem; margin-bottom: 6px;">Oportunidades de agendamento</div>`;
-    opportunities.forEach(({ dateKey, dateObj, count }) => {
+    opportunities.forEach(({ dateKey, dateObj, count, prog, threshold }) => {
         const dayStr  = String(dateObj.getDate()).padStart(2, '0');
         const monStr  = String(dateObj.getMonth() + 1).padStart(2, '0');
         const wkStr   = shortWkNames[dateObj.getDay()];
         const dateLbl = `${wkStr}, ${dayStr}/${monStr}`;
+        const progLbl = prog ? `<span style="color: var(--gold-bright); font-weight: 600;">${escapeHtml(prog.name.split(" (")[0])}</span>` : "";
+        const progAttr = prog ? ` data-prog="${escapeHtml(prog.id)}"` : "";
+        const partyLbl = threshold === 4 ? "Light Party" : "Full Party";
         html += `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 0.82rem;">
-                <span><span style="color: var(--gold-bright); font-weight: 600;">${dateLbl}</span> — ${count} pessoa(s) disponíveis (Full Party possível)</span>
-                <button class="ff-btn-small btn-quorum-schedule" data-date="${dateKey}" style="padding: 2px 10px; font-size: 0.78rem;">Agendar</button>
+                <span><span style="color: var(--gold-bright); font-weight: 600;">${dateLbl}</span> — ${count} compatíveis para ${progLbl} (${partyLbl} possível)</span>
+                <button class="ff-btn-small btn-quorum-schedule" data-date="${dateKey}"${progAttr} style="padding: 2px 10px; font-size: 0.78rem;">Agendar</button>
             </div>
         `;
     });
@@ -2978,7 +3093,8 @@ function renderQuorumOpportunities(container) {
     block.querySelectorAll(".btn-quorum-schedule").forEach(btn => {
         btn.addEventListener("click", (e) => {
             const dk = e.currentTarget.getAttribute("data-date");
-            if (dk) openScheduleModal(dk);
+            const pid = e.currentTarget.getAttribute("data-prog");
+            if (dk) openScheduleModal(dk, pid || null);
         });
     });
 
@@ -3016,10 +3132,17 @@ function renderQuickSchedule() {
 
         let foundDateKey = null;
         let foundDateObj = null;
+        let foundEvt = null;
         let confTitulares = [];
         let confReservas = [];
         let lateTitulares = [];
         let lateReservas = [];
+        // Fase P — jogadores marcaram avail mas não atendem aos requisitos do
+        // evento (expansão atual menor que a do conteúdo ou level do Limited
+        // job abaixo do mínimo). Não contam pra quórum; listados em separado
+        // para officer/admin.
+        let incompatTitulares = [];
+        let incompatReservas = [];
 
         // Procura a data do evento (ou varre 45 dias se não houver evento)
         const datesToCheck = raidEvt
@@ -3037,29 +3160,48 @@ function renderQuickSchedule() {
             const evtForDate = getRaidEventForDate(dateKey);
             if (!raidEvt && (!evtForDate || evtForDate.progId !== progId)) continue;
 
+            // Target para checagem de compatibilidade: o raidEvent (carrega
+            // limitedJobMinLevel quando Limited); se não houver, o próprio prog.
+            const compatTarget = raidEvt || evtForDate || progObj;
+
             let tAvail = [];
             let tLate  = [];
             let rAvail = [];
             let rLate  = [];
+            let tIncompat = [];
+            let rIncompat = [];
 
             progTitulares.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail")     tAvail.push(p.name || "Sem Nick");
-                else if (sVal === "late") tLate.push(p.name  || "Sem Nick");
+                const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
+                if (sVal === "avail") {
+                    if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) tAvail.push(displayName);
+                    else tIncompat.push(displayName);
+                } else if (sVal === "late") {
+                    tLate.push(displayName);
+                }
             });
 
             progReservas.forEach(p => {
                 const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
-                if (sVal === "avail")     rAvail.push(p.name || "Sem Nick");
-                else if (sVal === "late") rLate.push(p.name  || "Sem Nick");
+                const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
+                if (sVal === "avail") {
+                    if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) rAvail.push(displayName);
+                    else rIncompat.push(displayName);
+                } else if (sVal === "late") {
+                    rLate.push(displayName);
+                }
             });
 
             foundDateKey   = dateKey;
             foundDateObj   = dObj;
+            foundEvt       = raidEvt || evtForDate;
             confTitulares  = tAvail;
             confReservas   = rAvail;
             lateTitulares  = tLate;
             lateReservas   = rLate;
+            incompatTitulares = tIncompat;
+            incompatReservas  = rIncompat;
             break;
         }
 
@@ -3112,6 +3254,12 @@ function renderQuickSchedule() {
                 }
                 if (confReservas.length > 0) {
                     alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;
+                }
+                // Fase P — só officer/admin vê a lista de incompatíveis (jogadores
+                // marcaram avail mas a expansão atual ou level do Limited não atende).
+                const incompatAll = [...incompatTitulares, ...incompatReservas];
+                if (incompatAll.length > 0 && isOfficer()) {
+                    alertsHtml += `<div style="background: rgba(148,163,184,0.15); border: 1px solid #94a3b8; color: #cbd5e1; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;" title="Marcaram disponibilidade mas não atendem aos requisitos do evento (expansão ou level do Limited).">Disponíveis mas fora dos requisitos: ${incompatAll.join(", ")}</div>`;
                 }
             }
 
