@@ -14,12 +14,12 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 Ordem prevista:
 
-1. **Fase O** — Aba Personagem + Refactor Party
-2. **Fase P** — Validação de Presença por Expansão
-3. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
+1. **Fase P** — Validação de Presença por Expansão
+2. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
+3. **Fase O.2** — Refactor da aba Party (ler identidade do `character_json`) — polimento, pode ser feita depois de P/Q
 4. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M, N.
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem).
 
 ---
 
@@ -34,14 +34,15 @@ Concluídas: J, K, L, M, N.
 | L | Aviso de Quórum 8+ | Sugestão de Full Party para officer/admin quando 8+ disponíveis em dia sem evento | ✅ | Sonnet |
 | M | Avisos Adiamento/Cancelamento | Melhora mensagem de adiamento (inclui data antiga) + novo aviso de cancelamento no Telegram | ✅ | Sonnet |
 | N | Catálogo de Expansões | `state.expansions` com level cap + dropdown na criação de conteúdo + edição admin + retrocompat aprimorada | ✅ | Sonnet |
+| O | Aba Personagem (parte 1) | `users.character_json` + endpoints + migração + nova aba "Personagem" (identidade/jobs/progs) + renomeia "Membros"→"Party" + tabs responsivas | ✅ | Opus |
 
 ### Pendentes — App Principal (prioridade)
 
 | # | Fase | Descrição | Status | Modelo |
 |---|------|-----------|:------:|:------:|
-| O | Aba Personagem + Refactor Party | Renomeia "Membros"→"Party", cria aba "Personagem" (ilvl/jobs/expansão por user), arquitetura extensível | ⏳ | Opus |
 | P | Validação de Presença por Expansão | `avail` só conta se `character.currentExpansion ≥ content.expansion` (front + backend) | ⏳ | Sonnet |
 | Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
+| O.2 | Refactor aba Party | Slot do roster vinculado a `user_id` passa a ler `name`/`ilvl`/`jobs` do `character_json`; dropdown de `assignedJob` limita às classes do character; visibilidade de ilvl/jobs restrita aos escalados no prog selecionado | ⏳ | Sonnet |
 
 ### Backlog — Strategy Planner (executar por último)
 
@@ -62,85 +63,6 @@ Concluídas: J, K, L, M, N.
 ---
 
 # PARTE 1 — Pendentes do App Principal (Prioridade)
-
-## Fase O — Aba Personagem + Refactor da Aba Party
-
-**Objetivo:** desacoplar dados *do usuário* (personagem) dos dados *do roster* (party). Hoje, slot do roster = personagem do usuário. Esta fase separa as duas coisas em abas distintas, criando arquitetura extensível para features futuras (mount tracker, minion tracker, achievements, etc).
-
-### Renomeação
-
-1. Aba `roster-tab` em [index.html:140](index.html:140) → renomear:
-   - Botão `data-tab="roster"` → label "Party" (em vez de "Membros")
-   - **Decisão a tomar no início da fase**: manter `id="roster-tab"` por compat ou renomear para `party-tab` (afeta links/bookmarks externos — provavelmente nenhum, então pode renomear).
-2. Conteúdo da aba **Party** após o refactor: continua sendo o lugar onde admin/officer gerencia escalação titular/banco em cada prog. Visualização de jobs, ilvl, status por prog — tudo leitura/apenas-admin para escalação.
-
-### Nova aba "Personagem"
-
-3. Nova tab `data-tab="character"` em [index.html:70](index.html:70):
-   - Label "Personagem"
-   - Ícone próprio (a definir — SVG no estilo do design system)
-   - `<section id="character-tab" class="tab-pane" role="tabpanel" hidden>`
-4. **Visibilidade**: aba aparece para qualquer usuário **autenticado** (não-anônimo). O conteúdo é sempre do **próprio usuário** (não há "personagem de outro" — para isso existe a Party).
-
-### Modelo de dados — onde mora o "personagem"
-
-5. **Decisão a tomar no início da fase** (validar com usuário):
-   - **Opção A — campo no `user`**: tabela `users` ganha coluna `character_json` (TEXT). Personagem 1:1 com user. Desacopla user de static, habilita alts/multi-static no futuro.
-   - **Opção B — campo no `roster slot`**: continua acoplado ao slot que o user ocupa na static. Mais simples no MVP, mas dificulta multi-static.
-   - **Recomendação**: **Opção A**.
-6. Schema (Opção A):
-   ```sql
-   ALTER TABLE users ADD COLUMN character_json TEXT;
-   -- {"name": "...", "ilvl": ..., "currentExpansionId": "...", "jobs": [{"id":"WAR","level":100}, ...], "subscribedProgs": ["dsr", ...]}
-   ```
-7. Endpoints novos:
-   - `GET /api/character` — retorna `character_json` do user logado
-   - `PUT /api/character` — substitui (com debounce no front, mesmo padrão do state)
-
-### Migração
-
-8. Para cada user que tem slot no roster (com `name`, `ilvl`, `assignedJobs`, `statusByProg`): popular `character_json` desse user a partir desses campos. Aplicar **estratégia de retrocompat da Fase N** para `currentExpansion` (texto livre → ID).
-9. O slot do roster **continua existindo** como container da Party (status titular/banco) — mas o "perfil" (nick, ilvl, classes) passa a ser lido do `character_json` do user que ocupa o slot.
-10. Slots sem user vinculado: dados ficam num campo backup `slot_legacy_json` para o admin migrar manualmente depois (ou ignorar).
-
-### Arquitetura extensível (seções modulares)
-
-11. UI da aba Personagem em **seções modulares**, cada uma um `.ff-panel` separado:
-    - `character-identity-panel` — nome do personagem + expansão atual (dropdown das `state.expansions`) + ilvl
-    - `character-jobs-panel` — lista de classes com level opcional por classe (input numérico ou "—" para não definido)
-    - `character-progs-panel` — checkboxes dos progs ativos da static (subscrição: em quais progs o usuário quer participar)
-    - `character-future-panel` — placeholder com exemplos de "seções futuras" (mounts, minions, achievements, **horários típicos da semana** — pode virar default da Fase Q). Pode ficar oculto no MVP, mas o sistema de seções já existe.
-12. Cada seção é um componente JS isolado: `renderCharacterIdentity()`, `renderCharacterJobs()`, `renderCharacterProgs()`, etc. Adicionar uma seção nova = criar uma função render + adicionar 1 chamada em `renderCharacterTab()` + 1 painel no HTML.
-13. **Padrão visual**: usar `.ff-panel` + `.panel-header` + `.panel-body` igual aos outros painéis. Fonte Cinzel, paleta dos 3 temas, espaçamentos consistentes.
-14. Salvamento via debounce de 400ms (mesmo padrão do `PUT /api/state`).
-
-### Remoção/migração das features na aba Party
-
-15. **Mover** da aba Party → aba Personagem:
-    - Definição de nome/ilvl/classes (hoje na linha do roster)
-    - Subscrição em progs (status active/bench por prog — hoje no `statusByProg` do roster, vira `subscribedProgs` no character)
-16. **Decisão a tomar no início da fase**: **atribuição de job por prog** (`assignedJobs[progId]`) continua na Party (faz sentido — é decisão de composição) ou vai pra Personagem (faz sentido — é meu personagem)?
-    - **Recomendação**: continuar na Party como decisão de composição do prog, mas com dropdown limitado às classes do `character.jobs` do user vinculado ao slot.
-17. **Permanece** na aba Party:
-    - Visualização da escalação por prog (`comp-visualizer`)
-    - Tabela de roster com status titular/banco por prog
-    - **Visualização** (não-editável) do ilvl e classes — consulta o `character_json` do user vinculado ao slot
-    - Ações de officer/admin para gerenciar a escalação (titular ↔ banco, atribuir job por prog)
-18. **Visibilidade do ilvl/jobs na Party**:
-    - Officer/admin sempre vê todos
-    - Membro comum vê só do próprio personagem e dos jogadores na composição do prog que ele participa
-    - **Decisão a confirmar no início da fase.**
-
-### Critério de aceite
-
-- Usuário logado vê a aba "Personagem" e consegue editar nome, ilvl, expansão atual, classes (com level opcional)
-- Aba Party mostra a escalação igual antes, mas com dados de identidade vindos do `character_json` do user vinculado ao slot
-- Adicionar uma seção nova na Personagem (ex: mount tracker, horários típicos) requer apenas 1 painel HTML + 1 função render + 1 chamada no `renderCharacterTab()`
-- Migração não perde dados existentes (todos os ilvl/jobs do roster atual aparecem no `character_json` dos respectivos users)
-- Slot do roster sem user vinculado mantém os dados antigos em `slot_legacy_json` para o admin migrar depois
-- Design segue padrão visual existente (`.ff-panel`, Cinzel, 3 temas, espaçamentos)
-
----
 
 ## Fase P — Validação de Presença por Expansão
 
@@ -342,6 +264,38 @@ Concluídas: J, K, L, M, N.
 3-4 sessões (Opus). Feature larga: novo widget de seleção de horas, algoritmo de overlap, refactor profundo do modal de agendamento, migração de schema (`monthlySchedule` + `raidEvent`), revisão de K/L/M em produção, helpers espelhados front+back.
 
 > **Observação:** se a fase ficar grande demais em PR único, pode ser dividida em **Q1 — Schema + popover de horários + grade** e **Q2 — Modal de agendamento com janelas + impacto em K/L/M**. Decidir no início da fase.
+
+---
+
+## Fase O.2 — Refactor da aba Party (ler character_json)
+
+**Objetivo:** completar a transição iniciada na Fase O — slots do roster vinculados a um `user_id` passam a ler identidade (nome, ilvl, classes) do `character_json` do user, não do próprio slot. Slots órfãos (`user_id === null`) continuam funcionando como hoje.
+
+**Depende de:** Fase O (entregue — `users.character_json` + endpoints).
+
+### Mudanças
+
+1. **Leitura unificada** via novo helper `getSlotIdentity(player)` que retorna `{name, ilvl, jobs}`:
+   - Se `player.user_id` existe e o backend retorna `character_json` daquele user → usa `{character.name, character.ilvl, character.jobs.map(j => j.id)}`.
+   - Senão (slot órfão) → usa `{player.name, player.ilvl, player.jobsPool}` (comportamento atual).
+2. **Distribuição do `character_json` no estado do front:**
+   - Opção A: GET `/api/state` passa a incluir `characters: {<user_id>: {...}}` para todos os users com slot vinculado (server enriquece a resposta).
+   - Opção B: front busca cada character individualmente no carregamento. Mais requests, menos invasivo no backend.
+   - **Recomendação:** Opção A (1 query a mais por GET state).
+3. **Dropdown de `assignedJob` por prog** (`renderRosterTables`): limita às classes do `character.jobs` do user vinculado (interseção com pool de jobs válidos pro conteúdo, ex: Limited só vê BLU).
+4. **Visibilidade** (PLANNING decision já fechada): membro comum vê ilvl/jobs **só dos escalados no prog selecionado**. Officer/admin vê todos. Lógica em `renderRosterTables` + `comp-visualizer`.
+5. **Formulário "Cadastrar Novo Jogador"** (aba Party): continua funcionando para criar slots órfãos. Slots vinculados a user via `user_id` só são editáveis nesses campos pelo próprio user (via aba Personagem) ou officer/admin.
+
+### Critério de aceite
+
+- Slot com `user_id` vinculado: nome/ilvl/jobs vêm do `character_json`, refletindo mudanças feitas na aba Personagem (após reload ou próximo polling).
+- Slot sem `user_id`: comportamento idêntico ao atual.
+- Dropdown de `assignedJob` por prog limita-se às classes que o user marcou na aba Personagem (quando vinculado).
+- Membro comum em static com vários progs: vê próprio personagem completo + dos escalados nos progs onde está ativo; oculta dos demais.
+
+### Esforço estimado
+
+1-2 sessões (Sonnet). Não há schema novo nem endpoints novos — só leitura distribuída e atualização de renderers.
 
 ---
 
@@ -821,6 +775,34 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase O — Aba Personagem (parte 1) ✅
+
+**Concluída em** [PR #23](https://github.com/oscarothon/ffxiv-raid-planner/pull/23) · commit `cdc47f0`
+
+**Objetivo:** introduzir o conceito de "personagem" 1:1 com o usuário (`users.character_json`), independente da static — abre caminho para alts/multi-static e para a Fase P (validação por expansão). O refactor da aba Party para passar a ler identidade do `character_json` ficou para a **Fase O.2**.
+
+### Backend
+
+1. `ALTER TABLE users ADD COLUMN character_json TEXT` (migração idempotente em `server/db.py`).
+2. Migração automática no startup: para cada user sem `character_json`, deriva do primeiro slot encontrado no roster de qualquer static onde participa (`name`, `ilvl`, `jobs` a partir de `jobsPool`, `subscribedProgs` a partir de `statusByProg`). `currentExpansionId` fica `null` — usuário define depois.
+3. Endpoints `GET /api/character` e `PUT /api/character` (auth required, validação de tamanho e tipos básicos).
+
+### Frontend
+
+4. Aba "Membros (Roster)" renomeada para **Party** (`data-tab="party"`, `id="party-tab"`).
+5. Nova aba **Personagem** entre Party e Equipamentos, com 3 seções modulares (`.ff-panel` cada):
+   - **Identidade** — nome + expansão atual (dropdown de `state.expansions`) + ilvl
+   - **Classes** — grid das 21 jobs + BLU. Click toggla seleção; input opcional de level por classe (visível só nas selecionadas)
+   - **Progs ativos** — checkboxes dos progs ativos da static (subscrição)
+6. Salvamento via `PUT /api/character` debounced (400ms) + indicador "Salvo" com fade-out.
+7. Hook no tab switcher para re-renderizar a aba ao entrar (reflete novos progs ativos).
+
+### Polimento: tabs responsivas
+
+8. `.tab-btn` ganhou `flex: 1`, `clamp()` para `padding`/`font-size`/`letter-spacing`, e `overflow-wrap: anywhere` para que as 5 abas (Visão Geral, Party, Personagem, Equipamentos, Agenda Semanal) fiquem legíveis em mobile (375px) sem cortar texto, e cresçam suavemente até desktop.
+
+---
+
 ## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
 
 **Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
@@ -868,10 +850,10 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 | Fase | Esforço estimado |
 |---|---|
-| O | 3-4 sessões (Opus) — refactor grande, nova aba, migração de schema |
 | P | 1-2 sessões (Sonnet) — lógica em múltiplos lugares (front + back) |
 | Q | 3-4 sessões (Opus) — widget de horas + overlap + modal + revisão K/L/M |
-| **Subtotal app principal** | **~7-10 sessões** |
+| O.2 | 1-2 sessões (Sonnet) — refactor leitura na Party para usar `character_json` |
+| **Subtotal app principal** | **~5-8 sessões** |
 | A | 2-3 sessões (Opus) |
 | B | 3-4 sessões (Opus) |
 | C | 3-4 sessões (Opus) |
@@ -882,8 +864,8 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) |
 | **Subtotal Strategy Planner** | **~17-21 sessões** |
-| J, K, L, M, N | ✅ concluídas |
-| **Total restante** | **~24-31 sessões** |
+| J, K, L, M, N, O | ✅ concluídas |
+| **Total restante** | **~22-29 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
 
@@ -900,4 +882,4 @@ Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadma
 
 ## Próximo passo
 
-Iniciar **Fase O** quando o usuário confirmar. Branch: `feature/fase-O-personagem-refactor-party`.
+Iniciar **Fase P** quando o usuário confirmar. Branch: `feature/fase-P-validacao-expansao`.
