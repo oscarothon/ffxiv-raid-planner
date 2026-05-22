@@ -18,7 +18,7 @@ Ordem prevista:
 2. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
 3. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
 
-Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes).
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes), O.7 (polimento Party + toasts).
 
 ---
 
@@ -37,6 +37,7 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 | O.5 | Validações na Personagem | ILVL Máximo + Eventos Ativos + validação por expansão/Limited + auto-desmarca silenciosa | ✅ | Sonnet |
 | O.2 | Refactor Party + Calendário + Claim | Cadastro manual removido; slots com `user_id` lêem identidade do `character_json`; botão Claim em slots legados (`POST /api/character/claim-slot`); calendário global | ✅ | Sonnet |
 | O.6 | Limited multi-evento + bugfixes | `limitedJobMinLevel`+`eventLabel` por evento (não por conteúdo); Blue Mage pode ter N eventos paralelos com requisitos distintos; Eventos Ativos lista por evento; `state.progNotes` eliminado (descrição não persistia após delete) | ✅ | Sonnet |
+| O.7 | Polimento Party + toasts intermitentes | Botão Editar removido; Excluir vira "remover do prog" (slot continua nos outros); helper `isPlayerInProg`; throttle no toast de erro; `applyRemoteState` atualiza `currentCharacters` | ✅ | Sonnet |
 
 ### Pendentes — App Principal (prioridade)
 
@@ -881,6 +882,33 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 
 ---
 
+## Fase O.7 — Polimento Party + Toasts intermitentes ✅
+
+**Objetivo:** ajustes pedidos pelo usuário após teste local do refactor O.2.
+
+### Aba Party
+
+1. **Botão Editar removido** de `buildRowActions`. Identidade vem da aba Personagem; o botão tinha virado redundante.
+2. **Botão Excluir → "Remover deste evento/prog"**:
+   - Renomeado para `btn-remove-from-prog`. Em vez de apagar o slot do roster, marca `statusByProg[progId] = "removed"`.
+   - Slot continua intacto em outros progs onde o jogador participa.
+   - Modal de confirmação explica claramente que outros progs ficam intactos.
+3. Novo helper `isPlayerInProg(player, progId)`: retorna `false` quando o slot está `"removed"`. `renderRosterTables` filtra; `renderQuickSchedule` e `updateDashboardStats` passam de `!== "active"` (que pegava `removed` por engano) para `=== "bench"` (só reservas reais).
+4. Backend `_validate_state_diff`: libera `statusByProg` no próprio slot do member (pode entrar/sair de progs). `user_id` continua sempre bloqueado.
+
+### Toasts de erro intermitentes
+
+5. Bug do polling: `applyRemoteState` não atualizava `currentCharacters` (map de `character_json` dos members) — causava nome/ilvl stale em slots vinculados após polling. Corrigido.
+6. **Throttle de toast de erro**: helper `maybeShowSaveErrorToast` aplica cooldown de 8 s. Evita spam quando uma operação rejeitada (ex: 403 forbidden_changes em sequência de retries) dispara várias notificações.
+7. `saveCharacterDebounced`: trata 401 com `showAuthModal` (em vez de toast genérico) e silencia erros transitórios (warning no console).
+8. `saveTimer` limpo no início do `setTimeout` para que `pollServerState` não fique travado por um PUT in-flight.
+
+### Pontos abertos (não bloqueantes)
+
+- `getPlayerStatusForProg` ainda faz fallback para `"active"` quando `statusByProg[progId]` é vazio — slots legados são auto-incluídos em progs novos. Pode virar issue se quisermos transição completa para "Party derivada de subscribedProgs".
+
+---
+
 ## Sobre o bot do Telegram — você precisa fazer algo? (Fases L e M)
 
 **Não.** O bot hoje é send-only ([server/telegram.py](server/telegram.py)) — as fases L e M reutilizam o mesmo fluxo dos lembretes existentes. Você **não** precisa:
@@ -941,7 +969,7 @@ Adicionar uma nova aba **"Estratégias"** dentro do app (5ª tab no `.ff-tabs`),
 | H | 1-2 sessões (Sonnet) |
 | I | 2 sessões (Opus) |
 | **Subtotal Strategy Planner** | **~17-21 sessões** |
-| J, K, L, M, N, O, O.5, O.2, O.6 | ✅ concluídas |
+| J, K, L, M, N, O, O.5, O.2, O.6, O.7 | ✅ concluídas |
 | **Total restante** | **~21-27 sessões** |
 
 Cada fase resulta em PR separado para `main`, seguindo o mesmo padrão do roadmap V1.
