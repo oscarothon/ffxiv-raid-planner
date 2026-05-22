@@ -535,7 +535,10 @@ def _validate_state_diff(old, new, role, user_id):
             violations.append(f"add_player_already_has_own({mid})")
 
     # Modificações
-    MANAGEMENT_FIELDS = {"statusByProg", "user_id"}
+    # `user_id` continua sempre bloqueado pra member (não pode reivindicar slot
+    # de outro). `statusByProg` é permitido no próprio slot a partir da Fase O
+    # (member pode entrar/sair de progs), oficial+ continua podendo tudo.
+    MANAGEMENT_FIELDS_ALWAYS_LOCKED = {"user_id"}
     for mid in common_ids:
         op = old_by_id[mid]
         np = new_by_id[mid]
@@ -547,8 +550,8 @@ def _validate_state_diff(old, new, role, user_id):
         if op.get("user_id") != user_id:
             violations.append(f"modify_other_player({mid})")
             continue
-        # No próprio slot: campos de gestão são bloqueados
-        for f in MANAGEMENT_FIELDS:
+        # No próprio slot: user_id permanece imutável
+        for f in MANAGEMENT_FIELDS_ALWAYS_LOCKED:
             if op.get(f) != np.get(f):
                 violations.append(f"modify_management_field({mid}.{f})")
 

@@ -425,11 +425,24 @@ async function loadState() {
     }
 }
 
+// Throttle pra mensagens de erro de save — evita spam quando uma mesma ação
+// gera múltiplas falhas em sequência (ex: input rápido, race com polling).
+const SAVE_ERROR_TOAST_COOLDOWN_MS = 8000;
+let _lastSaveErrorToastAt = 0;
+function maybeShowSaveErrorToast(message) {
+    const now = Date.now();
+    if (now - _lastSaveErrorToastAt < SAVE_ERROR_TOAST_COOLDOWN_MS) return;
+    _lastSaveErrorToastAt = now;
+    showToast(message, { type: "error" });
+}
+
 function saveState() {
     delete state.loot;
     pendingSaveAt = Date.now();
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
+        // Limpa o timer antes do PUT pra que polling possa rodar enquanto request está in-flight
+        saveTimer = null;
         API.putState(state).then(res => {
             // O backend retorna o novo ETag após salvar — evita reload desnecessário no polling
             if (res && res.etag) lastStateETag = res.etag;
@@ -442,10 +455,13 @@ function saveState() {
             }
             if (err.status === 403 && err.data && err.data.error === "forbidden_changes") {
                 // Backend rejeitou mudanças por falta de permissão.
-                // Recarrega o estado canônico para reverter a UI.
-                showToast("Você não tem autoridade para realizar essa alteração. As mudanças foram revertidas.", { type: "error" });
+                // Recarrega o estado canônico para reverter a UI (1x).
+                maybeShowSaveErrorToast("Você não tem autoridade para realizar essa alteração. As mudanças foram revertidas.");
                 bootstrapAfterAuth();
+                return;
             }
+            // Outros erros (rede, 5xx): só warning no console, sem toast — geralmente
+            // se resolve no próximo save automático ou no polling.
         });
     }, 400);
     updateDashboardStats();
@@ -489,6 +505,11 @@ function applyRemoteState(newPayload) {
     currentInviteCode = newPayload.invite_code;
     currentUserRole   = newPayload.user_role;
     lastStateETag     = newPayload.etag || null;
+    // Fase O.2 — refresca o map de characters dos members (slots da Party
+    // dependem desse map pra ler nome/ilvl/jobs via getSlotIdentity).
+    if (newPayload.characters && typeof newPayload.characters === "object") {
+        currentCharacters = newPayload.characters;
+    }
     hydrateState(newPayload.data || {});
 
     // Restaura prog inspecionado se ainda existir
@@ -671,6 +692,12 @@ function getPlayerStatusForProg(player, progId) {
     return player.status === "bench" ? "bench" : "active";
 }
 
+// Slot está visível neste prog? (statusByProg !== "removed").
+// Use em filtros que listam "todos os participantes" (titular + reserva).
+function isPlayerInProg(player, progId) {
+    return getPlayerStatusForProg(player, progId) !== "removed";
+}
+
 function setPlayerStatusForProg(player, progId, statusVal) {
     if (!player) return;
     const targetProg = progId || state.inspectedProgId || "geral";
@@ -841,7 +868,12 @@ function saveCharacterDebounced() {
             showCharacterSaveIndicator();
         } catch (err) {
             console.warn("saveCharacter falhou:", err);
-            showToast("Não foi possível salvar o personagem.", { type: "error" });
+            if (err.status === 401) {
+                showAuthModal();
+                return;
+            }
+            // Erros não-autenticação: throttled toast pra não spammar em sequência.
+            maybeShowSaveErrorToast("Não foi possível salvar o personagem. Tente novamente.");
         }
     }, 400);
 }
@@ -1697,19 +1729,21 @@ function buildClaimButton(player) {
     return `<button class="btn-table-action btn-claim-slot" data-id="${player.id}" title="Reivindicar este slot e vincular ao seu personagem">📥 Claim</button>`;
 }
 
-// Constrói o HTML dos botões de ação para uma linha do roster baseado em permissões
+// Constrói o HTML dos botões de ação para uma linha do roster baseado em
+// permissões. O botão "Editar" foi removido pois a identidade do jogador vem
+// agora da aba Personagem. Excluir aqui significa "remover deste evento/prog",
+// não deletar o slot do roster.
 function buildRowActions(player, ctx) {
-    const editBtn = `<button class="btn-table-action btn-edit-member" data-id="${player.id}" title="Editar nome e classes do jogador"><img src="assets/icons/dictionary/adventurer_plate.png" alt="Editar" style="width:28px;height:28px;display:block;"></button>`;
-    const benchBtn = `<button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas desta Raid"><img src="assets/icons/dictionary/party_member.png" alt="Banco" style="width:28px;height:28px;display:block;"></button>`;
-    const activeBtn = `<button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular na Party Principal desta Raid"><img src="assets/icons/dictionary/party_leader.png" alt="Alocar" style="width:28px;height:28px;display:block;"></button>`;
-    const delBtn = `<button class="btn-table-action btn-delete-member" data-id="${player.id}" title="Excluir Jogador"><img src="assets/icons/dictionary/exit_game.png" alt="Excluir" style="width:28px;height:28px;display:block;"></button>`;
+    const benchBtn = `<button class="btn-table-action btn-move-bench" data-id="${player.id}" title="Mover para o Banco de Reservas deste evento"><img src="assets/icons/dictionary/party_member.png" alt="Banco" style="width:28px;height:28px;display:block;"></button>`;
+    const activeBtn = `<button class="btn-table-action btn-move-active" data-id="${player.id}" title="Alocar como Titular neste evento"><img src="assets/icons/dictionary/party_leader.png" alt="Alocar" style="width:28px;height:28px;display:block;"></button>`;
+    const delBtn = `<button class="btn-table-action btn-remove-from-prog" data-id="${player.id}" title="Remover jogador deste evento"><img src="assets/icons/dictionary/exit_game.png" alt="Remover" style="width:28px;height:28px;display:block;"></button>`;
 
     if (isOfficer()) {
-        return ctx === "active" ? `${editBtn}${benchBtn}${delBtn}` : `${editBtn}${activeBtn}${delBtn}`;
+        return ctx === "active" ? `${benchBtn}${delBtn}` : `${activeBtn}${delBtn}`;
     }
     if (isOwnSlot(player)) {
-        // Member no próprio slot: pode editar e excluir, não pode mover banco/titular
-        return `${editBtn}${delBtn}`;
+        // Member no próprio slot: pode se remover do prog (não tem move bench/active)
+        return delBtn;
     }
     return "";
 }
@@ -1727,8 +1761,13 @@ function renderRosterTables() {
 
     const activeProgId = state.inspectedProgId || "geral";
 
+    // Slots explicitamente removidos do prog (statusByProg[progId] === "removed")
+    // não aparecem nem como titular nem como reserva. Slot continua intacto
+    // para outros progs.
+    const slotsInProg = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) !== "removed");
+
     // Separação por Conteúdo: Avalia o statusByProg da Raid ativa
-    const activeMembers = state.roster
+    const activeMembers = slotsInProg
         .filter(p => getPlayerStatusForProg(p, activeProgId) === "active")
         .sort((a, b) => {
             const assignedA = getAssignedJobForProg(a, activeProgId);
@@ -1740,7 +1779,7 @@ function renderRosterTables() {
             return weightA - weightB;
         });
 
-    const benchMembers = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) !== "active");
+    const benchMembers = slotsInProg.filter(p => getPlayerStatusForProg(p, activeProgId) !== "active");
 
     const partySize = getPartySize(activeProgId);
     if (activeCountText) {
@@ -1959,29 +1998,38 @@ function bindRosterTableEvents() {
         });
     });
 
-    container.querySelectorAll(".btn-delete-member").forEach(btn => {
+    // Remove jogador apenas DO PROG/EVENTO inspecionado (não deleta o slot do
+    // roster). statusByProg[currentProgId] é apagado — o jogador some das
+    // listas daquele prog, mas continua nos outros progs que participa.
+    container.querySelectorAll(".btn-remove-from-prog").forEach(btn => {
         btn.addEventListener("click", async (e) => {
             const id = e.currentTarget.dataset.id;
             const target = state.roster.find(p => p.id === id);
             if (!target) return;
+            const progId = state.inspectedProgId || "geral";
+            const identity = getSlotIdentity(target);
+            const progLabel = (getProgObj(progId).name || progId).split(" (")[0];
             const ok = await showConfirm({
-                title: "Excluir Jogador",
-                message: `Deseja realmente excluir o jogador "${target.name || 'Sem Nome'}" do elenco?`,
-                detail: "O slot será removido do roster e da fila de prioridade de loot. Esta ação não pode ser desfeita.",
-                confirmText: "Excluir",
+                title: "Remover deste evento",
+                message: `Remover "${identity.name || 'Sem Nome'}" de "${progLabel}"?`,
+                detail: "O jogador some da composição deste evento mas continua nos outros progs em que participa.",
+                confirmText: "Remover",
                 danger: true,
             });
             if (!ok) return;
-            state.roster = state.roster.filter(p => p.id !== id);
+            // Marca explicitamente como "removed" em vez de deletar — assim
+            // o fallback de getPlayerStatusForProg não vai trazer o jogador
+            // de volta via player.status global. Slot continua intacto pra
+            // outros progs.
+            if (!target.statusByProg) target.statusByProg = {};
+            target.statusByProg[progId] = "removed";
+            // assignedJobsByProg também é limpo pra esse prog
+            if (target.assignedJobsByProg) {
+                delete target.assignedJobsByProg[progId];
+            }
             saveState();
             renderRosterTables();
-        });
-    });
-
-    container.querySelectorAll(".btn-edit-member").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-            const id = e.currentTarget.dataset.id;
-            openEditPlayerModal(id);
+            renderScheduleTable();
         });
     });
 }
@@ -2956,7 +3004,7 @@ function renderQuickSchedule() {
     state.activeProgs.forEach(progId => {
         const progObj = getProgObj(progId);
         const progTitulares = state.roster.filter(p => getPlayerStatusForProg(p, progId) === "active");
-        const progReservas = state.roster.filter(p => getPlayerStatusForProg(p, progId) !== "active");
+        const progReservas = state.roster.filter(p => getPlayerStatusForProg(p, progId) === "bench");
 
         // Encontra o raid event futuro para este prog
         const raidEvt = getRaidEventForProg(progId);
@@ -3462,7 +3510,7 @@ function renderFightSummaryAndPriorities() {
 function updateDashboardStats() {
     const activeProgId = state.inspectedProgId || "geral";
     const titulares = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "active");
-    const reservas = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) !== "active");
+    const reservas = state.roster.filter(p => getPlayerStatusForProg(p, activeProgId) === "bench");
     
     const elTitulares = document.querySelector(".roster-count-item.titulares");
     const elReservas = document.querySelector(".roster-count-item.reservas");
