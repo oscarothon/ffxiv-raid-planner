@@ -407,6 +407,8 @@ async function loadState() {
         currentUserId     = res.user_id;
         currentUserRole   = res.user_role;
         lastStateETag     = res.etag || null;
+        // Fase O.2 — map {user_id: character} dos members da static
+        currentCharacters = (res.characters && typeof res.characters === "object") ? res.characters : {};
         hydrateState(res.data || {});
         return "loaded";
     } catch (err) {
@@ -748,7 +750,33 @@ function getProgObj(progId) {
 // ============================================================================
 
 let currentCharacter = null; // {name, ilvl, currentExpansionId, jobs:[{id,level?}], subscribedProgs:[]}
+let currentCharacters = {}; // Map {user_id: character} dos members da static (Fase O.2)
 let _characterSaveTimer = null;
+
+// Lê identidade (nome, ilvl, jobs/jobsPool) de um slot do roster. Se o slot
+// tem user_id vinculado E temos o character_json desse user no map, usa esses
+// dados. Senão (slots legados), retorna do próprio slot (comportamento antigo).
+function getSlotIdentity(player) {
+    if (!player) return { name: "", ilvl: 0, jobsPool: [], fromCharacter: false };
+    const uid = player.user_id;
+    if (uid != null && currentCharacters && currentCharacters[uid]) {
+        const c = currentCharacters[uid];
+        const jobs = Array.isArray(c.jobs) ? c.jobs.map(j => j && j.id).filter(Boolean) : [];
+        return {
+            name: (c.name || player.name || ""),
+            ilvl: (typeof c.ilvl === "number" && c.ilvl > 0) ? c.ilvl : (player.ilvl || 0),
+            jobsPool: jobs.length > 0 ? jobs : (player.jobsPool || []),
+            fromCharacter: true,
+            character: c,
+        };
+    }
+    return {
+        name: player.name || "",
+        ilvl: player.ilvl || 0,
+        jobsPool: player.jobsPool || [],
+        fromCharacter: false,
+    };
+}
 
 function emptyCharacter() {
     return { name: "", ilvl: null, currentExpansionId: null, jobs: [], subscribedProgs: [] };
@@ -766,6 +794,37 @@ async function loadCharacter() {
     } catch (err) {
         console.warn("loadCharacter falhou:", err);
         currentCharacter = emptyCharacter();
+    }
+}
+
+// Reivindica um slot livre do roster: backend copia name/ilvl/jobsPool para o
+// character_json, seta slot.user_id e responde com o character resultante.
+async function claimRosterSlot(slotId) {
+    try {
+        const res = await API.claimSlot(slotId);
+        if (res && res.character) {
+            currentCharacter = {
+                ...emptyCharacter(),
+                ...res.character,
+                jobs: Array.isArray(res.character.jobs) ? res.character.jobs : [],
+                subscribedProgs: Array.isArray(res.character.subscribedProgs) ? res.character.subscribedProgs : [],
+            };
+        }
+        // Recarrega state pra trazer roster atualizado + characters map
+        await loadState();
+        renderAllAfterLoad();
+        showToast("Slot vinculado ao seu personagem. Edite seus dados na aba Personagem.", {
+            type: "success",
+            title: "Slot reivindicado",
+        });
+        playSfx('success');
+    } catch (err) {
+        const code = err?.data?.error || err?.message;
+        let msg = "Não foi possível reivindicar o slot.";
+        if (code === "already_has_slot") msg = "Você já tem um slot vinculado nesta static.";
+        else if (code === "slot_already_claimed") msg = "Esse slot já foi reivindicado por outro membro.";
+        else if (code === "slot_not_found") msg = "Slot não existe.";
+        showToast(msg, { type: "error", title: "Falhou" });
     }
 }
 
@@ -1538,6 +1597,8 @@ function renderProgTabsBar() {
 
 // Fase 14 — gera o HTML dos badges do pool de jobs.
 // Em conteúdo limited, mostra um único badge travado com o job da raid (sem botoes).
+// Fase O.2 — para slots vinculados (player.user_id), usa jobsPool derivado do
+// character_json via getSlotIdentity; senão usa player.jobsPool legado.
 function buildPoolBadgesHtml(player, activeProgId, canEdit) {
     if (isLimitedProg(activeProgId)) {
         const jobId = getLimitedJob(activeProgId);
@@ -1548,7 +1609,8 @@ function buildPoolBadgesHtml(player, activeProgId, canEdit) {
         return `<span class="job-badge job-badge-locked" style="background-color: ${color};" title="Job travado para este conteúdo">${imgH || jobId}<span class="job-badge-lock">🔒</span></span>`;
     }
     const currentAssignedJob = getAssignedJobForProg(player, activeProgId);
-    return (player.jobsPool || []).map(jId => {
+    const identity = getSlotIdentity(player);
+    return (identity.jobsPool || []).map(jId => {
         const jObj = FFXIV_JOBS.find(j => j.id === jId);
         const roleData = jObj ? FFXIV_ROLES[jObj.role] : null;
         const color = roleData ? roleData.color : '#475569';
@@ -1557,6 +1619,15 @@ function buildPoolBadgesHtml(player, activeProgId, canEdit) {
         const disabledStyle = canEdit ? '' : 'pointer-events:none; opacity:0.7;';
         return `<button type="button" class="job-badge direct-pool-job-btn" style="background-color: ${color}; ${isAssigned ? 'opacity:0.4; transform:none; cursor:default;' : ''} ${disabledStyle}" data-id="${player.id}" data-job="${jId}" title="Clique para definir ${jId} como principal neste conteúdo">${imgH || jId}</button>`;
     }).join(' ');
+}
+
+// Fase O.2 — botão "Claim" para slots livres (sem user_id). Visível só para
+// o user logado que ainda não tem um slot vinculado nesta static.
+function buildClaimButton(player) {
+    if (!player || player.user_id != null) return "";
+    if (!currentUserId) return "";
+    if (hasOwnSlot()) return "";
+    return `<button class="btn-table-action btn-claim-slot" data-id="${player.id}" title="Reivindicar este slot e vincular ao seu personagem">📥 Claim</button>`;
 }
 
 // Constrói o HTML dos botões de ação para uma linha do roster baseado em permissões
@@ -1626,14 +1697,20 @@ function renderRosterTables() {
                 </div>
             `;
 
-            const canEdit = canEditPlayer(player);
+            // Fase O.2 — identidade do slot vem do character se vinculado;
+            // inputs ficam disabled quando o slot tem user_id (dados editáveis
+            // só na aba Personagem do dono).
+            const identity = getSlotIdentity(player);
+            const locked = !!player.user_id;
+            const canEdit = !locked && canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
+            const lockedHint = locked ? '<span class="slot-locked-hint" title="Edite seus dados na aba Personagem">🔗</span>' : '';
             const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
                 <td data-label="rank" style="font-weight: bold; color: var(--gold-muted);">#${idx + 1}</td>
                 <td data-label="Jogador">
-                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
+                    <input type="text" class="ff-input inp-roster-name" value="${escapeHtml(identity.name)}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}${lockedHint}
                 </td>
                 <td data-label="Classes">
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
@@ -1645,12 +1722,13 @@ function renderRosterTables() {
                 </td>
                 <td data-label="iLvl">
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 65px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
+                        <input type="number" class="ff-input inp-roster-ilvl" value="${identity.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 65px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
                         <label title="BiS (Best in Slot)"><input type="checkbox" class="ff-checkbox chk-roster-bis" data-id="${player.id}" ${player.bis ? 'checked' : ''} ${canEdit ? '' : 'disabled'}></label>
                     </div>
                 </td>
                 <td data-label="Ações">
-                    <div style="display: flex; gap: 4px;">
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        ${buildClaimButton(player)}
                         ${buildRowActions(player, "active")}
                     </div>
                 </td>
@@ -1664,13 +1742,16 @@ function renderRosterTables() {
     } else {
         benchMembers.forEach(player => {
             const tr = document.createElement("tr");
-            const canEdit = canEditPlayer(player);
+            const identity = getSlotIdentity(player);
+            const locked = !!player.user_id;
+            const canEdit = !locked && canEditPlayer(player);
             const ownTag = isOwnSlot(player) ? '<span style="font-size:0.7rem;color:var(--gold-bright);margin-left:4px;font-style:italic;">(você)</span>' : '';
+            const lockedHint = locked ? '<span class="slot-locked-hint" title="Edite seus dados na aba Personagem">🔗</span>' : '';
             const poolBadgesHtml = buildPoolBadgesHtml(player, activeProgId, canEdit);
 
             tr.innerHTML = `
                 <td data-label="Jogador">
-                    <input type="text" class="ff-input inp-roster-name" value="${player.name}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}
+                    <input type="text" class="ff-input inp-roster-name" value="${escapeHtml(identity.name)}" data-id="${player.id}" placeholder="Nome / Nick" ${canEdit ? '' : 'disabled'}>${ownTag}${lockedHint}
                 </td>
                 <td data-label="Classes">
                     <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
@@ -1678,10 +1759,11 @@ function renderRosterTables() {
                     </div>
                 </td>
                 <td data-label="iLvl">
-                    <input type="number" class="ff-input inp-roster-ilvl" value="${player.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 70px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
+                    <input type="number" class="ff-input inp-roster-ilvl" value="${identity.ilvl}" min="1" max="999" data-id="${player.id}" style="width: 70px; padding: 6px;" ${canEdit ? '' : 'disabled'}>
                 </td>
                 <td data-label="Ações">
-                    <div style="display: flex; gap: 4px;">
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        ${buildClaimButton(player)}
                         ${buildRowActions(player, "bench")}
                     </div>
                 </td>
@@ -1690,24 +1772,11 @@ function renderRosterTables() {
         });
     }
 
-    // Visibilidade do painel "Cadastrar Novo Jogador" conforme cargo
+    // Fase O.2 — cadastro manual de slots foi removido. Identidade do
+    // jogador vive no character_json (aba Personagem). Slots da Party vêm
+    // de claim de slots legados ou (futuramente) de subscribedProgs.
     const addPanel = document.querySelector(".add-member-panel");
-    const addPanelHeader = addPanel?.querySelector(".panel-header h2");
-    if (addPanel) {
-        if (isOfficer()) {
-            addPanel.style.display = "";
-            if (addPanelHeader) addPanelHeader.textContent = "Cadastrar Novo Jogador";
-        } else if (isMember()) {
-            if (hasOwnSlot()) {
-                addPanel.style.display = "none";
-            } else {
-                addPanel.style.display = "";
-                if (addPanelHeader) addPanelHeader.textContent = "Crie seu Slot de Jogador";
-            }
-        } else {
-            addPanel.style.display = "none";
-        }
-    }
+    if (addPanel) addPanel.style.display = "none";
 
     bindRosterTableEvents();
     renderDashboardVisualizer();
@@ -1742,7 +1811,9 @@ function bindRosterTableEvents() {
         inp.addEventListener("input", (e) => {
             const id = e.target.dataset.id;
             const target = state.roster.find(p => p.id === id);
-            if (target) {
+            // Fase O.2 — slots vinculados a um user têm identidade vinda do
+            // character_json; ignora edits diretos no slot.
+            if (target && !target.user_id) {
                 target.name = e.target.value;
                 saveState();
                 renderDashboardVisualizer();
@@ -1755,11 +1826,21 @@ function bindRosterTableEvents() {
         inp.addEventListener("input", (e) => {
             const id = e.target.dataset.id;
             const target = state.roster.find(p => p.id === id);
-            if (target) {
+            if (target && !target.user_id) {
                 target.ilvl = parseInt(e.target.value) || 0;
                 saveState();
                 renderDashboardVisualizer();
             }
+        });
+    });
+
+    // Fase O.2 — handler dos botões "Claim" em slots livres
+    container.querySelectorAll(".btn-claim-slot").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            playSfx('click');
+            const slotId = btn.dataset.id;
+            await claimRosterSlot(slotId);
         });
     });
 
@@ -2572,36 +2653,27 @@ function renderScheduleTable() {
         return;
     }
     
-    const activeProgId = state.inspectedProgId || "geral";
+    // Fase O.2 — calendário é GLOBAL: mostra todos os jogadores do roster,
+    // independente do prog inspecionado. Disponibilidade do dia é por player,
+    // não por prog. Identidade vem do character_json para slots vinculados.
+    // Ordena por nome para apresentação estável.
     const sortedRoster = [...state.roster].sort((a, b) => {
-        const sA = getPlayerStatusForProg(a, activeProgId);
-        const sB = getPlayerStatusForProg(b, activeProgId);
-        if (sA === "active" && sB !== "active") return -1;
-        if (sA !== "active" && sB === "active") return 1;
-        return 0;
+        const na = getSlotIdentity(a).name || "";
+        const nb = getSlotIdentity(b).name || "";
+        return na.localeCompare(nb, "pt-BR");
     });
 
-    let renderedBenchHeader = false;
-    const dynamicInspected = isDynamicProg(activeProgId);
-
     sortedRoster.forEach(player => {
-        const playerStatusInProg = getPlayerStatusForProg(player, activeProgId);
-        // Em dynamic, não há split titular/banco — todos são participantes.
-        if (!dynamicInspected && playerStatusInProg === "bench" && !renderedBenchHeader) {
-            renderedBenchHeader = true;
-            const sep = document.createElement("tr");
-            sep.innerHTML = `<td colspan="${numDays + 1}" style="background: rgba(165, 53, 53, 0.15); color: #fca5a5; font-weight: bold; font-size: 0.85rem; padding: 6px 16px; text-align: left;">Substitutos (Banco de Reservas desta Raid)</td>`;
-            tbody.appendChild(sep);
-        }
-
         if (!player.monthlySchedule) player.monthlySchedule = {};
+
+        const identity = getSlotIdentity(player);
+        const displayName = identity.name || '<span style="font-style:italic;color:#94a3b8;">Sem Nick</span>';
 
         const tr = document.createElement("tr");
         const tdName = document.createElement("td");
         tdName.className = "col-fixed";
         tdName.style.fontWeight = "600";
-        const statusTag = (!dynamicInspected && playerStatusInProg === "bench") ? `<span style="font-size:0.7rem;color:#fca5a5;">(Reserva)</span>` : '';
-        tdName.innerHTML = `${player.name || '<span style="font-style:italic;color:#94a3b8;">Sem Nick</span>'} ${statusTag}`;
+        tdName.innerHTML = displayName;
         tr.appendChild(tdName);
 
         const canTogglePlayer = canEditScheduleFor(player);

@@ -413,6 +413,10 @@ def get_state():
         except (TypeError, ValueError):
             data = {}
 
+        # Fase O.2 — anexa map de characters dos members da static. O front lê
+        # nome/ilvl/jobs de slots vinculados a partir desse map.
+        characters = _load_characters_for_static(conn, static_id)
+
         resp = jsonify({
             "static_id": static_id,
             "static_name": row["name"],
@@ -420,6 +424,7 @@ def get_state():
             "updated_at": row["updated_at"],
             "etag": etag,
             "data": data,
+            "characters": characters,
             "user_id": session["user_id"],
             "user_role": role,
         })
@@ -631,6 +636,35 @@ def put_state():
 # character_json mora em users.character_json e é 1:1 com o usuário (independente
 # de static). Permite que o mesmo user mantenha um único personagem mesmo se
 # trocar de static no futuro (alts/multi-static).
+
+def _load_characters_for_static(conn, static_id):
+    """Retorna {user_id: character_json} para todos os members da static.
+
+    Usado pelo GET /api/state para o front conseguir ler nome/ilvl/jobs dos
+    slots vinculados (Fase O.2). Users sem character_json ou com JSON inválido
+    são ignorados.
+    """
+    cur = conn.execute(
+        """
+        SELECT u.id, u.character_json
+        FROM users u
+        JOIN static_members m ON m.user_id = u.id
+        WHERE m.static_id = ?
+        """,
+        (static_id,),
+    )
+    result = {}
+    for row in cur.fetchall():
+        raw = row["character_json"]
+        if not raw:
+            continue
+        try:
+            result[row["id"]] = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
 @app.get("/api/character")
 @login_required
 def get_character():
@@ -691,6 +725,103 @@ def put_character():
             (serialized, user_id),
         )
     return jsonify({"ok": True})
+
+
+@app.post("/api/character/claim-slot")
+@login_required
+def claim_slot():
+    """Vincula um slot legado (sem user_id) ao usuário logado.
+
+    Fluxo:
+    - Valida que o user é membro da static ativa
+    - Valida que o slot existe no roster da static, está livre (user_id None)
+      e que o user não já está vinculado a outro slot da mesma static
+    - Migra name/ilvl/jobsPool do slot para o character_json do user (jobs
+      sem level, para o user preencher na aba Personagem)
+    - Seta slot.user_id = user.id
+    - Persiste tudo atomicamente
+    """
+    user_id = session["user_id"]
+    payload = request.get_json(silent=True) or {}
+    slot_id = payload.get("slot_id")
+    if not isinstance(slot_id, str) or not slot_id:
+        return jsonify({"error": "missing_slot_id"}), 400
+
+    static_id = _get_active_static_id()
+    if not static_id:
+        return jsonify({"error": "no_active_static"}), 400
+    if not _assert_member(static_id, user_id):
+        return jsonify({"error": "not_a_member"}), 403
+
+    with db_conn() as conn:
+        cur = conn.execute("SELECT data_json FROM statics WHERE id = ?", (static_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "static_not_found"}), 404
+        try:
+            data = json.loads(row["data_json"] or "{}")
+        except (TypeError, ValueError):
+            data = {}
+        roster = data.get("roster") or []
+
+        # User só pode claimar 1 slot por static — bloqueia se já tem
+        existing = next(
+            (p for p in roster if isinstance(p, dict) and p.get("user_id") == user_id),
+            None,
+        )
+        if existing:
+            return jsonify({"error": "already_has_slot", "slot_id": existing.get("id")}), 409
+
+        # Slot precisa existir e estar livre
+        target = next(
+            (p for p in roster if isinstance(p, dict) and p.get("id") == slot_id),
+            None,
+        )
+        if not target:
+            return jsonify({"error": "slot_not_found"}), 404
+        if target.get("user_id"):
+            return jsonify({"error": "slot_already_claimed"}), 409
+
+        # Carrega character atual e mescla (não sobrescreve dados existentes)
+        cur = conn.execute("SELECT character_json FROM users WHERE id = ?", (user_id,))
+        urow = cur.fetchone()
+        try:
+            character = json.loads(urow["character_json"]) if urow and urow["character_json"] else {}
+        except (TypeError, ValueError):
+            character = {}
+        if not isinstance(character, dict):
+            character = {}
+
+        # Só popula campos que estão vazios — preserva edições prévias do user
+        if not character.get("name"):
+            character["name"] = (target.get("name") or "")[:80]
+        if character.get("ilvl") in (None, 0):
+            ilvl_raw = target.get("ilvl")
+            if isinstance(ilvl_raw, int) and ilvl_raw >= 0:
+                character["ilvl"] = ilvl_raw
+        if not isinstance(character.get("jobs"), list) or len(character["jobs"]) == 0:
+            jobs_pool = target.get("jobsPool") or []
+            character["jobs"] = [
+                {"id": j} for j in jobs_pool if isinstance(j, str)
+            ]
+        if "currentExpansionId" not in character:
+            character["currentExpansionId"] = None
+        if not isinstance(character.get("subscribedProgs"), list):
+            character["subscribedProgs"] = []
+
+        # Persiste vinculação + character
+        target["user_id"] = user_id
+        data["roster"] = roster
+        conn.execute(
+            "UPDATE statics SET data_json = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(data, ensure_ascii=False), static_id),
+        )
+        conn.execute(
+            "UPDATE users SET character_json = ? WHERE id = ?",
+            (json.dumps(character, ensure_ascii=False), user_id),
+        )
+
+    return jsonify({"ok": True, "character": character, "slot_id": slot_id})
 
 
 # ---------- Gerenciamento de Membros (admin) ----------

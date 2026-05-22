@@ -152,74 +152,13 @@
                         <!-- Preenchido via JS sincronizado -->
                     </div>
                 </div>
-                <p class="section-desc">Cadastre jogadores, defina suas Gamas de Classes (Pool) clicando diretamente nos ícones para torná-la a principal ativa do conteúdo atual.</p>
+                <p class="section-desc">Os dados de cada jogador (nome, classes, iLvl) vivem na aba <strong>Personagem</strong>. A composição da Party é definida pelos eventos ativos de cada membro.</p>
 
-                <!-- Formulário de Cadastro Rápido -->
-                <div class="ff-panel add-member-panel mb-4">
-                    <div class="panel-header">
-                        <h2>Cadastrar Novo Jogador</h2>
-                    </div>
-                    <div class="panel-body">
-                        <div class="add-member-form" style="grid-template-columns: 1.5fr 3fr 1.5fr 1fr;">
-                            <div class="form-group">
-                                <label for="input-member-name">Nome / Nick in-game:</label>
-                                <input type="text" id="input-member-name" class="ff-input" placeholder="Ex: WoL Azem">
-                            </div>
-                            <div class="form-group">
-                                <label>Perfis Flex (Marque um ou mais):</label>
-                                <div
-                                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; align-items: center;">
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="tank">
-                                        Tank</label>
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="healer">
-                                        Healer</label>
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="melee">
-                                        Melee</label>
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="ranged">
-                                        Ranged</label>
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="caster">
-                                        Caster</label>
-                                    <label
-                                        style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--gold-bright); font-weight: bold;"><input
-                                            type="checkbox" class="ff-checkbox chk-flex-profile" value="custom"
-                                            id="chk-flex-custom"> Específico</label>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="select-member-status">Alocação Inicial:</label>
-                                <select id="select-member-status" class="ff-select">
-                                    <option value="active">Party Principal (Ativo)</option>
-                                    <option value="bench">Banco de Reservas (Substituto)</option>
-                                </select>
-                            </div>
-                            <div class="form-group flex-end">
-                                <button id="btn-add-member" class="ff-btn-action full-width"
-                                    style="height: 42px; margin-top: 22px;">Adicionar</button>
-                            </div>
-                        </div>
-
-                        <!-- Seleção Customizada de Classes (Exibida se custom selecionado) -->
-                        <div id="custom-jobs-selector" class="custom-jobs-selector mt-3" hidden>
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                <label style="font-size: 0.85rem; color: var(--gold-bright); font-weight: 600;">Selecione as classes específicas:</label>
-                                <span class="custom-jobs-counter" id="custom-jobs-counter">0 selecionada(s)</span>
-                            </div>
-                            <div id="custom-jobs-grid" class="custom-jobs-grid">
-                                <!-- Preenchido dinamicamente com botões/checkboxes das 21 classes -->
-                            </div>
-                            <div class="custom-jobs-selected-preview" id="custom-jobs-selected-preview" hidden></div>
-                        </div>
-                    </div>
+                <!-- Cadastro manual removido (Fase O.2): identidade do jogador
+                     vive em character_json; slots novos surgem via claim de
+                     slots legados ou via subscribedProgs do personagem. -->
+                <div class="ff-panel add-member-panel mb-4" style="display: none;">
+                    <div class="panel-body"></div>
                 </div>
 
                 <!-- Tabela de Party Principal (Ativos) -->
