@@ -2557,20 +2557,28 @@ function rangesToSlotIdxs(ranges) {
     return result;
 }
 
+// Bugfix: armazena o cleanup do popover ativo num escopo módulo. Sem isso,
+// fechamentos via toggle/Confirmar/Cancelar deixavam listeners zumbis de
+// onClickOutside em `document`, que disparavam em cliques futuros e fechavam
+// o NOVO popover (porque .contains() era checado em refs detached).
+let _popoverCleanup = null;
+
 function closeSchedulePopover() {
     const existing = document.getElementById("sched-popover");
     if (existing) existing.remove();
+    if (_popoverCleanup) {
+        _popoverCleanup();
+        _popoverCleanup = null;
+    }
     _popoverPlayerRef = null;
 }
 
 function openSchedulePopover(player, dateKey, anchorEl) {
-    // Fecha outro popover aberto
+    // Fecha outro popover aberto (sempre via closeSchedulePopover para limpar listeners)
     const existing = document.getElementById("sched-popover");
     if (existing) {
-        // Toggle: clicar na mesma célula fecha
         const sameCell = _popoverPlayerRef === player && existing.dataset.dateKey === dateKey;
-        existing.remove();
-        _popoverPlayerRef = null;
+        closeSchedulePopover();
         if (sameCell) return;
     }
 
@@ -2756,18 +2764,24 @@ function openSchedulePopover(player, dateKey, anchorEl) {
     document.body.appendChild(popover);
     bindGridListeners();
 
-    // Fecha com ESC ou clique fora
+    // Fecha com ESC ou clique fora. closeSchedulePopover() agora chama
+    // _popoverCleanup automaticamente, então não precisa duplicar aqui.
     function onKeyDown(e) {
-        if (e.key === "Escape") { closeSchedulePopover(); cleanup(); }
+        if (e.key === "Escape") closeSchedulePopover();
     }
     function onClickOutside(e) {
-        if (!popover.contains(e.target)) { closeSchedulePopover(); cleanup(); }
+        if (!popover.contains(e.target)) closeSchedulePopover();
     }
     function cleanup() {
         document.removeEventListener("keydown", onKeyDown);
         document.removeEventListener("click",   onClickOutside);
     }
+    _popoverCleanup = cleanup;
+    // Sentinela para corrigir race: se openSchedulePopover for chamado
+    // várias vezes seguidas sincronamente, só o último deve attachar listeners.
+    const myCleanupRef = cleanup;
     setTimeout(() => {
+        if (_popoverCleanup !== myCleanupRef) return; // já fechou ou foi substituído
         document.addEventListener("keydown", onKeyDown);
         document.addEventListener("click",   onClickOutside);
     }, 0);
