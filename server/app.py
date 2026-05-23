@@ -1142,7 +1142,10 @@ def _count_confirmed_for_date(state_data, date_str, event=None, characters=None)
         if not isinstance(p, dict):
             continue
         sched = p.get("monthlySchedule") or {}
-        if sched.get(date_str) != "avail":
+        entry = sched.get(date_str)
+        # Fase Q: entry pode ser string legada ou {status, ranges}
+        status = entry if isinstance(entry, str) else (entry.get("status") if isinstance(entry, dict) else "")
+        if status != "avail":
             continue
         if event is not None and characters:
             uid = p.get("user_id")
