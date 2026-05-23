@@ -1,0 +1,10 @@
+# Força o Nixpacks a tratar este projeto como Python, ignorando o
+# `package.json` na raiz (que existe apenas para a suíte de testes JS
+# — vitest + Playwright — e não deve participar do deploy).
+#
+# Sem isto, o Nixpacks autodetecta Node por causa do package.json, pula
+# a fase de instalação do `requirements.txt` e o startCommand do
+# `railway.json` (`gunicorn server.app:app ...`) falha com
+# "gunicorn: command not found".
+
+providers = ["python"]
