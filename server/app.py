@@ -1242,8 +1242,9 @@ def _evaluate_quorum_opportunities(state_data, static_id):
             if d:
                 booked_dates.add(d)
 
-    # Resolve progs ativos candidatos (exclui Limited e Dynamic). Cada um carrega
-    # seu próprio threshold (Full Party = 8, Light Party = 4) para a Fase P.
+    # Resolve progs ativos candidatos (exclui Limited). Cada um carrega seu
+    # próprio threshold: Full Party = 8, Light Party = 4. Dynamic usa o campo
+    # `quorum` configurado no custom content; sem quorum válido, não dispara.
     active_prog_ids = state_data.get("activeProgs") or []
     candidate_progs = []
     for pid in active_prog_ids:
@@ -1252,10 +1253,24 @@ def _evaluate_quorum_opportunities(state_data, static_id):
         prog = _resolve_prog(state_data, pid)
         if not isinstance(prog, dict):
             continue
-        if prog.get("partyMode") == "limited" or _is_dynamic_prog(state_data, pid):
+        party_mode = prog.get("partyMode")
+        if party_mode == "limited":
             continue
-        threshold = 4 if prog.get("partyMode") == "light" else 8
-        candidate_progs.append((pid, threshold))
+        if _is_dynamic_prog(state_data, pid):
+            q = prog.get("quorum")
+            if q is None:
+                continue
+            try:
+                threshold = int(q)
+            except (TypeError, ValueError):
+                continue
+            if threshold < 1:
+                continue
+            mode = "dynamic"
+        else:
+            mode = "light" if party_mode == "light" else "full"
+            threshold = 4 if mode == "light" else 8
+        candidate_progs.append((pid, threshold, mode))
 
     conn = get_conn()
     try:
@@ -1272,15 +1287,19 @@ def _evaluate_quorum_opportunities(state_data, static_id):
         d = (today + timedelta(days=delta)).isoformat()
         if d in booked_dates or d in sent:
             continue
-        triggered_count = None
-        for (pid, threshold) in candidate_progs:
+        triggered = None  # (count, threshold, mode)
+        for (pid, threshold, mode) in candidate_progs:
             synthetic = {"progId": pid}
             c = _count_confirmed_for_date(state_data, d, event=synthetic, characters=characters)
-            if c >= threshold and (triggered_count is None or c > triggered_count):
-                triggered_count = c
-        if triggered_count is None:
+            if c < threshold:
+                continue
+            surplus = c - threshold
+            if triggered is None or surplus > (triggered[0] - triggered[1]):
+                triggered = (c, threshold, mode)
+        if triggered is None:
             continue
-        if tg.send_group_message(chat_id, tg.format_quorum_suggestion(d, triggered_count)):
+        t_count, t_size, t_mode = triggered
+        if tg.send_group_message(chat_id, tg.format_quorum_suggestion(d, t_count, t_size, t_mode)):
             sent[d] = True
             changed = True
 

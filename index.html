@@ -592,10 +592,15 @@
                                 <input type="radio" name="cc-party-mode" value="dynamic">
                                 <span class="content-party-mode-card">
                                     <strong>Dynamic Party</strong>
-                                    <span class="content-party-mode-desc">até 8 · evento aberto · sem quorum</span>
+                                    <span class="content-party-mode-desc">até 8 · evento aberto · quórum custom</span>
                                 </span>
                             </label>
                         </div>
+                    </div>
+                    <div class="form-group" id="cc-dynamic-quorum-group" hidden style="margin-top:8px;">
+                        <label for="inp-cc-dynamic-quorum">Quórum mínimo para oportunidade <span class="required">*</span></label>
+                        <input id="inp-cc-dynamic-quorum" type="number" class="ff-input" min="1" max="48" placeholder="Ex: 6" style="max-width:120px;">
+                        <span style="font-size:0.78rem; color: var(--text-muted); display:block; margin-top:4px;">Dispara aviso de "Oportunidade de evento" quando houver pelo menos esse número de disponíveis.</span>
                     </div>
                     <div class="content-form-actions">
                         <button id="btn-cc-create" class="ff-btn-action">Adicionar conteúdo</button>

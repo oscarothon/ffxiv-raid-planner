@@ -3034,12 +3034,25 @@ function renderQuorumOpportunities(container) {
     const shortWkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
     // Fase P — sugere agendamento apenas quando há jogadores compatíveis
-    // suficientes para preencher pelo menos um prog ativo (Full Party = 8,
-    // Light Party = 4). Limited e Dynamic não disparam oportunidade.
+    // suficientes para preencher pelo menos um prog ativo. Full Party = 8,
+    // Light Party = 4. Dynamic usa quórum configurado no custom content
+    // (`quorum` em customContents). Limited não dispara.
     const candidateProgs = (state.activeProgs || [])
         .map(pid => ({ id: pid, obj: getProgObj(pid) }))
-        .filter(({ id, obj }) => obj && !isLimitedProg(id) && !isDynamicProg(id))
-        .map(({ id, obj }) => ({ ...obj, _threshold: getPartySize(id) }));
+        .filter(({ id, obj }) => {
+            if (!obj || isLimitedProg(id)) return false;
+            if (isDynamicProg(id)) {
+                const q = getCustomContent(id)?.quorum;
+                return Number.isFinite(q) && q > 0;
+            }
+            return true;
+        })
+        .map(({ id, obj }) => {
+            const threshold = isDynamicProg(id)
+                ? (getCustomContent(id)?.quorum || 0)
+                : getPartySize(id);
+            return { ...obj, _threshold: threshold };
+        });
 
     const opportunities = [];
     for (let delta = 0; delta < 14; delta++) {
@@ -3080,7 +3093,9 @@ function renderQuorumOpportunities(container) {
         const dateLbl = `${wkStr}, ${dayStr}/${monStr}`;
         const progLbl = prog ? `<span style="color: var(--gold-bright); font-weight: 600;">${escapeHtml(prog.name.split(" (")[0])}</span>` : "";
         const progAttr = prog ? ` data-prog="${escapeHtml(prog.id)}"` : "";
-        const partyLbl = threshold === 4 ? "Light Party" : "Full Party";
+        const partyLbl = prog && isDynamicProg(prog.id)
+            ? `Dynamic (${threshold}p)`
+            : (threshold === 4 ? "Light Party" : "Full Party");
         html += `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 0.82rem;">
                 <span><span style="color: var(--gold-bright); font-weight: 600;">${dateLbl}</span> — ${count} compatíveis para ${progLbl} (${partyLbl} possível)</span>
@@ -3790,6 +3805,10 @@ function openContentManagerModal() {
     if (selEl)  selEl.value  = "";
     const fullRadio = modal.querySelector('input[name="cc-party-mode"][value="full"]');
     if (fullRadio) fullRadio.checked = true;
+    const qEl = document.getElementById("inp-cc-dynamic-quorum");
+    if (qEl) qEl.value = "";
+    const qGroup = document.getElementById("cc-dynamic-quorum-group");
+    if (qGroup) qGroup.hidden = true;
     // Fecha o form inline de nova expansão (se ficou aberto da última vez)
     const inline = document.getElementById("cc-new-expansion-inline");
     if (inline) inline.hidden = true;
@@ -3818,6 +3837,9 @@ function renderContentManagerList() {
     list.forEach(c => {
         const mode = (c.partyMode === "light" || c.partyMode === "dynamic") ? c.partyMode : "full";
         const partySize = mode === "light" ? 4 : 8;
+        const sizeLbl = mode === "dynamic"
+            ? `até ${partySize}${Number.isFinite(c.quorum) && c.quorum > 0 ? ` · quórum ${c.quorum}` : ''}`
+            : String(partySize);
         const inUse = (state.activeProgs || []).includes(c.id);
         const row = document.createElement("div");
         row.className = `content-manager-row mode-${mode}${inUse ? ' in-use' : ''}`;
@@ -3825,7 +3847,7 @@ function renderContentManagerList() {
             <div class="content-manager-row-info">
                 <span class="content-manager-row-name">${escapeHtml(c.name || c.id)}</span>
                 <div class="content-manager-row-meta">
-                    <span class="pill mode-${mode}">${modeLabel[mode]} · ${partySize}</span>
+                    <span class="pill mode-${mode}">${modeLabel[mode]} · ${sizeLbl}</span>
                     ${(() => { const ex = getExpansionDisplayName(c); return ex ? `<span>${escapeHtml(ex)}</span>` : ''; })()}
                     ${inUse ? `<span style="color: var(--color-avail);">Em uso</span>` : ''}
                 </div>
@@ -3888,6 +3910,18 @@ function handleCreateCustomContent() {
     if (!["full", "light", "dynamic"].includes(partyMode)) { showErr("Modo de party inválido."); return; }
     if (expansionId === "__new__") { showErr("Confirme a nova expansão antes de adicionar o conteúdo."); return; }
 
+    let dynamicQuorum = null;
+    if (partyMode === "dynamic") {
+        const qEl = document.getElementById("inp-cc-dynamic-quorum");
+        const qVal = parseInt(qEl?.value || "", 10);
+        if (!Number.isFinite(qVal) || qVal < 1 || qVal > 48) {
+            showErr("Informe um quórum válido (1-48) para o modo Dynamic.");
+            if (qEl) qEl.focus();
+            return;
+        }
+        dynamicQuorum = qVal;
+    }
+
     // Gera id determinístico e único
     let baseId = "custom_" + (name.toLowerCase()
         .normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -3907,6 +3941,7 @@ function handleCreateCustomContent() {
 
     const newContent = { id, name, partyMode };
     if (expansionId) newContent.expansionId = expansionId;
+    if (dynamicQuorum !== null) newContent.quorum = dynamicQuorum;
 
     if (!Array.isArray(state.customContents)) state.customContents = [];
     state.customContents.push(newContent);
@@ -3916,6 +3951,10 @@ function handleCreateCustomContent() {
     if (selEl)  selEl.value  = "";
     const fullRadio = document.querySelector('input[name="cc-party-mode"][value="full"]');
     if (fullRadio) fullRadio.checked = true;
+    const qEl = document.getElementById("inp-cc-dynamic-quorum");
+    if (qEl) qEl.value = "";
+    const qGroup = document.getElementById("cc-dynamic-quorum-group");
+    if (qGroup) qGroup.hidden = true;
 
     renderContentManagerList();
     renderActiveProgsPanel();
@@ -4751,6 +4790,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (btnCreateContent) {
         btnCreateContent.addEventListener("click", handleCreateCustomContent);
     }
+    document.querySelectorAll('input[name="cc-party-mode"]').forEach(radio => {
+        radio.addEventListener("change", () => {
+            const group = document.getElementById("cc-dynamic-quorum-group");
+            if (group) group.hidden = radio.value !== "dynamic" || !radio.checked;
+        });
+    });
     const inpCcName = document.getElementById("inp-cc-name");
     if (inpCcName) {
         inpCcName.addEventListener("keydown", e => {

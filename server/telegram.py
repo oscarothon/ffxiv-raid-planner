@@ -144,12 +144,18 @@ def format_event_cancelled_bulk(count):
     )
 
 
-def format_quorum_suggestion(date_str, count):
+def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full"):
     pretty = _format_date(date_str)
+    if party_mode == "light":
+        suggestion = f"Possível agendar uma Light Party ({party_size}p)."
+    elif party_mode == "dynamic":
+        suggestion = f"Possível agendar um evento Dynamic (quórum {party_size})."
+    else:
+        suggestion = f"Possível agendar uma Full Party ({party_size}p)."
     return (
         f"✨ <b>Oportunidade de evento</b>\n"
         f"{pretty}: {count} pessoa(s) disponíveis.\n"
-        f"Possível agendar uma Full Party (8p).\n\n"
+        f"{suggestion}\n\n"
         f"Agende em {SITE_URL}."
     )
 
