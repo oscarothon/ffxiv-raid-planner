@@ -742,3 +742,75 @@ def test_site_url_env_changes_bulk_cancel_url(monkeypatch):
     tg2 = importlib.import_module("server.telegram")
     msg = tg2.format_event_cancelled_bulk(2)
     assert "https://raid-planner-staging.example.com" in msg
+
+
+# ---------------------------------------------------------------------------
+# Fase Q — _format_time_suffix + horário em mensagens
+# ---------------------------------------------------------------------------
+
+@pytest.mark.telegram
+class TestFaseQTimeFormatting:
+    def test_format_time_suffix_with_time_only(self, tg):
+        assert tg._format_time_suffix("20:30") == " às 20:30"
+
+    def test_format_time_suffix_with_time_and_duration_round_hours(self, tg):
+        assert tg._format_time_suffix("20:30", 120) == " às 20:30 (2h)"
+
+    def test_format_time_suffix_with_time_and_duration_partial(self, tg):
+        assert tg._format_time_suffix("20:30", 150) == " às 20:30 (2h30)"
+
+    def test_format_time_suffix_without_time_returns_placeholder(self, tg):
+        assert tg._format_time_suffix(None) == " (horário a definir)"
+        assert tg._format_time_suffix("") == " (horário a definir)"
+
+    def test_format_event_created_with_time_includes_suffix(self, tg):
+        msg = tg.format_event_created("DSR", "2024-01-01", 8, 8, time_str="20:30", duration_min=180)
+        assert "às 20:30 (3h)" in msg
+
+    def test_format_event_created_without_time_shows_placeholder(self, tg):
+        msg = tg.format_event_created("DSR", "2024-01-01", 8, 8)
+        assert "(horário a definir)" in msg
+
+    def test_format_reminder_24h_with_time(self, tg):
+        msg = tg.format_reminder_24h("FRU", "2024-01-01", 6, 8, time_str="21:00", duration_min=120)
+        assert "às 21:00 (2h)" in msg
+
+    def test_format_reminder_today_without_time(self, tg):
+        msg = tg.format_reminder_today("FRU", "2024-01-01", 6, 8)
+        assert "(horário a definir)" in msg
+
+    def test_format_event_postponed_includes_times_when_present(self, tg):
+        msg = tg.format_event_postponed(
+            "DSR", "2024-01-01", "2024-01-08",
+            old_time="20:30", new_time="21:00",
+        )
+        assert "20:30" in msg
+        assert "21:00" in msg
+
+    def test_format_event_postponed_works_without_times(self, tg):
+        """Retrocompat — não passa old_time/new_time: mensagem sai como antes."""
+        msg = tg.format_event_postponed("DSR", "2024-01-01", "2024-01-08")
+        assert "DSR foi adiado" in msg
+        # Sem time, não deve aparecer "às" no suffix
+        assert "às" not in msg
+
+    def test_format_event_cancelled_with_time(self, tg):
+        msg = tg.format_event_cancelled("FRU", "2024-01-01", time_str="20:30")
+        assert "20:30" in msg
+
+    def test_format_event_cancelled_without_time(self, tg):
+        """Retrocompat — sem time_str funciona como antes."""
+        msg = tg.format_event_cancelled("FRU", "2024-01-01")
+        assert "Cancelado" in msg
+
+    def test_format_quorum_suggestion_with_window(self, tg):
+        msg = tg.format_quorum_suggestion("2024-01-01", 8, window_start="20:00", window_end="22:00")
+        assert "20:00–22:00" in msg
+        assert "na janela" in msg
+
+    def test_format_quorum_suggestion_without_window_legacy(self, tg):
+        """Sem window_start/window_end mantém formato legado."""
+        msg = tg.format_quorum_suggestion("2024-01-01", 8)
+        assert "20:00–22:00" not in msg
+        assert "8 pessoa(s) disponíveis" in msg
+
