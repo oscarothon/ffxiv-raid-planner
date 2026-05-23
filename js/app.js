@@ -373,6 +373,10 @@ function hydrateState(parsed) {
         const assignedJob = player.assignedJob || player.job || jobsPool[0];
         const assignedJobsByProg = player.assignedJobsByProg || {};
         const monthlySchedule = player.monthlySchedule || {};
+        // Retrocompat: "late" renomeado para "maybe" (Fase Q — status unificado)
+        Object.keys(monthlySchedule).forEach(k => {
+            if (monthlySchedule[k] === "late") monthlySchedule[k] = "maybe";
+        });
         const statusByProg = player.statusByProg || {};
         const baseStatus = player.status === "bench" ? "bench" : "active";
 
@@ -2966,7 +2970,7 @@ function renderScheduleTable() {
             let statusText = "";
             let statusClass = "";
             if (statusVal === "avail") { statusText = "✔️"; statusClass = "avail"; }
-            else if (statusVal === "late") { statusText = "⚠️"; statusClass = "late"; }
+            else if (statusVal === "maybe") { statusText = "⚠️"; statusClass = "late"; }
             else if (statusVal === "unavail") { statusText = "❌"; statusClass = "unavail"; }
 
             // Fase P — sinaliza visualmente quando o jogador marcou avail mas
@@ -2999,12 +3003,12 @@ function renderScheduleTable() {
                 tdDay.addEventListener("click", () => {
                     playSfx('click');
                     if (statusVal === "") player.monthlySchedule[dateKey] = "avail";
-                    else if (statusVal === "avail") player.monthlySchedule[dateKey] = "late";
-                    else if (statusVal === "late") player.monthlySchedule[dateKey] = "unavail";
+                    else if (statusVal === "avail") player.monthlySchedule[dateKey] = "maybe";
+                    else if (statusVal === "maybe") player.monthlySchedule[dateKey] = "unavail";
                     else delete player.monthlySchedule[dateKey];
 
                     const newStatus = player.monthlySchedule[dateKey] || "";
-                    if (newStatus === "avail" || newStatus === "late") {
+                    if (newStatus === "avail" || newStatus === "maybe") {
                         (state.pendingNotifications || [])
                             .filter(n => n.date === dateKey)
                             .forEach(n => markNotificationSeen(n.id));
@@ -3180,7 +3184,7 @@ function renderQuickSchedule() {
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) tAvail.push(displayName);
                     else tIncompat.push(displayName);
-                } else if (sVal === "late") {
+                } else if (sVal === "maybe") {
                     tLate.push(displayName);
                 }
             });
@@ -3191,7 +3195,7 @@ function renderQuickSchedule() {
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) rAvail.push(displayName);
                     else rIncompat.push(displayName);
-                } else if (sVal === "late") {
+                } else if (sVal === "maybe") {
                     rLate.push(displayName);
                 }
             });
@@ -3253,7 +3257,7 @@ function renderQuickSchedule() {
                 }
                 const lateAll = [...lateTitulares, ...lateReservas];
                 if (lateAll.length > 0) {
-                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Status incerto (Talvez/Atraso) — não confirmados: ${lateAll.join(", ")}</div>`;
+                    alertsHtml += `<div style="background: rgba(234,179,8,0.2); border: 1px solid var(--color-late); color: var(--gold-bright); font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Status incerto (Talvez) — não confirmados: ${lateAll.join(", ")}</div>`;
                 }
                 if (confReservas.length > 0) {
                     alertsHtml += `<div style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: bold; margin-top: 4px;">Banco disponível: ${confReservas.join(", ")}</div>`;

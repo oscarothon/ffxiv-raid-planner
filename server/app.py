@@ -1129,7 +1129,7 @@ def _is_event_compatible(state_data, event, character):
 def _count_confirmed_for_date(state_data, date_str, event=None, characters=None):
     """Conta jogadores com 'avail' no monthlySchedule da data.
 
-    'late' (Talvez/Atraso) é status incerto e não conta como confirmação.
+    'maybe' (Talvez) é status incerto e não conta como confirmação.
 
     Fase P — quando `event` e `characters` (map {user_id: character_json}) são
     fornecidos, filtra por compatibilidade: jogadores incompatíveis (expansão
