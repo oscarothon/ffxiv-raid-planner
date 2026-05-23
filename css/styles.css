@@ -2056,7 +2056,7 @@ label {
 }
 
 .cell-status.avail { background: rgba(16, 185, 129, 0.1); }
-.cell-status.late { background: rgba(245, 158, 11, 0.1); }
+.cell-status.late, .cell-status.maybe { background: rgba(245, 158, 11, 0.1); }
 .cell-status.unavail { background: rgba(239, 68, 68, 0.1); }
 
 /* Fase P — célula com avail mas jogador incompatível com o evento daquele dia
