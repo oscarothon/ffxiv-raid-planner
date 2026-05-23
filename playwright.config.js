@@ -33,7 +33,10 @@ module.exports = defineConfig({
     // Remove the stale DB before starting Flask so init_db() always runs on
     // a clean slate. The `rm -f` is safe — it silently does nothing if the
     // file does not exist.
-    command: `rm -f ${path.resolve(__dirname, "tests/e2e/.tmp-e2e.db")} && .venv/bin/python -m flask --app server.app run --port 5050`,
+    //
+    // PYTHON env var overrides the interpreter — default é `.venv/bin/python`
+    // (local Unix), CI seta `python` (Python global do setup-python action).
+    command: `rm -f ${path.resolve(__dirname, "tests/e2e/.tmp-e2e.db")} && ${process.env.PYTHON || ".venv/bin/python"} -m flask --app server.app run --port 5050`,
     url: "http://127.0.0.1:5050",
     timeout: 30_000,
     reuseExistingServer: false,
