@@ -446,6 +446,33 @@ class TestCountConfirmedForDate:
         state = _state(roster=[{"user_id": 1, "monthlySchedule": {}}])
         assert app_module._count_confirmed_for_date(state, "2025-06-01") == 0
 
+    # ----- Fase Q: schema novo {status, ranges} -----
+
+    def test_accepts_new_dict_schema_status_avail(self, app_module):
+        """Fase Q — monthlySchedule[date] pode ser {status, ranges} (objeto novo)."""
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": {"status": "avail", "ranges": []}}},
+            {"user_id": 2, "monthlySchedule": {"2025-06-01": {"status": "maybe", "ranges": []}}},
+            {"user_id": 3, "monthlySchedule": {"2025-06-01": {"status": "unavail", "ranges": []}}},
+        ])
+        assert app_module._count_confirmed_for_date(state, "2025-06-01") == 1
+
+    def test_mixed_string_and_dict_schemas(self, app_module):
+        """Fase Q — string legada e dict novo coexistem; backend trata os dois."""
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": "avail"}},
+            {"user_id": 2, "monthlySchedule": {"2025-06-01": {"status": "avail", "ranges": [{"start":"20:00","end":"23:00"}]}}},
+            {"user_id": 3, "monthlySchedule": {"2025-06-01": {"status": "maybe", "ranges": []}}},
+        ])
+        assert app_module._count_confirmed_for_date(state, "2025-06-01") == 2
+
+    def test_dict_with_missing_status_treated_as_unavail(self, app_module):
+        """Fase Q — dict mal-formado (sem .status) não conta."""
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": {"ranges": []}}},
+        ])
+        assert app_module._count_confirmed_for_date(state, "2025-06-01") == 0
+
 
 # ---------------------------------------------------------------------------
 # _is_dynamic_prog
