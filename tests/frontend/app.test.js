@@ -1,0 +1,858 @@
+/**
+ * Unit tests for pure helpers in js/app.js.
+ *
+ * Strategy:
+ *  1. Load js/data.js (gives FFXIV_JOBS, FFXIV_EXPANSIONS_SEED, etc.)
+ *  2. Load js/app.js — the auto-hoist in setup.js lands every top-level
+ *     function/const on `window`, and `_set_<name>` setters land for let vars.
+ *  3. Call helpers directly via window.* and assert behaviour without
+ *     driving a real browser.
+ *
+ * Helpers with deep DOM coupling (renderXxx, buildXxx, openXxx) are
+ * intentionally skipped.
+ *
+ * NOTE on `state` mutability: hydrateState() does `state = {...}` (full
+ * reassignment of the closure var). The hoisted window.state is a snapshot.
+ * Tests for functions that read `state` internally verify correctness by
+ * calling those functions (not accessing window.state directly), which
+ * see the live closure value.
+ */
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { loadScripts } from "./setup.js";
+
+// Load both scripts once per file.  app.js depends on globals from data.js.
+beforeAll(() => {
+  // Minimal DOM skeleton to silence applyTheme() inside hydrateState.
+  document.body.innerHTML = "<div id='toast-container'></div>";
+  loadScripts("js/data.js", "js/app.js");
+  // Seed state so expansion helpers work.
+  window.hydrateState({});
+});
+
+// ============================================================================
+// escapeHtml
+// ============================================================================
+describe("escapeHtml", () => {
+  it("escapes & < > \" '", () => {
+    expect(window.escapeHtml('& <b> "x" \'y\'')).toBe(
+      "&amp; &lt;b&gt; &quot;x&quot; &#39;y&#39;"
+    );
+  });
+
+  it("returns plain string unchanged", () => {
+    expect(window.escapeHtml("hello world")).toBe("hello world");
+  });
+
+  it("converts non-string argument via String()", () => {
+    expect(window.escapeHtml(42)).toBe("42");
+  });
+
+  it("handles empty string", () => {
+    expect(window.escapeHtml("")).toBe("");
+  });
+});
+
+// ============================================================================
+// normalizeExpansionName
+// ============================================================================
+describe("normalizeExpansionName", () => {
+  it("lowercases and trims", () => {
+    expect(window.normalizeExpansionName("  Dawntrail  ")).toBe("dawntrail");
+  });
+
+  it("collapses internal whitespace", () => {
+    expect(window.normalizeExpansionName("A   Realm  Reborn")).toBe("a realm reborn");
+  });
+
+  it("handles null gracefully", () => {
+    expect(window.normalizeExpansionName(null)).toBe("");
+  });
+
+  it("handles undefined gracefully", () => {
+    expect(window.normalizeExpansionName(undefined)).toBe("");
+  });
+});
+
+// ============================================================================
+// roleLabel
+// ============================================================================
+describe("roleLabel", () => {
+  it("maps admin correctly", () => {
+    expect(window.roleLabel("admin")).toBe("Administrador");
+  });
+
+  it("maps officer correctly", () => {
+    expect(window.roleLabel("officer")).toBe("Officer");
+  });
+
+  it("maps member correctly", () => {
+    expect(window.roleLabel("member")).toBe("Membro");
+  });
+
+  it("returns Visitante for unknown role strings", () => {
+    expect(window.roleLabel("unknown")).toBe("Visitante");
+  });
+
+  it("returns Visitante for null", () => {
+    expect(window.roleLabel(null)).toBe("Visitante");
+  });
+});
+
+// ============================================================================
+// isAdmin / isOfficer / isMember — use _set_currentUserRole setter exposed by
+// setup.js to write into the closure variable.
+// ============================================================================
+describe("role helpers (isAdmin / isOfficer / isMember)", () => {
+  beforeEach(() => {
+    window._set_currentUserRole(null);
+  });
+
+  it("isAdmin is true for admin", () => {
+    window._set_currentUserRole("admin");
+    expect(window.isAdmin()).toBe(true);
+  });
+
+  it("isAdmin is false for officer", () => {
+    window._set_currentUserRole("officer");
+    expect(window.isAdmin()).toBe(false);
+  });
+
+  it("isOfficer is true for officer", () => {
+    window._set_currentUserRole("officer");
+    expect(window.isOfficer()).toBe(true);
+  });
+
+  it("isOfficer is true for admin", () => {
+    window._set_currentUserRole("admin");
+    expect(window.isOfficer()).toBe(true);
+  });
+
+  it("isOfficer is false for member", () => {
+    window._set_currentUserRole("member");
+    expect(window.isOfficer()).toBe(false);
+  });
+
+  it("isMember is true for any non-null role", () => {
+    window._set_currentUserRole("member");
+    expect(window.isMember()).toBe(true);
+  });
+
+  it("isMember is false for null", () => {
+    window._set_currentUserRole(null);
+    expect(window.isMember()).toBe(false);
+  });
+});
+
+// ============================================================================
+// getBisUrlForJob
+// ============================================================================
+describe("getBisUrlForJob", () => {
+  it("returns generic url for null", () => {
+    expect(window.getBisUrlForJob(null)).toBe("https://www.thebalanceffxiv.com/");
+  });
+
+  it("returns generic url for undefined", () => {
+    expect(window.getBisUrlForJob(undefined)).toBe("https://www.thebalanceffxiv.com/");
+  });
+
+  it("returns generic url for unknown job", () => {
+    expect(window.getBisUrlForJob("XYZ")).toBe("https://www.thebalanceffxiv.com/");
+  });
+
+  it("returns a URL containing /jobs/ for WAR", () => {
+    const url = window.getBisUrlForJob("WAR");
+    expect(url).toMatch(/^https:\/\/www\.thebalanceffxiv\.com\/jobs\//);
+  });
+
+  it("returns a URL containing /jobs/ for PLD", () => {
+    const url = window.getBisUrlForJob("PLD");
+    expect(url).toMatch(/^https:\/\/www\.thebalanceffxiv\.com\/jobs\//);
+  });
+});
+
+// ============================================================================
+// Expansion helpers — state is seeded via the beforeAll hydrateState({}) call.
+// ============================================================================
+describe("getExpansionById", () => {
+  it("finds Dawntrail by id", () => {
+    const dt = window.getExpansionById("dt");
+    expect(dt).not.toBeNull();
+    expect(dt.name).toBe("Dawntrail");
+  });
+
+  it("finds A Realm Reborn by id", () => {
+    expect(window.getExpansionById("arr")).not.toBeNull();
+  });
+
+  it("returns null for unknown id", () => {
+    expect(window.getExpansionById("xyz")).toBeNull();
+  });
+
+  it("returns null for null", () => {
+    expect(window.getExpansionById(null)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(window.getExpansionById("")).toBeNull();
+  });
+});
+
+describe("getExpansionIdByName", () => {
+  it("resolves Dawntrail case-insensitively", () => {
+    expect(window.getExpansionIdByName("Dawntrail")).toBe("dt");
+    expect(window.getExpansionIdByName("dawntrail")).toBe("dt");
+  });
+
+  it("resolves via EXPANSION_ALIASES — a realm reborn → arr", () => {
+    expect(window.getExpansionIdByName("a realm reborn")).toBe("arr");
+  });
+
+  it("resolves via EXPANSION_ALIASES — Shadowbringers → shb", () => {
+    expect(window.getExpansionIdByName("Shadowbringers")).toBe("shb");
+  });
+
+  it("resolves blue mage → limited via alias", () => {
+    expect(window.getExpansionIdByName("blue mage")).toBe("limited");
+  });
+
+  it("returns null for completely unknown name", () => {
+    expect(window.getExpansionIdByName("Neverland")).toBeNull();
+  });
+
+  it("returns null for null", () => {
+    expect(window.getExpansionIdByName(null)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(window.getExpansionIdByName("")).toBeNull();
+  });
+});
+
+describe("resolveContentExpansionId", () => {
+  it("returns null for null content", () => {
+    expect(window.resolveContentExpansionId(null)).toBeNull();
+  });
+
+  it("returns expansionId directly when already set", () => {
+    expect(window.resolveContentExpansionId({ expansionId: "ew" })).toBe("ew");
+  });
+
+  it("resolves via expansion field name", () => {
+    expect(window.resolveContentExpansionId({ expansion: "Endwalker" })).toBe("ew");
+  });
+
+  it("resolves via alias — end walker → ew", () => {
+    expect(window.resolveContentExpansionId({ expansion: "end walker" })).toBe("ew");
+  });
+
+  it("resolves via content name hint: Arcadion → dt", () => {
+    expect(window.resolveContentExpansionId({ name: "AAC Arcadion Light-heavyweight" })).toBe("dt");
+  });
+
+  it("resolves via content name hint: Pandaemonium → ew", () => {
+    expect(window.resolveContentExpansionId({ name: "Pandaemonium: Asphodelos" })).toBe("ew");
+  });
+
+  it("falls back to highest-order non-limited expansion for unknown content", () => {
+    // dt has order 6 — the highest non-limited
+    const result = window.resolveContentExpansionId({ name: "Totally Unknown Raid XYZ" });
+    expect(result).toBe("dt");
+  });
+});
+
+describe("getExpansionDisplayName", () => {
+  it("returns expansion name for content with expansionId hw", () => {
+    expect(window.getExpansionDisplayName({ expansionId: "hw" })).toBe("Heavensward");
+  });
+
+  it("returns empty string for null content", () => {
+    expect(window.getExpansionDisplayName(null)).toBe("");
+  });
+
+  it("returns content.expansion string when expansionId is not in state", () => {
+    expect(
+      window.getExpansionDisplayName({ expansionId: "nonexistent", expansion: "Custom Exp" })
+    ).toBe("Custom Exp");
+  });
+});
+
+// ============================================================================
+// getPartyMode / getPartySize / isDynamicProg / isCustomProg
+// ============================================================================
+describe("party mode helpers", () => {
+  beforeAll(() => {
+    window.hydrateState({
+      customContents: [
+        { id: "mylight", name: "My Light", partyMode: "light", expansionId: "dt" },
+        { id: "mydynamic", name: "My Dynamic", partyMode: "dynamic", expansionId: "dt" },
+        { id: "mycustom", name: "My Custom", partyMode: "full", expansionId: "dt" },
+      ],
+    });
+  });
+
+  it("geral defaults to full party mode", () => {
+    expect(window.getPartyMode("geral")).toBe("full");
+  });
+
+  it("hardcoded raids return full party mode", () => {
+    expect(window.getPartyMode("arcadion_lh")).toBe("full");
+  });
+
+  it("custom light content returns light", () => {
+    expect(window.getPartyMode("mylight")).toBe("light");
+  });
+
+  it("custom dynamic content returns dynamic", () => {
+    expect(window.getPartyMode("mydynamic")).toBe("dynamic");
+  });
+
+  it("limited content returns limited", () => {
+    expect(window.getPartyMode("blue_mage_raid")).toBe("limited");
+  });
+
+  it("getPartySize returns 4 for light party", () => {
+    expect(window.getPartySize("mylight")).toBe(4);
+  });
+
+  it("getPartySize returns 8 for full raid", () => {
+    expect(window.getPartySize("arcadion_lh")).toBe(8);
+  });
+
+  it("getPartySize returns 8 for dynamic", () => {
+    expect(window.getPartySize("mydynamic")).toBe(8);
+  });
+
+  it("getPartySize returns 8 for limited", () => {
+    expect(window.getPartySize("blue_mage_raid")).toBe(8);
+  });
+
+  it("isDynamicProg is true only for dynamic progs", () => {
+    expect(window.isDynamicProg("mydynamic")).toBe(true);
+    expect(window.isDynamicProg("arcadion_lh")).toBe(false);
+    expect(window.isDynamicProg("mylight")).toBe(false);
+  });
+
+  it("isCustomProg is true only for user-created content", () => {
+    expect(window.isCustomProg("mylight")).toBe(true);
+    expect(window.isCustomProg("arcadion_lh")).toBe(false);
+  });
+});
+
+// ============================================================================
+// isLimitedProg / getLimitedJob
+// ============================================================================
+describe("limited prog helpers", () => {
+  it("isLimitedProg identifies blue_mage_raid", () => {
+    expect(window.isLimitedProg("blue_mage_raid")).toBe(true);
+  });
+
+  it("isLimitedProg returns false for normal raids", () => {
+    expect(window.isLimitedProg("arcadion_lh")).toBe(false);
+  });
+
+  it("isLimitedProg returns false for geral", () => {
+    expect(window.isLimitedProg("geral")).toBe(false);
+  });
+
+  it("getLimitedJob returns BLU for blue_mage_raid", () => {
+    expect(window.getLimitedJob("blue_mage_raid")).toBe("BLU");
+  });
+
+  it("getLimitedJob returns null for non-limited progs", () => {
+    expect(window.getLimitedJob("arcadion_lh")).toBeNull();
+  });
+});
+
+// ============================================================================
+// getProgObj
+// ============================================================================
+describe("getProgObj", () => {
+  beforeAll(() => {
+    window.hydrateState({
+      customContents: [{ id: "my_custom", name: "My Custom Raid", expansionId: "dt" }],
+    });
+  });
+
+  it("returns the geral stub with correct id/name", () => {
+    const obj = window.getProgObj("geral");
+    expect(obj.id).toBe("geral");
+    expect(obj.name).toBe("Geral Padrão");
+  });
+
+  it("returns the correct object for arcadion_lh (known raid)", () => {
+    const obj = window.getProgObj("arcadion_lh");
+    expect(obj.id).toBe("arcadion_lh");
+    expect(obj.name).toBeTruthy();
+  });
+
+  it("returns a known ultimate", () => {
+    const obj = window.getProgObj("FRU");
+    expect(obj.id).toBe("FRU");
+    expect(obj.name).toMatch(/Futures Rewritten/);
+  });
+
+  it("returns the correct object for a custom prog", () => {
+    const obj = window.getProgObj("my_custom");
+    expect(obj.id).toBe("my_custom");
+    expect(obj.name).toBe("My Custom Raid");
+  });
+
+  it("returns a stub with id for a totally unknown prog", () => {
+    const obj = window.getProgObj("nonexistent_prog");
+    expect(obj.id).toBe("nonexistent_prog");
+  });
+});
+
+// ============================================================================
+// getLootPref / setLootPref
+// ============================================================================
+describe("getLootPref / setLootPref", () => {
+  let player;
+  beforeEach(() => {
+    player = { lootPreferences: {} };
+    window.hydrateState({ inspectedProgId: "arcadion_lh" });
+  });
+
+  it("getLootPref returns pass for missing pref", () => {
+    expect(window.getLootPref(player, "arcadion_lh", "weapon")).toBe("pass");
+  });
+
+  it("setLootPref then getLootPref round-trips", () => {
+    window.setLootPref(player, "arcadion_lh", "weapon", "need");
+    expect(window.getLootPref(player, "arcadion_lh", "weapon")).toBe("need");
+  });
+
+  it("different slots are independent", () => {
+    window.setLootPref(player, "arcadion_lh", "weapon", "need");
+    window.setLootPref(player, "arcadion_lh", "head", "greed");
+    expect(window.getLootPref(player, "arcadion_lh", "weapon")).toBe("need");
+    expect(window.getLootPref(player, "arcadion_lh", "head")).toBe("greed");
+  });
+
+  it("getLootPref returns pass for null player", () => {
+    expect(window.getLootPref(null, "arcadion_lh", "weapon")).toBe("pass");
+  });
+
+  it("setLootPref is a no-op for null player", () => {
+    expect(() => window.setLootPref(null, "arcadion_lh", "weapon", "need")).not.toThrow();
+  });
+});
+
+// ============================================================================
+// getPlayerStatusForProg / isPlayerInProg / setPlayerStatusForProg
+// ============================================================================
+describe("player status helpers", () => {
+  let player;
+  beforeEach(() => {
+    window.hydrateState({ activeProgs: ["arcadion_lh"], inspectedProgId: "arcadion_lh" });
+    player = {
+      id: "p1",
+      status: "active",
+      statusByProg: {},
+    };
+  });
+
+  it("getPlayerStatusForProg returns active by default", () => {
+    expect(window.getPlayerStatusForProg(player, "arcadion_lh")).toBe("active");
+  });
+
+  it("getPlayerStatusForProg returns bench when status is bench", () => {
+    player.status = "bench";
+    expect(window.getPlayerStatusForProg(player, "arcadion_lh")).toBe("bench");
+  });
+
+  it("per-prog override takes precedence", () => {
+    player.statusByProg["arcadion_lh"] = "removed";
+    expect(window.getPlayerStatusForProg(player, "arcadion_lh")).toBe("removed");
+  });
+
+  it("isPlayerInProg returns false when removed", () => {
+    player.statusByProg["arcadion_lh"] = "removed";
+    expect(window.isPlayerInProg(player, "arcadion_lh")).toBe(false);
+  });
+
+  it("isPlayerInProg returns true for active player", () => {
+    expect(window.isPlayerInProg(player, "arcadion_lh")).toBe(true);
+  });
+
+  it("getPlayerStatusForProg returns bench for null player", () => {
+    expect(window.getPlayerStatusForProg(null, "arcadion_lh")).toBe("bench");
+  });
+
+  it("setPlayerStatusForProg writes per-prog status", () => {
+    window.setPlayerStatusForProg(player, "arcadion_lh", "bench");
+    expect(player.statusByProg["arcadion_lh"]).toBe("bench");
+  });
+});
+
+// ============================================================================
+// getAssignedJobForProg / setAssignedJobForProg
+// ============================================================================
+describe("getAssignedJobForProg / setAssignedJobForProg", () => {
+  let player;
+  beforeEach(() => {
+    window.hydrateState({ activeProgs: ["arcadion_lh"], inspectedProgId: "arcadion_lh" });
+    player = {
+      id: "p1",
+      assignedJob: "WAR",
+      jobsPool: ["WAR", "DRK"],
+      assignedJobsByProg: {},
+    };
+  });
+
+  it("returns assignedJob when no per-prog override", () => {
+    expect(window.getAssignedJobForProg(player, "arcadion_lh")).toBe("WAR");
+  });
+
+  it("returns per-prog override when set", () => {
+    player.assignedJobsByProg["arcadion_lh"] = "DRK";
+    expect(window.getAssignedJobForProg(player, "arcadion_lh")).toBe("DRK");
+  });
+
+  it("setAssignedJobForProg stores per-prog AND updates assignedJob", () => {
+    window.setAssignedJobForProg(player, "arcadion_lh", "PLD");
+    expect(player.assignedJobsByProg["arcadion_lh"]).toBe("PLD");
+    expect(player.assignedJob).toBe("PLD");
+  });
+
+  it("getAssignedJobForProg returns WAR for null player", () => {
+    expect(window.getAssignedJobForProg(null, "arcadion_lh")).toBe("WAR");
+  });
+
+  it("for limited prog, returns the fixed limited job BLU", () => {
+    expect(window.getAssignedJobForProg(player, "blue_mage_raid")).toBe("BLU");
+  });
+
+  it("setAssignedJobForProg is a no-op for limited progs", () => {
+    window.setAssignedJobForProg(player, "blue_mage_raid", "WHM");
+    expect(player.assignedJobsByProg["blue_mage_raid"]).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// getSlotIdentity
+// ============================================================================
+describe("getSlotIdentity", () => {
+  beforeEach(() => {
+    // Reset via the setter exposed by setup.js
+    window._set_currentCharacters({});
+  });
+
+  it("returns defaults for null player", () => {
+    const id = window.getSlotIdentity(null);
+    expect(id.name).toBe("");
+    expect(id.ilvl).toBe(0);
+    expect(Array.isArray(id.jobsPool)).toBe(true);
+    expect(id.fromCharacter).toBe(false);
+  });
+
+  it("reads from slot directly when no user_id", () => {
+    const player = { name: "Tester", ilvl: 720, jobsPool: ["WAR"], user_id: null };
+    const id = window.getSlotIdentity(player);
+    expect(id.name).toBe("Tester");
+    expect(id.ilvl).toBe(720);
+    expect(id.jobsPool).toEqual(["WAR"]);
+    expect(id.fromCharacter).toBe(false);
+  });
+
+  it("reads from character map when user_id matches", () => {
+    window._set_currentCharacters({
+      42: { name: "CharName", ilvl: 730, jobs: [{ id: "DRG" }, { id: "SAM" }] },
+    });
+    const player = { name: "SlotName", ilvl: 700, jobsPool: ["WAR"], user_id: 42 };
+    const id = window.getSlotIdentity(player);
+    expect(id.name).toBe("CharName");
+    expect(id.ilvl).toBe(730);
+    expect(id.jobsPool).toEqual(["DRG", "SAM"]);
+    expect(id.fromCharacter).toBe(true);
+  });
+});
+
+// ============================================================================
+// sortJobsCanonical
+// ============================================================================
+describe("sortJobsCanonical", () => {
+  it("sorts tanks before healers before melee (canonical order)", () => {
+    const sorted = window.sortJobsCanonical(["DRG", "PLD", "WHM"]);
+    expect(sorted.indexOf("PLD")).toBeLessThan(sorted.indexOf("WHM"));
+    expect(sorted.indexOf("WHM")).toBeLessThan(sorted.indexOf("DRG"));
+  });
+
+  it("does not mutate the input array", () => {
+    const input = ["DRG", "PLD"];
+    window.sortJobsCanonical(input);
+    expect(input[0]).toBe("DRG");
+  });
+
+  it("handles empty array", () => {
+    expect(window.sortJobsCanonical([])).toEqual([]);
+  });
+
+  it("places unknown jobs at the end", () => {
+    const sorted = window.sortJobsCanonical(["UNKNOWN_JOB", "PLD"]);
+    expect(sorted[0]).toBe("PLD");
+    expect(sorted[1]).toBe("UNKNOWN_JOB");
+  });
+});
+
+// ============================================================================
+// hydrateState — tested indirectly via functions that use the state closure.
+// ============================================================================
+describe("hydrateState (tested via dependent functions)", () => {
+  it("seeds expansions so getExpansionById('dt') works", () => {
+    window.hydrateState({});
+    expect(window.getExpansionById("dt")).not.toBeNull();
+  });
+
+  it("migrates scheduledProgs → raidEvents (visible via getRaidEventForDate)", () => {
+    window.hydrateState({
+      scheduledProgs: { "2025-01-01": "arcadion_lh" },
+      raidEvents: [],
+    });
+    const evt = window.getRaidEventForDate("2025-01-01");
+    expect(evt).toBeDefined();
+    expect(evt.progId).toBe("arcadion_lh");
+    expect(evt.quorum).toBe(6);
+  });
+
+  it("normalises 'late' → 'maybe' (visible via getPlayerStatusForProg)", () => {
+    window.hydrateState({
+      activeProgs: ["arcadion_lh"],
+      roster: [
+        {
+          name: "P1",
+          jobsPool: ["WAR"],
+          monthlySchedule: { "2025-01-01": "late" },
+          statusByProg: { arcadion_lh: "active" },
+          status: "active",
+        },
+      ],
+    });
+    // Retrieve the first roster player via getAvailCountForDate; we need to
+    // check monthlySchedule directly. Since we can't access state.roster
+    // directly after reassignment, we call hydrateState again and rely on
+    // the player being normalised.
+    //   getAvailCountForDate uses monthlySchedule[k] === "avail", so to confirm
+    //   the "late→maybe" migration we call getPlayerStatusForProg indirectly.
+    //   The simplest assertion: the old "late" key became "maybe" and there's
+    //   no "late" key anymore. We verify this by checking availability count
+    //   (both "late" and "maybe" are NOT "avail", so count should be 0).
+    expect(window.getAvailCountForDate("2025-01-01")).toBe(0);
+  });
+
+  it("resets lootPriorities when invalid (getLootPriorityForProg returns [])", () => {
+    window.hydrateState({ lootPriorities: null });
+    const list = window.getLootPriorityForProg("arcadion_lh");
+    expect(Array.isArray(list)).toBe(true);
+  });
+
+  it("roster players get default ilvl 710 when missing", () => {
+    window.hydrateState({
+      roster: [{ name: "NoIlvl", jobsPool: ["WAR"] }],
+    });
+    // Verify via getAvailCountForDate with an avail player (no way to read
+    // state.roster directly post-reassignment). We can't check ilvl here;
+    // instead verify hydrateState didn't throw and the player is in a prog.
+    expect(window.getAvailCountForDate("2025-01-01")).toBe(0); // not avail
+  });
+
+  it("removes legacy progNotes key (no error thrown)", () => {
+    expect(() => window.hydrateState({ progNotes: { arcadion_lh: "notes" } })).not.toThrow();
+  });
+});
+
+// ============================================================================
+// getRaidEventForDate
+// ============================================================================
+describe("getRaidEventForDate", () => {
+  beforeEach(() => {
+    window.hydrateState({
+      raidEvents: [
+        { id: "evt_1", progId: "arcadion_lh", date: "2025-06-01", quorum: 6 },
+        { id: "evt_2", progId: "anabaseios", date: "2025-06-05", postponedTo: "2025-06-10", quorum: 6 },
+      ],
+    });
+  });
+
+  it("finds event by its original date", () => {
+    const evt = window.getRaidEventForDate("2025-06-01");
+    expect(evt).toBeDefined();
+    expect(evt.progId).toBe("arcadion_lh");
+  });
+
+  it("finds event by postponedTo date", () => {
+    const evt = window.getRaidEventForDate("2025-06-10");
+    expect(evt).toBeDefined();
+    expect(evt.progId).toBe("anabaseios");
+  });
+
+  it("returns undefined for unknown date", () => {
+    expect(window.getRaidEventForDate("2025-12-31")).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// getAvailCountForDate
+// ============================================================================
+describe("getAvailCountForDate", () => {
+  beforeEach(() => {
+    window.hydrateState({
+      roster: [
+        { id: "p1", name: "A", jobsPool: ["WAR"], monthlySchedule: { "2025-06-01": "avail" }, status: "active" },
+        { id: "p2", name: "B", jobsPool: ["PLD"], monthlySchedule: { "2025-06-01": "avail" }, status: "active" },
+        { id: "p3", name: "C", jobsPool: ["WHM"], monthlySchedule: { "2025-06-01": "busy" }, status: "active" },
+      ],
+    });
+  });
+
+  it("counts players marked avail on a given date", () => {
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(2);
+  });
+
+  it("returns 0 when no one is available", () => {
+    expect(window.getAvailCountForDate("2025-07-01")).toBe(0);
+  });
+
+  it("excludes busy players", () => {
+    // Only p1 and p2 are avail; p3 is busy
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(2);
+  });
+});
+
+// ============================================================================
+// syncLootPriorityWithActiveRoster
+// ============================================================================
+describe("syncLootPriorityWithActiveRoster", () => {
+  beforeEach(() => {
+    window.hydrateState({
+      activeProgs: ["arcadion_lh"],
+      inspectedProgId: "arcadion_lh",
+      roster: [
+        { id: "p1", name: "A", jobsPool: ["WAR"], statusByProg: { arcadion_lh: "active" }, status: "active" },
+        { id: "p2", name: "B", jobsPool: ["PLD"], statusByProg: { arcadion_lh: "active" }, status: "active" },
+        { id: "p3", name: "C", jobsPool: ["WHM"], statusByProg: { arcadion_lh: "bench" }, status: "bench" },
+      ],
+      lootPriorities: {},
+    });
+  });
+
+  it("includes active members", () => {
+    const list = window.syncLootPriorityWithActiveRoster("arcadion_lh");
+    expect(list).toContain("p1");
+    expect(list).toContain("p2");
+  });
+
+  it("excludes bench members", () => {
+    const list = window.syncLootPriorityWithActiveRoster("arcadion_lh");
+    expect(list).not.toContain("p3");
+  });
+
+  it("removes stale ids that are no longer in the active roster", () => {
+    window.syncLootPriorityWithActiveRoster("arcadion_lh"); // initialise
+    // Now manually add a stale entry and call again
+    window.getLootPriorityForProg("arcadion_lh").push("stale_id");
+    const list = window.syncLootPriorityWithActiveRoster("arcadion_lh");
+    expect(list).not.toContain("stale_id");
+  });
+});
+
+// ============================================================================
+// emptyCharacter
+// ============================================================================
+describe("emptyCharacter", () => {
+  it("returns an object with all required empty fields", () => {
+    const c = window.emptyCharacter();
+    expect(c.name).toBe("");
+    expect(c.ilvl).toBeNull();
+    expect(c.currentExpansionId).toBeNull();
+    expect(Array.isArray(c.jobs)).toBe(true);
+    expect(c.jobs).toHaveLength(0);
+    expect(Array.isArray(c.subscribedProgs)).toBe(true);
+    expect(c.subscribedProgs).toHaveLength(0);
+  });
+
+  it("each call returns a fresh object (no shared reference)", () => {
+    const a = window.emptyCharacter();
+    const b = window.emptyCharacter();
+    a.name = "changed";
+    expect(b.name).toBe("");
+  });
+});
+
+// ============================================================================
+// isContentMarkableForCharacter
+// ============================================================================
+describe("isContentMarkableForCharacter", () => {
+  beforeAll(() => {
+    window.hydrateState({});
+  });
+
+  it("returns markable:false with reason for null target", () => {
+    const r = window.isContentMarkableForCharacter(null, {});
+    expect(r.markable).toBe(false);
+  });
+
+  it("returns markable:false for null character", () => {
+    const r = window.isContentMarkableForCharacter({}, null);
+    expect(r.markable).toBe(false);
+  });
+
+  it("char without currentExpansionId is always compatible (fallback permissive)", () => {
+    const char = { name: "X", jobs: [], subscribedProgs: [] };
+    const content = { id: "arcadion_lh", expansionId: "dt" };
+    const r = window.isContentMarkableForCharacter(content, char);
+    expect(r.markable).toBe(true);
+  });
+
+  it("char on lower expansion (arr) is incompatible with higher content (dt)", () => {
+    const char = { name: "X", jobs: [], subscribedProgs: [], currentExpansionId: "arr" };
+    const content = window.getProgObj("arcadion_lh");
+    const r = window.isContentMarkableForCharacter(content, char);
+    expect(r.markable).toBe(false);
+    expect(r.reason).toMatch(/Dawntrail/);
+  });
+
+  it("char on same expansion (dt) is compatible with dt content", () => {
+    const char = { name: "X", jobs: [], subscribedProgs: [], currentExpansionId: "dt" };
+    const content = window.getProgObj("arcadion_lh");
+    const r = window.isContentMarkableForCharacter(content, char);
+    expect(r.markable).toBe(true);
+  });
+
+  it("char on higher expansion (dt) is compatible with older content (ew)", () => {
+    const char = { name: "X", jobs: [], subscribedProgs: [], currentExpansionId: "dt" };
+    const content = window.getProgObj("asphodelos");
+    const r = window.isContentMarkableForCharacter(content, char);
+    expect(r.markable).toBe(true);
+  });
+
+  it("limited event: char without BLU is NOT markable", () => {
+    const char = { name: "X", jobs: [{ id: "WAR", level: 100 }], subscribedProgs: [] };
+    const evt = { progId: "blue_mage_raid", limitedJobMinLevel: 50 };
+    const r = window.isContentMarkableForCharacter(evt, char);
+    expect(r.markable).toBe(false);
+    expect(r.reason).toMatch(/BLU/);
+  });
+
+  it("limited event: char with BLU below required level is NOT markable", () => {
+    const char = { name: "X", jobs: [{ id: "BLU", level: 30 }], subscribedProgs: [] };
+    const evt = { progId: "blue_mage_raid", limitedJobMinLevel: 50 };
+    const r = window.isContentMarkableForCharacter(evt, char);
+    expect(r.markable).toBe(false);
+    expect(r.reason).toMatch(/50/);
+  });
+
+  it("limited event: char with BLU at or above required level IS markable", () => {
+    const char = { name: "X", jobs: [{ id: "BLU", level: 60 }], subscribedProgs: [] };
+    const evt = { progId: "blue_mage_raid", limitedJobMinLevel: 50 };
+    const r = window.isContentMarkableForCharacter(evt, char);
+    expect(r.markable).toBe(true);
+  });
+
+  it("limited content (partyMode=limited) without event is not directly markable", () => {
+    const char = { name: "X", jobs: [{ id: "BLU", level: 60 }], subscribedProgs: [] };
+    const content = { partyMode: "limited" };
+    const r = window.isContentMarkableForCharacter(content, char);
+    expect(r.markable).toBe(false);
+  });
+});

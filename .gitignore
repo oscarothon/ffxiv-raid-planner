@@ -22,3 +22,11 @@ venv/
 *.sqlite
 *.sqlite3
 
+# Test artefatos
+node_modules/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+test-results/
+playwright-report/
