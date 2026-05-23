@@ -10,14 +10,17 @@ Stack atual: Vanilla JS + Flask + SQLite, persistido em `statics.data_json`. Rea
 
 ## Ordem de execução
 
-**Prioridade total nas fases do app principal.** O **Strategy Planner (fases A-I)** fica em backlog — será executado *por último*, depois que N, O, P, Q estiverem em produção.
+**App principal concluído (2026-05-23).** Próximo grande bloco é o **Strategy Planner (fases A-I)**.
 
 Ordem prevista:
 
-1. **Fase Q** — Disponibilidade por Horário (popover do dia + janelas de overlap)
-2. **Fases A-I** — Strategy Planner (canvas SVG colaborativo)
+1. **Fases A-I** — Strategy Planner (canvas SVG colaborativo via Flask-SocketIO)
 
-Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes), O.7 (polimento Party + toasts), P (validação de presença + retrocompat + tz GMT-4).
+Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2 (Party + claim + calendário), O.6 (Limited multi-evento + bugfixes), O.7 (polimento Party + toasts), P (validação de presença + retrocompat + tz GMT-4), **Q1 (schema {status, ranges} + popover de horários, PR #34)**, **Q2 (janelas de overlap + modal + Telegram com horário, PR #36)**.
+
+**Infraestrutura nova (2026-05-23):**
+- CI GitHub Actions roda pytest + vitest + playwright em PR/push (PR #33, PR #35 corrigiu o `PYTHON` env var)
+- Bugfix do Fernando (Coils of Bahamut + Heavensward): `isContentMarkableForCharacter` agora usa `getProgObj(target.progId)` antes de resolver expansão (PR #30)
 
 ---
 
@@ -38,14 +41,12 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 | O.6 | Limited multi-evento + bugfixes | `limitedJobMinLevel`+`eventLabel` por evento (não por conteúdo); Blue Mage pode ter N eventos paralelos com requisitos distintos; Eventos Ativos lista por evento; `state.progNotes` eliminado (descrição não persistia após delete) | ✅ | Sonnet |
 | O.7 | Polimento Party + toasts intermitentes | Botão Editar removido; Excluir vira "remover do prog" (slot continua nos outros); helper `isPlayerInProg`; throttle no toast de erro; `applyRemoteState` atualiza `currentCharacters` | ✅ | Sonnet |
 | P | Validação de Presença + bugfixes paralelos | `avail` filtrado por compatibilidade (expansão / Limited level); cap defensivo de partySize; reminders Telegram em GMT-4; retrocompat para chars sem `currentExpansionId` | ✅ | Opus |
+| P.fix | Bug Fernando — Coils of Bahamut + Heavensward | `isContentMarkableForCharacter` recebia raidEvent direto em `resolveContentExpansionId`, que sem `expansionId` caía no fallback Dawntrail. Fix: usar `getProgObj(target.progId)` (PR #30) | ✅ | Sonnet |
+| Q1 | Schema {status, ranges} + popover de horários | `monthlySchedule[date]` vira objeto `{status, ranges}`; migração automática em hydrateState (string → obj, `late` → `maybe`); raidEvent ganha `time`/`durationMin` (null = horário a definir); popover de disponibilidade com 3 botões + grade 28 slots 12:00→01:30 + click+drag; helpers `getSchedEntry`, `slotsToRanges`, `rangesToSlotIdxs`; badge "?h" no calendário (PR #34) | ✅ | Sonnet |
+| Q2 | Janelas de overlap + modal + Telegram | `computeViableWindows(date, durMin, target, required)` (garantidas/potenciais); `getConfirmationStatusForEvent` (confirmed/partial/maybe/unavail/incompatible/pending); modal de agendamento com input duração + lista de janelas + toggle Modo manual; heatmap "Modo Overlap" no calendário; `getAvailCountForDate` usa derived quando event.time existe; Telegram K/L/M aceitam `time_str`/`duration_min` (PR #36) | ✅ | Sonnet |
+| CI | GitHub Actions test suite | Workflow `tests.yml` roda pytest backend + vitest frontend + playwright E2E em PR/push para main (PR #33). Fix do path Python (PR #35) | ✅ | Sonnet |
 
-### Pendentes — App Principal (prioridade)
-
-| # | Fase | Descrição | Status | Modelo |
-|---|------|-----------|:------:|:------:|
-| Q | Disponibilidade por Horário | Popover do dia (avail/maybe/unavail) + grade de horas (12:00→02:00, 30 min) + janelas de overlap + `time`/`durationMin` no evento | ⏳ | Opus |
-
-### Backlog — Strategy Planner (executar por último)
+### Backlog — Strategy Planner (próximo bloco)
 
 | # | Fase | Descrição | Status | Modelo |
 |---|------|-----------|:------:|:------:|
@@ -65,7 +66,9 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 
 # PARTE 1 — Pendentes do App Principal (Prioridade)
 
-## Fase Q — Disponibilidade por Horário (popover do dia + janelas de overlap)
+## Fase Q — Disponibilidade por Horário (popover do dia + janelas de overlap) ✅ ENTREGUE
+
+> **Concluída em 2026-05-23** via PRs #34 (Q1) e #36 (Q2). Documento abaixo é o spec original; as decisões finais batem com o spec menos pontos marcados.
 
 **Objetivo:** substituir a marcação binária de disponibilidade (`avail/late/none`) por um modelo baseado em **ranges de horário**. Cada jogador marca seu status do dia (Disponível/Talvez/Indisponível) e os horários específicos em que pode jogar. Eventos passam a ser agendados **dentro das janelas de overlap viáveis** da composição — invertendo o paradigma atual de "agenda primeiro, vê quem pode depois".
 
@@ -209,6 +212,35 @@ Concluídas: J, K, L, M, N, O (parte 1: aba Personagem), O.5 (validações), O.2
 3-4 sessões (Opus). Feature larga: novo widget de seleção de horas, algoritmo de overlap, refactor profundo do modal de agendamento, migração de schema (`monthlySchedule` + `raidEvent`), revisão de K/L/M em produção, helpers espelhados front+back.
 
 > **Observação:** se a fase ficar grande demais em PR único, pode ser dividida em **Q1 — Schema + popover de horários + grade** e **Q2 — Modal de agendamento com janelas + impacto em K/L/M**. Decidir no início da fase.
+
+### Decisões finais e dívidas técnicas (pós-entrega 2026-05-23)
+
+**Implementado em Q1 (PR #34, Sonnet):**
+- Schema migração string → `{status, ranges}` (em `hydrateState` do `js/app.js`); retrocompat `"late"` → `"maybe"`
+- Popover de disponibilidade: 3 botões + grade 28 slots (12:00→01:30) + click+drag + atalhos "Dia inteiro"/"Limpar"
+- Helpers: `getSchedEntry`, `slotsToRanges`, `rangesToSlotIdxs`, `slotEnd`
+- raidEvent ganha `time: null` + `durationMin: null` na migração
+- Badge "?h" no header do calendário; "Horário a definir" inline em "Próximos Dias de Raid"
+- Backend `_count_confirmed_for_date` aceita ambos os schemas
+- Tests: 3 novos no backend (`TestCountConfirmedForDate`), 13 novos no frontend (`Fase Q`)
+
+**Implementado em Q2 (PR #36, Sonnet):**
+- `computeViableWindows(date, durMin, target, required)`: ordenação garantidas → potenciais → maior largura → mais cedo
+- `getConfirmationStatusForEvent`: `confirmed` | `partial` | `maybe` | `unavail` | `incompatible` | `pending`
+- Modal: input "Duração esperada" (default por categoria — Ultimate 180 min, demais 120 min), lista de janelas viáveis com badges GARANTIDA/POTENCIAL, toggle "Modo manual"
+- Heatmap "Modo Overlap" no calendário (officer/admin only)
+- Célula `cell-partial` (~) quando avail mas range não cobre toda a janela
+- Telegram K/L/M aceitam `time_str` e `duration_min`; `_format_time_suffix` retorna " às HH:MM (Xh)" ou " (horário a definir)"
+- `format_quorum_suggestion` aceita `window_start`/`window_end` para sugerir janela específica
+- Tests: 14 novos no backend (`TestFaseQTimeFormatting`), 35 novos no frontend (`Fase Q2`)
+
+**Não entregue (deixar para futuro se necessário):**
+- **Helper Python espelhado** `_compute_viable_windows` — o JS já cobre toda a UI e os contadores; só seria necessário para análises server-side futuras (ex: relatórios). Decisão: deixar em backlog.
+- **Edge case "geral" prog**: `expansionId: null` explícito (vs `undefined`) cai no fallback que retorna Dawntrail em `resolveContentExpansionId`. Não é bug introduzido pela Q — mas se quiser fixar, a mudança fica em `js/app.js:resolveContentExpansionId` (special-case `null` vs `undefined`).
+
+**Infraestrutura nova ligada à Q:**
+- CI GitHub Actions (PR #33): roda pytest + vitest + playwright em PR/push para main
+- Fix CI (PR #35): `PYTHON` env var no `playwright.config.js` (era `.venv/bin/python` hardcoded, quebrava no CI)
 
 ---
 
