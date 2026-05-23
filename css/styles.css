@@ -2074,6 +2074,143 @@ label {
     vertical-align: super;
 }
 
+/* Fase Q — badge "?h" no header do calendário quando evento sem horário */
+.cell-no-time-badge {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: var(--color-late);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+}
+
+/* Fase Q — badge inline "Horário a definir" em Próximos Dias */
+.badge-no-time {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--color-late);
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 4px;
+    padding: 0 4px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+/* Fase Q — popover de disponibilidade */
+.sched-popover {
+    z-index: 1200;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    min-width: 420px;
+    max-width: 460px;
+}
+.sched-popover-status-btns {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.sched-popover-status-btn {
+    flex: 1;
+    padding: 7px 4px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.sched-popover-status-btn.active-avail   { background: rgba(16,185,129,0.15); border-color: var(--color-avail); color: var(--color-avail); }
+.sched-popover-status-btn.active-maybe   { background: rgba(245,158,11,0.15); border-color: var(--color-late);  color: var(--gold-bright); }
+.sched-popover-status-btn.active-unavail { background: rgba(239,68,68,0.15);  border-color: #ef4444;            color: #ef4444; }
+.sched-popover-grid-wrap {
+    margin-bottom: 6px;
+}
+.sched-popover-hours-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 0 2px 0;
+}
+.sched-popover-hours-row span {
+    font-size: 0.58rem;
+    color: var(--text-muted);
+    width: calc(100% / 14);
+    text-align: center;
+}
+.sched-popover-grid {
+    display: flex;
+    gap: 2px;
+}
+.sched-slot {
+    flex: 1;
+    height: 26px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s, border-color 0.1s;
+}
+.sched-slot:hover { border-color: rgba(255,255,255,0.25); }
+.sched-popover-grid-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+}
+.sched-btn-all-day,
+.sched-btn-clear {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+}
+.sched-btn-all-day:hover, .sched-btn-clear:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+.sched-popover-footer {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.sched-btn-confirm {
+    flex: 1;
+    padding: 7px;
+    background: var(--color-avail);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.78rem;
+    font-family: var(--font-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.sched-btn-cancel {
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+}
+
 /* Dia com raid agendada — destaque dourado no th */
 .calendar-table th.day-scheduled {
     background: rgba(212, 175, 55, 0.12);

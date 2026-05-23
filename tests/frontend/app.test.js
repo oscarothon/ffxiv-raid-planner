@@ -856,3 +856,117 @@ describe("isContentMarkableForCharacter", () => {
     expect(r.markable).toBe(false);
   });
 });
+
+// ============================================================================
+// Fase Q — Schema {status, ranges} + helpers de slot
+// ============================================================================
+describe("Fase Q — getSchedEntry", () => {
+  it("retorna {status:'', ranges:[]} para entrada ausente", () => {
+    const p = { monthlySchedule: {} };
+    const e = window.getSchedEntry(p, "2025-06-01");
+    expect(e).toEqual({ status: "", ranges: [] });
+  });
+
+  it("aceita string legada e converte para {status, ranges:[]}", () => {
+    const p = { monthlySchedule: { "2025-06-01": "avail" } };
+    const e = window.getSchedEntry(p, "2025-06-01");
+    expect(e.status).toBe("avail");
+    expect(e.ranges).toEqual([]);
+  });
+
+  it("aceita objeto novo {status, ranges}", () => {
+    const p = { monthlySchedule: { "2025-06-01": { status: "maybe", ranges: [{start:"20:00", end:"22:00"}] } } };
+    const e = window.getSchedEntry(p, "2025-06-01");
+    expect(e.status).toBe("maybe");
+    expect(e.ranges).toEqual([{start:"20:00", end:"22:00"}]);
+  });
+
+  it("normaliza ranges não-array para []", () => {
+    const p = { monthlySchedule: { "2025-06-01": { status: "avail", ranges: "nonsense" } } };
+    const e = window.getSchedEntry(p, "2025-06-01");
+    expect(e.ranges).toEqual([]);
+  });
+});
+
+describe("Fase Q — slotsToRanges / rangesToSlotIdxs", () => {
+  it("converte slots contíguos em um único range", () => {
+    expect(window.slotsToRanges([0,1,2])).toEqual([{start:"12:00", end:"13:30"}]);
+  });
+
+  it("converte slots não-contíguos em múltiplos ranges", () => {
+    expect(window.slotsToRanges([0,1,4,5])).toEqual([
+      {start:"12:00", end:"13:00"},
+      {start:"14:00", end:"15:00"},
+    ]);
+  });
+
+  it("trata fim do grid (cross-midnight)", () => {
+    expect(window.slotsToRanges([26,27])).toEqual([{start:"01:00", end:"02:00"}]);
+  });
+
+  it("retorna [] quando vazio", () => {
+    expect(window.slotsToRanges([])).toEqual([]);
+  });
+
+  it("round-trip: ranges → slots → ranges preserva", () => {
+    const ranges = [{start:"20:00", end:"22:00"}];
+    const idxs = [...window.rangesToSlotIdxs(ranges)].sort((a,b)=>a-b);
+    expect(idxs).toEqual([16,17,18,19]);
+    expect(window.slotsToRanges(idxs)).toEqual(ranges);
+  });
+});
+
+describe("Fase Q — hydrateState migra schema string → {status, ranges}", () => {
+  it("converte 'avail' string em {status:'avail', ranges:[]}", () => {
+    window.hydrateState({
+      roster: [{ id: "p1", name: "P1", jobsPool: ["WAR"], monthlySchedule: { "2025-06-01": "avail" }, status: "active" }],
+    });
+    // Verifica indiretamente via getAvailCountForDate (que internamente lê getSchedEntry.status)
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(1);
+  });
+
+  it("converte 'late' legado em 'maybe' (não conta como avail)", () => {
+    window.hydrateState({
+      roster: [{ id: "p1", name: "P1", jobsPool: ["WAR"], monthlySchedule: { "2025-06-01": "late" }, status: "active" }],
+    });
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(0);
+  });
+
+  it("preserva objetos novos {status, ranges} sem corrupção", () => {
+    window.hydrateState({
+      roster: [{
+        id: "p1", name: "P1", jobsPool: ["WAR"], status: "active",
+        monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"22:00"}] } },
+      }],
+    });
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(1);
+  });
+});
+
+describe("Fase Q — raidEvents ganham time/durationMin no hydrateState", () => {
+  it("adiciona time:null e durationMin:null em eventos legados", () => {
+    window.hydrateState({
+      raidEvents: [{ id: "evt_old", progId: "arcadion_lh", date: "2025-06-01", quorum: 6 }],
+    });
+    const evt = window.getRaidEventForDate("2025-06-01");
+    expect(evt.time).toBeNull();
+    expect(evt.durationMin).toBeNull();
+  });
+
+  it("preserva time/durationMin quando já presentes", () => {
+    window.hydrateState({
+      raidEvents: [{ id: "evt_new", progId: "arcadion_lh", date: "2025-06-01", quorum: 6, time: "20:30", durationMin: 120 }],
+    });
+    const evt = window.getRaidEventForDate("2025-06-01");
+    expect(evt.time).toBe("20:30");
+    expect(evt.durationMin).toBe(120);
+  });
+});
+
+describe("Fase Q — SCHED_SLOTS constante", () => {
+  it("tem 28 slots (12:00 → 01:30 em blocos de 30 min)", () => {
+    expect(window.SCHED_SLOTS).toHaveLength(28);
+    expect(window.SCHED_SLOTS[0]).toBe("12:00");
+    expect(window.SCHED_SLOTS[27]).toBe("01:30");
+  });
+});

@@ -95,6 +95,15 @@ const FLEX_POOLS = {
     all: ["PLD", "WAR", "DRK", "GNB", "WHM", "SCH", "AST", "SGE", "MNK", "DRG", "NIN", "SAM", "RPR", "VPR", "BRD", "MCH", "DNC", "BLM", "SMN", "RDM", "PCT"]
 };
 
+// Fase Q — grade de horários (12:00 → 02:00, 28 slots de 30 min)
+const SCHED_SLOTS = [
+    "12:00","12:30","13:00","13:30","14:00","14:30",
+    "15:00","15:30","16:00","16:30","17:00","17:30",
+    "18:00","18:30","19:00","19:30","20:00","20:30",
+    "21:00","21:30","22:00","22:30","23:00","23:30",
+    "00:00","00:30","01:00","01:30"
+];
+
 let state = {};
 let customSelectedJobs = new Set();
 
@@ -351,6 +360,12 @@ function hydrateState(parsed) {
     // raidEvent.description existe. Limpa entradas legadas no estado.
     if (state.progNotes) delete state.progNotes;
 
+    // Fase Q — raidEvents ganham time e durationMin (null = horário a definir)
+    state.raidEvents.forEach(e => {
+        if (e.time === undefined) e.time = null;
+        if (e.durationMin === undefined) e.durationMin = null;
+    });
+
     // Fase N — seed do catálogo de expansões (clona o seed para não compartilhar refs)
     if (!Array.isArray(state.expansions) || state.expansions.length === 0) {
         state.expansions = FFXIV_EXPANSIONS_SEED.map(e => ({ ...e }));
@@ -373,9 +388,12 @@ function hydrateState(parsed) {
         const assignedJob = player.assignedJob || player.job || jobsPool[0];
         const assignedJobsByProg = player.assignedJobsByProg || {};
         const monthlySchedule = player.monthlySchedule || {};
-        // Retrocompat: "late" renomeado para "maybe" (Fase Q — status unificado)
+        // Fase Q — migração: string → {status, ranges}; "late" legado vira "maybe"
         Object.keys(monthlySchedule).forEach(k => {
-            if (monthlySchedule[k] === "late") monthlySchedule[k] = "maybe";
+            const v = monthlySchedule[k];
+            if (typeof v === "string") {
+                monthlySchedule[k] = { status: v === "late" ? "maybe" : v, ranges: [] };
+            }
         });
         const statusByProg = player.statusByProg || {};
         const baseStatus = player.status === "bench" ? "bench" : "active";
@@ -2287,6 +2305,16 @@ function getCharacterForPlayer(player) {
     return (currentCharacters && currentCharacters[uid]) || null;
 }
 
+// Fase Q — lê a entrada do monthlySchedule de forma unificada.
+// Retorna {status: string, ranges: [{start, end}]}; suporta legado string e
+// o novo formato objeto. Status vazio ("") indica dia sem marcação.
+function getSchedEntry(player, dateKey) {
+    const raw = player.monthlySchedule?.[dateKey];
+    if (!raw) return { status: "", ranges: [] };
+    if (typeof raw === "string") return { status: raw, ranges: [] };
+    return { status: raw.status || "", ranges: Array.isArray(raw.ranges) ? raw.ranges : [] };
+}
+
 // Fase P — valida se um slot do roster é compatível com um evento (Limited
 // considera level mínimo do job; não-Limited compara order da expansão).
 // `target` é um raidEvent (preferencial) OU um content/prog. Slots sem
@@ -2305,10 +2333,273 @@ function isPlayerCompatibleWithTarget(player, target) {
 // evento Blue Mage Lv 80+). Sem target, comportamento legado.
 function getAvailCountForDate(dateKey, target = null) {
     return (state.roster || []).filter(p => {
-        if (!p.monthlySchedule || p.monthlySchedule[dateKey] !== "avail") return false;
+        if (getSchedEntry(p, dateKey).status !== "avail") return false;
         if (!target) return true;
         return isPlayerCompatibleWithTarget(p, target).compatible;
     }).length;
+}
+
+// ==========================================================================
+// Fase Q — Popover de disponibilidade diária
+// ==========================================================================
+
+let _popoverPlayerRef = null; // ref para fechar/reabrir no mesmo player
+
+// Converte conjunto de índices de slots selecionados em ranges [{start, end}].
+// Slots contíguos são fundidos num único range. end = início do próximo slot
+// (ou +30 min do último). Trata cross-midnight corretamente (00:xx > 23:xx).
+function slotsToRanges(selectedIdxs) {
+    if (!selectedIdxs || selectedIdxs.length === 0) return [];
+    const sorted = [...new Set(selectedIdxs)].sort((a, b) => a - b);
+    const ranges = [];
+    let start = sorted[0];
+    let prev  = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] !== prev + 1) {
+            ranges.push({ start: SCHED_SLOTS[start], end: slotEnd(prev) });
+            start = sorted[i];
+        }
+        prev = sorted[i];
+    }
+    ranges.push({ start: SCHED_SLOTS[start], end: slotEnd(prev) });
+    return ranges;
+}
+
+// Retorna o horário de fim de um slot (início + 30 min), cruzando meia-noite.
+function slotEnd(idx) {
+    const next = idx + 1;
+    if (next < SCHED_SLOTS.length) return SCHED_SLOTS[next];
+    return "02:00"; // fim do último slot
+}
+
+// Converte ranges [{start, end}] de volta para conjunto de índices de slots.
+function rangesToSlotIdxs(ranges) {
+    if (!ranges || ranges.length === 0) return new Set();
+    const result = new Set();
+    ranges.forEach(({ start, end }) => {
+        const si = SCHED_SLOTS.indexOf(start);
+        const ei = SCHED_SLOTS.indexOf(end);
+        if (si < 0) return;
+        const limit = ei < 0 ? SCHED_SLOTS.length : ei;
+        for (let i = si; i < limit; i++) result.add(i);
+    });
+    return result;
+}
+
+function closeSchedulePopover() {
+    const existing = document.getElementById("sched-popover");
+    if (existing) existing.remove();
+    _popoverPlayerRef = null;
+}
+
+function openSchedulePopover(player, dateKey, anchorEl) {
+    // Fecha outro popover aberto
+    const existing = document.getElementById("sched-popover");
+    if (existing) {
+        // Toggle: clicar na mesma célula fecha
+        const sameCell = _popoverPlayerRef === player && existing.dataset.dateKey === dateKey;
+        existing.remove();
+        _popoverPlayerRef = null;
+        if (sameCell) return;
+    }
+
+    const entry     = getSchedEntry(player, dateKey);
+    let curStatus   = entry.status || "avail";
+    let selectedIdx = rangesToSlotIdxs(entry.ranges);
+    // "avail" sem ranges = dia inteiro (todos selecionados)
+    if ((curStatus === "avail" || curStatus === "maybe") && entry.ranges.length === 0) {
+        SCHED_SLOTS.forEach((_, i) => selectedIdx.add(i));
+    }
+
+    const popover = document.createElement("div");
+    popover.id = "sched-popover";
+    popover.dataset.dateKey = dateKey;
+    popover.className = "sched-popover";
+    _popoverPlayerRef = player;
+
+    // Posição: abaixo/acima da célula, com scroll
+    const rect = anchorEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    popover.style.position = "fixed";
+    popover.style.left = Math.min(rect.left, window.innerWidth - 460) + "px";
+    if (spaceBelow >= 280) {
+        popover.style.top = (rect.bottom + 4) + "px";
+    } else {
+        popover.style.bottom = (window.innerHeight - rect.top + 4) + "px";
+    }
+
+    function renderPopover() {
+        const showGrid = curStatus === "avail" || curStatus === "maybe";
+        const slotColor = curStatus === "maybe" ? "var(--color-late)" : "var(--color-avail)";
+
+        let slotsHtml = "";
+        if (showGrid) {
+            slotsHtml = `
+            <div class="sched-popover-grid-wrap">
+                <div class="sched-popover-hours-row">
+                    ${SCHED_SLOTS.filter((_, i) => i % 2 === 0).map(s => `<span>${s.split(":")[0]}</span>`).join("")}
+                </div>
+                <div class="sched-popover-grid" id="sp-grid">
+                    ${SCHED_SLOTS.map((s, i) => `
+                        <div class="sched-slot${selectedIdx.has(i) ? " selected" : ""}"
+                             data-idx="${i}" title="${s}–${slotEnd(i)}"
+                             style="${selectedIdx.has(i) ? `background:${slotColor};border-color:${slotColor};` : ""}">
+                        </div>
+                    `).join("")}
+                </div>
+                <div class="sched-popover-grid-actions">
+                    <button class="sched-btn-all-day" id="sp-all-day">Dia inteiro</button>
+                    <button class="sched-btn-clear" id="sp-clear">Limpar</button>
+                </div>
+            </div>`;
+        }
+
+        const statuses = [
+            { key: "avail",   label: "Disponível",    cls: "active-avail"   },
+            { key: "maybe",   label: "Talvez",        cls: "active-maybe"   },
+            { key: "unavail", label: "Indisponível",  cls: "active-unavail" },
+        ];
+
+        popover.innerHTML = `
+            <div class="sched-popover-status-btns">
+                ${statuses.map(s => `
+                    <button class="sched-popover-status-btn${curStatus === s.key ? " " + s.cls : ""}"
+                            data-status="${s.key}">${s.label}</button>
+                `).join("")}
+            </div>
+            ${slotsHtml}
+            <div class="sched-popover-footer">
+                <button class="sched-btn-confirm" id="sp-confirm">Confirmar</button>
+                <button class="sched-btn-cancel" id="sp-cancel">Cancelar</button>
+            </div>
+        `;
+
+        // Listeners de status
+        popover.querySelectorAll(".sched-popover-status-btn").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                curStatus = btn.dataset.status;
+                if (curStatus === "unavail") selectedIdx.clear();
+                else if (selectedIdx.size === 0) {
+                    SCHED_SLOTS.forEach((_, i) => selectedIdx.add(i));
+                }
+                renderPopover();
+                bindGridListeners();
+            });
+        });
+
+        // Confirmar
+        const confirmBtn = popover.querySelector("#sp-confirm");
+        if (confirmBtn) confirmBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isDayAll = selectedIdx.size === SCHED_SLOTS.length;
+            let ranges;
+            if (curStatus === "unavail" || isDayAll) {
+                ranges = [];
+            } else {
+                ranges = slotsToRanges([...selectedIdx]);
+            }
+            if (curStatus === "") {
+                delete player.monthlySchedule[dateKey];
+            } else {
+                player.monthlySchedule[dateKey] = { status: curStatus, ranges };
+            }
+            if (curStatus === "avail" || curStatus === "maybe") {
+                (state.pendingNotifications || [])
+                    .filter(n => n.date === dateKey)
+                    .forEach(n => markNotificationSeen(n.id));
+                renderNotificationBanner();
+            }
+            closeSchedulePopover();
+            saveState();
+            renderScheduleTable();
+        });
+
+        // Cancelar
+        const cancelBtn = popover.querySelector("#sp-cancel");
+        if (cancelBtn) cancelBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            closeSchedulePopover();
+        });
+
+        // Dia inteiro / Limpar
+        const allDayBtn = popover.querySelector("#sp-all-day");
+        if (allDayBtn) allDayBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            SCHED_SLOTS.forEach((_, i) => selectedIdx.add(i));
+            renderPopover();
+            bindGridListeners();
+        });
+        const clearBtn = popover.querySelector("#sp-clear");
+        if (clearBtn) clearBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectedIdx.clear();
+            renderPopover();
+            bindGridListeners();
+        });
+    }
+
+    function bindGridListeners() {
+        const grid = popover.querySelector("#sp-grid");
+        if (!grid) return;
+
+        let dragging = false;
+        let dragMode = null; // "add" | "remove"
+
+        grid.addEventListener("mousedown", (e) => {
+            const slot = e.target.closest(".sched-slot");
+            if (!slot) return;
+            e.preventDefault();
+            dragging = true;
+            const idx = parseInt(slot.dataset.idx, 10);
+            dragMode = selectedIdx.has(idx) ? "remove" : "add";
+            toggleSlot(idx);
+        });
+        grid.addEventListener("mouseover", (e) => {
+            if (!dragging) return;
+            const slot = e.target.closest(".sched-slot");
+            if (!slot) return;
+            toggleSlot(parseInt(slot.dataset.idx, 10));
+        });
+        document.addEventListener("mouseup", () => { dragging = false; }, { once: true });
+
+        function toggleSlot(idx) {
+            if (dragMode === "add") selectedIdx.add(idx);
+            else selectedIdx.delete(idx);
+            const slotEl = grid.querySelector(`[data-idx="${idx}"]`);
+            if (!slotEl) return;
+            const slotColor = curStatus === "maybe" ? "var(--color-late)" : "var(--color-avail)";
+            if (selectedIdx.has(idx)) {
+                slotEl.classList.add("selected");
+                slotEl.style.background = slotColor;
+                slotEl.style.borderColor = slotColor;
+            } else {
+                slotEl.classList.remove("selected");
+                slotEl.style.background = "";
+                slotEl.style.borderColor = "";
+            }
+        }
+    }
+
+    renderPopover();
+    document.body.appendChild(popover);
+    bindGridListeners();
+
+    // Fecha com ESC ou clique fora
+    function onKeyDown(e) {
+        if (e.key === "Escape") { closeSchedulePopover(); cleanup(); }
+    }
+    function onClickOutside(e) {
+        if (!popover.contains(e.target)) { closeSchedulePopover(); cleanup(); }
+    }
+    function cleanup() {
+        document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("click",   onClickOutside);
+    }
+    setTimeout(() => {
+        document.addEventListener("keydown", onKeyDown);
+        document.addEventListener("click",   onClickOutside);
+    }, 0);
 }
 
 // Cria ou atualiza um evento agendado.
@@ -2907,9 +3198,13 @@ function renderScheduleTable() {
         const detailsIndicator = hasDescription
             ? `<button class="cell-details-indicator" data-date="${dateKey}" title="Ver detalhes do evento" aria-label="Detalhes" style="position:absolute;top:2px;right:2px;background:transparent;border:none;color:var(--gold-bright);cursor:pointer;padding:0 2px;font-size:0.7rem;line-height:1;">●</button>`
             : "";
+        const noTimeBadge = (raidEvt && raidEvt.time === null)
+            ? `<div class="cell-no-time-badge" title="Horário a definir pelo officer">?h</div>`
+            : "";
         th.style.position = "relative";
         th.innerHTML = `
             ${detailsIndicator}
+            ${noTimeBadge}
             <div class="cell-day-num">${d}</div>
             <div class="cell-day-wk">${wkDay}</div>
         `;
@@ -2965,7 +3260,7 @@ function renderScheduleTable() {
 
         for (let d = 1; d <= numDays; d++) {
             const dateKey = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
-            const statusVal = player.monthlySchedule[dateKey] || "";
+            const { status: statusVal, ranges: statusRanges } = getSchedEntry(player, dateKey);
 
             let statusText = "";
             let statusClass = "";
@@ -2989,6 +3284,11 @@ function renderScheduleTable() {
                 }
             }
 
+            // Fase Q — mostra ranges resumidos como tooltip se houver
+            const rangesLabel = statusRanges.length > 0
+                ? " · " + statusRanges.map(r => `${r.start}–${r.end}`).join(", ")
+                : "";
+
             const tdDay = document.createElement("td");
             tdDay.className = `cell-status ${statusClass}${canTogglePlayer ? '' : ' cell-readonly'}`;
             if (incompatReason) {
@@ -2996,27 +3296,16 @@ function renderScheduleTable() {
                 tdDay.title = `Não conta — ${incompatReason}`;
             } else {
                 tdDay.textContent = statusText;
-                tdDay.title = canTogglePlayer ? `Dia ${d}: Clique para alternar` : `Dia ${d}: somente o próprio jogador ou officer pode alterar`;
+                tdDay.title = canTogglePlayer
+                    ? `Dia ${d}${rangesLabel}: Clique para definir disponibilidade`
+                    : `Dia ${d}${rangesLabel}: somente o próprio jogador ou officer pode alterar`;
             }
 
             if (canTogglePlayer) {
-                tdDay.addEventListener("click", () => {
+                tdDay.addEventListener("click", (e) => {
                     playSfx('click');
-                    if (statusVal === "") player.monthlySchedule[dateKey] = "avail";
-                    else if (statusVal === "avail") player.monthlySchedule[dateKey] = "maybe";
-                    else if (statusVal === "maybe") player.monthlySchedule[dateKey] = "unavail";
-                    else delete player.monthlySchedule[dateKey];
-
-                    const newStatus = player.monthlySchedule[dateKey] || "";
-                    if (newStatus === "avail" || newStatus === "maybe") {
-                        (state.pendingNotifications || [])
-                            .filter(n => n.date === dateKey)
-                            .forEach(n => markNotificationSeen(n.id));
-                        renderNotificationBanner();
-                    }
-
-                    saveState();
-                    renderScheduleTable();
+                    e.stopPropagation();
+                    openSchedulePopover(player, dateKey, tdDay);
                 });
             } else {
                 tdDay.style.cursor = "not-allowed";
@@ -3194,7 +3483,7 @@ function renderQuickSchedule() {
             let rIncompat = [];
 
             progTitulares.forEach(p => {
-                const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
+                const sVal = getSchedEntry(p, dateKey).status;
                 const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) tAvail.push(displayName);
@@ -3205,7 +3494,7 @@ function renderQuickSchedule() {
             });
 
             progReservas.forEach(p => {
-                const sVal = p.monthlySchedule ? p.monthlySchedule[dateKey] : "";
+                const sVal = getSchedEntry(p, dateKey).status;
                 const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) rAvail.push(displayName);
@@ -3309,7 +3598,13 @@ function renderQuickSchedule() {
                 ${headerHtml}
                 <div style="display: flex; flex-direction: column; gap: 4px; border-left: 3px solid ${borderCol}; padding-left: 10px; background: ${rowBg}; padding: 8px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; font-size: 0.9rem;">Proxima Sessao: ${dateFormatted}${postponedNote}</span>
+                        <span style="font-weight: 600; font-size: 0.9rem;">Proxima Sessao: ${dateFormatted}${postponedNote}${
+                            foundEvt && foundEvt.time
+                                ? ` <span style="color:var(--gold-bright);">· ${foundEvt.time}</span>`
+                                : foundEvt
+                                    ? ` <span class="badge-no-time" title="Officer ainda não definiu o horário">Horário a definir</span>`
+                                    : ""
+                        }</span>
                         ${quorumBadge}
                     </div>
                     <div style="margin-top: 2px;">${alertsHtml}</div>
