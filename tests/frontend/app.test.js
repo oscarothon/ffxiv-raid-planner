@@ -970,3 +970,242 @@ describe("Fase Q — SCHED_SLOTS constante", () => {
     expect(window.SCHED_SLOTS[27]).toBe("01:30");
   });
 });
+
+// ============================================================================
+// Fase Q2 — expandRangesForDate / timeToSlotIdx / eventSlotIdxs
+// ============================================================================
+describe("Fase Q2 — expandRangesForDate", () => {
+  it("retorna todos os 28 slots para avail sem ranges (dia inteiro)", () => {
+    const p = { monthlySchedule: { "2025-06-01": { status: "avail", ranges: [] } } };
+    const { status, slots } = window.expandRangesForDate(p, "2025-06-01");
+    expect(status).toBe("avail");
+    expect(slots.size).toBe(28);
+  });
+
+  it("retorna conjunto vazio para unavail", () => {
+    const p = { monthlySchedule: { "2025-06-01": { status: "unavail", ranges: [] } } };
+    const { slots } = window.expandRangesForDate(p, "2025-06-01");
+    expect(slots.size).toBe(0);
+  });
+
+  it("retorna slots específicos quando há ranges", () => {
+    const p = { monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"22:00"}] } } };
+    const { slots } = window.expandRangesForDate(p, "2025-06-01");
+    expect([...slots].sort((a,b)=>a-b)).toEqual([16,17,18,19]);
+  });
+
+  it("retorna conjunto vazio para data sem entrada", () => {
+    const p = { monthlySchedule: {} };
+    const { slots } = window.expandRangesForDate(p, "2025-06-01");
+    expect(slots.size).toBe(0);
+  });
+});
+
+describe("Fase Q2 — timeToSlotIdx + eventSlotIdxs", () => {
+  it("timeToSlotIdx retorna índice correto", () => {
+    expect(window.timeToSlotIdx("12:00")).toBe(0);
+    expect(window.timeToSlotIdx("20:00")).toBe(16);
+    expect(window.timeToSlotIdx("01:30")).toBe(27);
+    expect(window.timeToSlotIdx("invalid")).toBe(-1);
+  });
+
+  it("eventSlotIdxs cobre slots do evento", () => {
+    const idxs = window.eventSlotIdxs("20:00", 120);
+    expect([...idxs].sort((a,b)=>a-b)).toEqual([16,17,18,19]);
+  });
+
+  it("eventSlotIdxs com duração truncada no fim do grid", () => {
+    const idxs = window.eventSlotIdxs("01:00", 120);
+    // 01:00 = slot 26, 01:30 = 27. Só 2 slots disponíveis.
+    expect([...idxs].sort((a,b)=>a-b)).toEqual([26,27]);
+  });
+
+  it("eventSlotIdxs vazio para time inválido", () => {
+    expect(window.eventSlotIdxs("invalid", 120).size).toBe(0);
+    expect(window.eventSlotIdxs("20:00", 0).size).toBe(0);
+  });
+});
+
+describe("Fase Q2 — computeViableWindows", () => {
+  beforeEach(() => {
+    // Reset state com 10 jogadores avail 20:00-23:00 e 4 maybe 19:00-22:00
+    window.hydrateState({
+      roster: [
+        ...Array.from({length: 10}, (_, i) => ({
+          id: `p${i}`, name: `P${i}`, jobsPool: ["WAR"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"23:00"}] } }
+        })),
+        ...Array.from({length: 4}, (_, i) => ({
+          id: `m${i}`, name: `M${i}`, jobsPool: ["PLD"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "maybe", ranges: [{start:"19:00", end:"22:00"}] } }
+        })),
+      ]
+    });
+  });
+
+  it("encontra janela garantida quando ≥requiredCount avail cobrem", () => {
+    const windows = window.computeViableWindows("2025-06-01", 120, null, 8);
+    expect(windows.length).toBeGreaterThan(0);
+    const guaranteed = windows.filter(w => w.guaranteed);
+    expect(guaranteed[0].start).toBe("20:00");
+    expect(guaranteed[0].countAvail).toBeGreaterThanOrEqual(8);
+  });
+
+  it("ordena garantidas antes de potenciais", () => {
+    const windows = window.computeViableWindows("2025-06-01", 60, null, 8);
+    if (windows.length > 1) {
+      // Se ambos tipos existem, garantidas vêm primeiro
+      const firstNonG = windows.findIndex(w => !w.guaranteed);
+      const firstG = windows.findIndex(w => w.guaranteed);
+      if (firstNonG !== -1 && firstG !== -1) {
+        expect(firstG).toBeLessThan(firstNonG);
+      }
+    }
+  });
+
+  it("retorna vazio quando nenhum slot atinge requiredCount", () => {
+    const windows = window.computeViableWindows("2025-06-01", 60, null, 20);
+    expect(windows).toEqual([]);
+  });
+
+  it("respeita duração mínima (filtra janelas curtas)", () => {
+    // Janela 20:00-23:00 = 3h = 180min; pedindo 240 min, não deve aparecer
+    const windows = window.computeViableWindows("2025-06-01", 240, null, 8);
+    expect(windows.filter(w => w.guaranteed)).toEqual([]);
+  });
+
+  it("retorna durationMin = widthSlots * 30", () => {
+    const windows = window.computeViableWindows("2025-06-01", 60, null, 8);
+    const g = windows.find(w => w.guaranteed);
+    expect(g.durationMin).toBe(g.widthSlots * 30);
+  });
+});
+
+describe("Fase Q2 — getConfirmationStatusForEvent", () => {
+  const player = {
+    id: "p1", name: "X", jobsPool: ["WAR"], status: "active",
+    monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"23:00"}] } }
+  };
+
+  it("retorna 'pending' quando evento não tem time", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: null };
+    expect(window.getConfirmationStatusForEvent(player, evt)).toBe("pending");
+  });
+
+  it("retorna 'confirmed' quando range cobre toda a janela", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "20:30", durationMin: 120 };
+    expect(window.getConfirmationStatusForEvent(player, evt)).toBe("confirmed");
+  });
+
+  it("retorna 'partial' quando avail mas range só cobre parte da janela", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "22:00", durationMin: 120 };
+    // Range 20:00-23:00, evento 22:00-24:00 → overlap 22:00-23:00, mas não cobre 23:00-24:00
+    expect(window.getConfirmationStatusForEvent(player, evt)).toBe("partial");
+  });
+
+  it("retorna 'maybe' quando status=maybe com overlap", () => {
+    const p2 = { ...player, monthlySchedule: { "2025-06-01": { status: "maybe", ranges: [{start:"20:00", end:"23:00"}] } } };
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "20:30", durationMin: 60 };
+    expect(window.getConfirmationStatusForEvent(p2, evt)).toBe("maybe");
+  });
+
+  it("retorna 'unavail' quando status=unavail", () => {
+    const p2 = { ...player, monthlySchedule: { "2025-06-01": { status: "unavail", ranges: [] } } };
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "20:30", durationMin: 60 };
+    expect(window.getConfirmationStatusForEvent(p2, evt)).toBe("unavail");
+  });
+
+  it("retorna 'unavail' quando avail mas sem overlap com janela", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "12:00", durationMin: 60 };
+    expect(window.getConfirmationStatusForEvent(player, evt)).toBe("unavail");
+  });
+
+  it("retorna 'pending' para evento null", () => {
+    expect(window.getConfirmationStatusForEvent(player, null)).toBe("pending");
+  });
+});
+
+describe("Fase Q2 — getDefaultDurationForProg + formatWindowLabel", () => {
+  it("Ultimate retorna 180 min", () => {
+    expect(window.getDefaultDurationForProg("FRU")).toBe(180);
+    expect(window.getDefaultDurationForProg("UCOB")).toBe(180);
+  });
+
+  it("Savage/outros retornam 120 min", () => {
+    expect(window.getDefaultDurationForProg("arcadion_lh")).toBe(120);
+    expect(window.getDefaultDurationForProg("anabaseios")).toBe(120);
+  });
+
+  it("default sem progId retorna 120 min", () => {
+    expect(window.getDefaultDurationForProg(null)).toBe(120);
+  });
+
+  it("formatWindowLabel formata janela como 'HH:MM–HH:MM (Xh)'", () => {
+    const w = { start: "20:00", end: "23:00", durationMin: 180 };
+    expect(window.formatWindowLabel(w)).toBe("20:00–23:00 (3h)");
+  });
+
+  it("formatWindowLabel inclui minutos parciais", () => {
+    const w = { start: "20:30", end: "22:00", durationMin: 90 };
+    expect(window.formatWindowLabel(w)).toBe("20:30–22:00 (1h30)");
+  });
+});
+
+describe("Fase Q2 — upsertRaidEvent aceita time/durationMin", () => {
+  beforeEach(() => {
+    window.hydrateState({ activeProgs: ["arcadion_lh"] });
+  });
+
+  it("cria evento novo com time + durationMin do extra", () => {
+    const evt = window.upsertRaidEvent("2025-06-01", "arcadion_lh", 6, "", { time: "20:30", durationMin: 120 });
+    expect(evt.time).toBe("20:30");
+    expect(evt.durationMin).toBe(120);
+  });
+
+  it("default time:null + durationMin:null quando extra não inclui", () => {
+    const evt = window.upsertRaidEvent("2025-06-02", "arcadion_lh", 6, "", {});
+    expect(evt.time).toBeNull();
+    expect(evt.durationMin).toBeNull();
+  });
+
+  it("atualiza time/durationMin em evento existente", () => {
+    window.upsertRaidEvent("2025-06-03", "arcadion_lh", 6, "", {});
+    const evt = window.upsertRaidEvent("2025-06-03", "arcadion_lh", 6, "", { time: "21:00", durationMin: 90 });
+    expect(evt.time).toBe("21:00");
+    expect(evt.durationMin).toBe(90);
+  });
+});
+
+describe("Fase Q2 — getAvailCountForDate usa derived quando event tem time", () => {
+  beforeEach(() => {
+    window.hydrateState({
+      roster: [
+        // 3 jogadores cobrem toda a janela 20:00-22:00
+        { id: "p1", name: "A", jobsPool: ["WAR"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"23:00"}] } } },
+        { id: "p2", name: "B", jobsPool: ["PLD"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"23:00"}] } } },
+        { id: "p3", name: "C", jobsPool: ["WHM"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"23:00"}] } } },
+        // 1 jogador só cobre parte (20:00-21:00)
+        { id: "p4", name: "D", jobsPool: ["SCH"], status: "active",
+          monthlySchedule: { "2025-06-01": { status: "avail", ranges: [{start:"20:00", end:"21:00"}] } } },
+      ],
+    });
+  });
+
+  it("sem target conta todos os avail", () => {
+    expect(window.getAvailCountForDate("2025-06-01")).toBe(4);
+  });
+
+  it("com event.time conta só quem cobre a janela inteira (derived)", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: "20:00", durationMin: 120 };
+    // p1, p2, p3 cobrem 20-22; p4 só cobre 20-21 → fica de fora
+    expect(window.getAvailCountForDate("2025-06-01", evt)).toBe(3);
+  });
+
+  it("com event sem time mantém comportamento legado (conta status avail)", () => {
+    const evt = { progId: "arcadion_lh", date: "2025-06-01", time: null };
+    expect(window.getAvailCountForDate("2025-06-01", evt)).toBe(4);
+  });
+});

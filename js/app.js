@@ -2327,16 +2327,187 @@ function isPlayerCompatibleWithTarget(player, target) {
     return { compatible: !!elig.markable, reason: elig.reason };
 }
 
-// Fase P — getAvailCountForDate pode receber um event/target opcional. Quando
-// fornecido, só conta jogadores cujo character é compatível com aquele evento
-// (ex: heavensward não conta numa raid endwalker; BLU 65 não conta num
-// evento Blue Mage Lv 80+). Sem target, comportamento legado.
+// Fase P + Q — getAvailCountForDate pode receber um event/target opcional.
+// Quando fornecido, só conta jogadores cujo character é compatível com aquele
+// evento. Fase Q: quando o target é um raidEvent COM time, conta apenas
+// jogadores com confirmação derivada "confirmed" (range cobre toda a janela).
+// Sem time (ou sem target), usa apenas o status do dia.
 function getAvailCountForDate(dateKey, target = null) {
     return (state.roster || []).filter(p => {
+        if (target && target.time && target.progId) {
+            // Modo Fase Q derivado: usa janela do evento
+            return getConfirmationStatusForEvent(p, target) === "confirmed";
+        }
         if (getSchedEntry(p, dateKey).status !== "avail") return false;
         if (!target) return true;
         return isPlayerCompatibleWithTarget(p, target).compatible;
     }).length;
+}
+
+// ==========================================================================
+// Fase Q — Helpers de ranges, overlap windows e confirmação derivada
+// ==========================================================================
+
+// Retorna o conjunto de índices de slots cobertos por um player num dado dia.
+// "avail" sem ranges = dia inteiro (28 slots); "maybe" idem.
+// "unavail" ou sem entrada = vazio.
+function expandRangesForDate(player, dateKey) {
+    const entry = getSchedEntry(player, dateKey);
+    if (entry.status === "" || entry.status === "unavail") {
+        return { status: entry.status || "unavail", slots: new Set() };
+    }
+    if (entry.ranges.length === 0) {
+        const all = new Set();
+        for (let i = 0; i < SCHED_SLOTS.length; i++) all.add(i);
+        return { status: entry.status, slots: all };
+    }
+    return { status: entry.status, slots: rangesToSlotIdxs(entry.ranges) };
+}
+
+// Converte horário "HH:MM" em índice de slot (ou -1 se inválido).
+function timeToSlotIdx(timeStr) {
+    return SCHED_SLOTS.indexOf(timeStr);
+}
+
+// Converte (timeStr, durationMin) em conjunto de índices de slots cobertos.
+function eventSlotIdxs(timeStr, durationMin) {
+    const startIdx = timeToSlotIdx(timeStr);
+    if (startIdx < 0 || !durationMin) return new Set();
+    const slotsNeeded = Math.ceil(durationMin / 30);
+    const idxs = new Set();
+    for (let i = 0; i < slotsNeeded; i++) {
+        const idx = startIdx + i;
+        if (idx >= SCHED_SLOTS.length) break;
+        idxs.add(idx);
+    }
+    return idxs;
+}
+
+// Fase Q — calcula janelas viáveis de overlap para um dia.
+// Retorna lista de { start, end, durationMin, countAvail, countMaybe,
+// guaranteed: boolean }, ordenada por: garantidas primeiro, depois por largura
+// decrescente, depois por início mais cedo.
+//
+// `target` é o raidEvent ou prog para checagem de compatibilidade Fase P
+// (se omitido, não filtra). `durationMin` é a duração mínima exigida.
+// `requiredCount` é quantos jogadores precisam estar disponíveis (default 8).
+function computeViableWindows(dateKey, durationMin, target = null, requiredCount = 8) {
+    const slotsNeeded = Math.max(1, Math.ceil(durationMin / 30));
+    const roster = state.roster || [];
+
+    // Para cada slot, conta avail e maybe (filtrando por compatibilidade)
+    const avail = new Array(SCHED_SLOTS.length).fill(0);
+    const maybe = new Array(SCHED_SLOTS.length).fill(0);
+
+    roster.forEach(p => {
+        if (target) {
+            const compat = isPlayerCompatibleWithTarget(p, target);
+            if (!compat.compatible) return;
+        }
+        const exp = expandRangesForDate(p, dateKey);
+        if (exp.status === "avail") {
+            exp.slots.forEach(idx => { avail[idx] += 1; });
+        } else if (exp.status === "maybe") {
+            exp.slots.forEach(idx => { maybe[idx] += 1; });
+        }
+    });
+
+    // Detecta janelas contínuas onde count >= requiredCount e largura >= slotsNeeded
+    const windows = [];
+    const tryDetect = (isGuaranteed) => {
+        let start = 0;
+        while (start <= SCHED_SLOTS.length - slotsNeeded) {
+            let end = start;
+            while (end < SCHED_SLOTS.length) {
+                const total = isGuaranteed ? avail[end] : (avail[end] + maybe[end]);
+                if (total < requiredCount) break;
+                end++;
+            }
+            const width = end - start;
+            if (width >= slotsNeeded) {
+                let minAvail = Infinity, minMaybe = Infinity;
+                for (let i = start; i < end; i++) {
+                    if (avail[i] < minAvail) minAvail = avail[i];
+                    if (maybe[i] < minMaybe) minMaybe = maybe[i];
+                }
+                windows.push({
+                    start: SCHED_SLOTS[start],
+                    end: slotEnd(end - 1),
+                    startIdx: start,
+                    endIdx: end,
+                    widthSlots: width,
+                    durationMin: width * 30,
+                    countAvail: isFinite(minAvail) ? minAvail : 0,
+                    countMaybe: isFinite(minMaybe) ? minMaybe : 0,
+                    guaranteed: isGuaranteed,
+                });
+                start = end;
+            } else {
+                start = end + 1;
+            }
+        }
+    };
+    tryDetect(true);
+    tryDetect(false);
+
+    // Remove duplicatas exatas (mesma janela aparece como garantida E potencial)
+    const seenRange = new Set();
+    return windows
+        .sort((a, b) => {
+            if (a.guaranteed !== b.guaranteed) return a.guaranteed ? -1 : 1;
+            if (a.widthSlots !== b.widthSlots) return b.widthSlots - a.widthSlots;
+            return a.startIdx - b.startIdx;
+        })
+        .filter(w => {
+            const key = `${w.startIdx}-${w.endIdx}`;
+            if (seenRange.has(key)) return false;
+            seenRange.add(key);
+            return true;
+        });
+}
+
+// Fase Q — duração default sugerida no agendamento, por categoria de conteúdo.
+// Ultimate: 180 min; Savage/Custom/Limited: 120 min. Editável pelo officer.
+function getDefaultDurationForProg(progId) {
+    if (!progId) return 120;
+    if (Array.isArray(FFXIV_ULTIMATES) && FFXIV_ULTIMATES.find(u => u.id === progId)) return 180;
+    return 120;
+}
+
+// Fase Q — formata janela como "HH:MM–HH:MM (Xh)" para tooltips/UI.
+function formatWindowLabel(w) {
+    const hrs = Math.floor(w.durationMin / 60);
+    const min = w.durationMin % 60;
+    const dur = min === 0 ? `${hrs}h` : `${hrs}h${min}`;
+    return `${w.start}–${w.end} (${dur})`;
+}
+
+// Fase Q — confirmação derivada do range do player vs janela do evento.
+// Retorna "confirmed" | "partial" | "maybe" | "unavail" | "incompatible" | "pending".
+//  - "pending": evento sem time
+//  - "incompatible": Fase P (expansão ou Limited level insuficiente)
+//  - "confirmed": status "avail" e ranges cobrem TODA a janela do evento
+//  - "partial": status "avail" mas só cobre parte da janela
+//  - "maybe": status "maybe" e há overlap com a janela
+//  - "unavail": status "unavail" ou avail/maybe sem overlap nenhum
+function getConfirmationStatusForEvent(player, event) {
+    if (!event) return "pending";
+    if (event.time === null || event.time === undefined) return "pending";
+    const compat = isPlayerCompatibleWithTarget(player, event);
+    if (!compat.compatible) return "incompatible";
+    const dateKey = event.postponedTo || event.date;
+    const entry   = getSchedEntry(player, dateKey);
+    if (entry.status === "" || entry.status === "unavail") return "unavail";
+    const playerSlots = expandRangesForDate(player, dateKey).slots;
+    const eventSlots  = eventSlotIdxs(event.time, event.durationMin || 120);
+    if (eventSlots.size === 0) return "pending";
+    let overlap = 0;
+    eventSlots.forEach(idx => { if (playerSlots.has(idx)) overlap++; });
+    if (overlap === 0) return "unavail";
+    if (entry.status === "avail") {
+        return overlap === eventSlots.size ? "confirmed" : "partial";
+    }
+    return "maybe";
 }
 
 // ==========================================================================
@@ -2620,6 +2791,9 @@ function upsertRaidEvent(dateKey, progId, quorum, description, extra) {
     if (existing) {
         existing.quorum = quorum;
         if (description !== undefined) existing.description = description;
+        // Fase Q — atualiza time/durationMin se fornecidos
+        if (Object.prototype.hasOwnProperty.call(extra, "time")) existing.time = extra.time;
+        if (Object.prototype.hasOwnProperty.call(extra, "durationMin")) existing.durationMin = extra.durationMin;
         return existing;
     }
 
@@ -2646,6 +2820,9 @@ function upsertRaidEvent(dateKey, progId, quorum, description, extra) {
         postponedAt: null,
         reminder24hSent: false,
         reminderTodaySent: false,
+        // Fase Q — horário e duração (null = "horário a definir")
+        time: Object.prototype.hasOwnProperty.call(extra, "time") ? extra.time : null,
+        durationMin: Object.prototype.hasOwnProperty.call(extra, "durationMin") ? extra.durationMin : null,
     };
     if (limited) {
         const lvl = parseInt(extra.limitedJobMinLevel, 10);
@@ -2739,6 +2916,39 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             <label class="sched-quorum-label" for="inp-sched-quorum">Quorum mínimo:</label>
             <input id="inp-sched-quorum" type="number" min="1" max="${initialMax}" value="${initialQuorum}" class="ff-input sched-quorum-input">
             <span class="sched-quorum-hint">players</span>
+        </div>`;
+
+    // Fase Q — duração + janelas viáveis + modo manual
+    const initialDuration = (existingEvt && existingEvt.durationMin)
+        ? existingEvt.durationMin
+        : getDefaultDurationForProg(currentProgId || progs[0]);
+    const initialTime = (existingEvt && existingEvt.time) || "";
+    const initialManual = !!(existingEvt && existingEvt.time);
+    html += `
+        <div class="sched-q-section" id="sched-q-section" style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
+            <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px;">
+                <div style="flex:0 0 140px;">
+                    <label for="inp-sched-duration" style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:4px;">Duração esperada</label>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                        <input id="inp-sched-duration" type="number" class="ff-input" min="30" max="360" step="30" value="${initialDuration}" style="width:80px;">
+                        <span style="font-size:0.78rem;color:var(--text-muted);">min</span>
+                    </div>
+                </div>
+                <label class="sched-manual-toggle" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
+                    <input type="checkbox" id="inp-sched-manual-mode" ${initialManual ? "checked" : ""}>
+                    Modo manual (definir horário sem sugestão)
+                </label>
+            </div>
+            <div class="sched-manual-row" id="sched-manual-row" style="${initialManual ? "" : "display:none;"}margin-bottom:10px;">
+                <label for="inp-sched-time" style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:4px;">Horário de início (HH:MM)</label>
+                <input id="inp-sched-time" type="text" class="ff-input" maxlength="5" inputmode="numeric" placeholder="20:30" value="${initialTime}" style="width:100px;">
+            </div>
+            <div class="sched-windows-wrap" id="sched-windows-wrap" style="${initialManual ? "display:none;" : ""}">
+                <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px;">Janelas viáveis (escolha uma para agendar com horário):</div>
+                <div class="sched-windows-list" id="sched-windows-list" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;">
+                    <div style="color:var(--text-muted);font-style:italic;font-size:0.8rem;padding:6px;">Selecione data e conteúdo para ver janelas.</div>
+                </div>
+            </div>
         </div>`;
 
     // Bug 2 — campos específicos de Limited: nível mínimo do job + label opcional.
@@ -2852,10 +3062,118 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
         }
     }
 
+    // Fase Q — janela viável (estado selecionado pelo officer)
+    let pickedWindow = null; // {start, end, durationMin, guaranteed, ...} ou null
+
+    // Recomputa as janelas viáveis com base em progId + dateKey + duração
+    function refreshWindows() {
+        const wrap = body.querySelector("#sched-windows-wrap");
+        const list = body.querySelector("#sched-windows-list");
+        const durInput = body.querySelector("#inp-sched-duration");
+        if (!list) return;
+
+        // Modo manual escondendo a lista? Não precisa renderizar
+        const manualEl = body.querySelector("#inp-sched-manual-mode");
+        if (manualEl && manualEl.checked) {
+            if (wrap) wrap.style.display = "none";
+            return;
+        }
+        if (wrap) wrap.style.display = "";
+
+        // Sem prog ou sem data — mensagem placeholder
+        if (!selectedProg) {
+            list.innerHTML = `<div style="color:var(--text-muted);font-style:italic;font-size:0.8rem;padding:6px;">Selecione um conteúdo primeiro.</div>`;
+            return;
+        }
+        let evalDateKey = resolvedDateKey;
+        if (!evalDateKey) {
+            const dateEl = body.querySelector("#inp-sched-session-date");
+            const parts = (dateEl?.value || "").trim().split("/");
+            if (parts.length === 3 && parts[2].length === 4) {
+                evalDateKey = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+            }
+        }
+        if (!evalDateKey) {
+            list.innerHTML = `<div style="color:var(--text-muted);font-style:italic;font-size:0.8rem;padding:6px;">Informe a data para ver janelas.</div>`;
+            return;
+        }
+
+        const dur = parseInt(durInput?.value || "120", 10) || 120;
+        const required = isDynamicProg(selectedProg) ? 1 : getPartySize(selectedProg);
+        const target = existingEvt || getProgObj(selectedProg);
+        const windows = computeViableWindows(evalDateKey, dur, target, required);
+
+        if (windows.length === 0) {
+            list.innerHTML = `<div style="color:var(--color-late);font-size:0.8rem;padding:6px;">Nenhuma janela com ${required} jogadores disponíveis. Ative "Modo manual" para definir horário arbitrário.</div>`;
+            return;
+        }
+
+        list.innerHTML = windows.slice(0, 8).map((w, i) => {
+            const badge = w.guaranteed
+                ? `<span style="background:var(--color-avail);color:#000;font-size:0.65rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;">GARANTIDA</span>`
+                : `<span style="background:var(--color-late);color:#000;font-size:0.65rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;">POTENCIAL</span>`;
+            const counts = w.guaranteed
+                ? `${w.countAvail} confirm.`
+                : `${w.countAvail} confirm. + ${w.countMaybe} talvez`;
+            const isPicked = pickedWindow && pickedWindow.startIdx === w.startIdx && pickedWindow.endIdx === w.endIdx;
+            const pickedStyle = isPicked
+                ? `background:rgba(212,175,55,0.15);border-color:var(--gold-bright);`
+                : `background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.1);`;
+            return `
+                <div class="sched-window-item" data-idx="${i}"
+                     style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;${pickedStyle}">
+                    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+                        <span style="font-weight:700;color:var(--gold-bright);">${formatWindowLabel(w)}</span>
+                        ${badge}
+                        <span style="font-size:0.75rem;color:var(--text-muted);">${counts}</span>
+                    </div>
+                    <button class="ff-btn-small btn-pick-window" data-idx="${i}" style="font-size:0.72rem;padding:3px 10px;">${isPicked ? "Selecionada" : "Escolher"}</button>
+                </div>`;
+        }).join("");
+
+        // Listeners (click no item ou no botão = selecionar)
+        list.querySelectorAll(".sched-window-item, .btn-pick-window").forEach(el => {
+            el.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const idx = parseInt(el.dataset.idx, 10);
+                pickedWindow = windows[idx] || null;
+                refreshWindows(); // re-render para mostrar seleção visual
+            });
+        });
+    }
+
     // Toggle seleção de prog
     let selectedProg = currentProgId || (progs[0] || null);
     refreshQuorumUI(selectedProg);
     refreshLimitedUI(selectedProg);
+    refreshWindows();
+
+    // Listeners para refresh das janelas
+    const durEl = body.querySelector("#inp-sched-duration");
+    if (durEl) durEl.addEventListener("input", refreshWindows);
+
+    const manualEl = body.querySelector("#inp-sched-manual-mode");
+    if (manualEl) manualEl.addEventListener("change", () => {
+        const manualRow = body.querySelector("#sched-manual-row");
+        if (manualRow) manualRow.style.display = manualEl.checked ? "" : "none";
+        refreshWindows();
+    });
+
+    if (sessionDateEl) sessionDateEl.addEventListener("input", () => {
+        // Espera DD/MM/AAAA completo
+        const v = sessionDateEl.value.trim();
+        if (v.length === 10) refreshWindows();
+    });
+
+    // Máscara HH:MM para horário manual
+    const timeEl = body.querySelector("#inp-sched-time");
+    if (timeEl) {
+        timeEl.addEventListener("input", e => {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+            if (v.length > 2) v = v.slice(0, 2) + ':' + v.slice(2);
+            e.target.value = v;
+        });
+    }
     body.querySelectorAll(".sched-opt-btn").forEach(btn => {
         // Confirmar agendamento ao clicar no prog (double-click)
         btn.addEventListener("dblclick", confirmSchedule);
@@ -2870,6 +3188,11 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             selectedProg = btn.dataset.prog;
             refreshQuorumUI(selectedProg);
             refreshLimitedUI(selectedProg);
+            // Fase Q — duração default por categoria; reseta janela escolhida
+            const durEl2 = body.querySelector("#inp-sched-duration");
+            if (durEl2 && !existingEvt) durEl2.value = getDefaultDurationForProg(selectedProg);
+            pickedWindow = null;
+            refreshWindows();
 
             if (wasAlreadyActive) {
                 // segundo clique no mesmo prog = confirmar
@@ -2933,6 +3256,37 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             const labelVal = (labelEl?.value || "").trim();
             if (labelVal) extra.eventLabel = labelVal;
         }
+
+        // Fase Q — horário + duração: modo manual (input livre) ou janela escolhida
+        const manualOn = !!body.querySelector("#inp-sched-manual-mode")?.checked;
+        const durMin   = parseInt(body.querySelector("#inp-sched-duration")?.value || "0", 10);
+        if (manualOn) {
+            const timeStr = (body.querySelector("#inp-sched-time")?.value || "").trim();
+            if (timeStr && /^\d{2}:\d{2}$/.test(timeStr) && SCHED_SLOTS.includes(timeStr)) {
+                extra.time = timeStr;
+                extra.durationMin = Number.isFinite(durMin) && durMin > 0 ? durMin : null;
+            } else if (timeStr) {
+                // Inválido: avisa e aborta
+                const timeEl = body.querySelector("#inp-sched-time");
+                if (timeEl) {
+                    timeEl.style.borderColor = "var(--color-late)";
+                    setTimeout(() => { timeEl.style.borderColor = ""; }, 1500);
+                    timeEl.focus();
+                }
+                showToast(`Horário inválido. Use HH:MM em blocos de 30 min entre 12:00 e 01:30.`, { type: "error", title: "Horário inválido" });
+                return;
+            } else {
+                // Manual mas sem time: salva sem horário definido
+                extra.time = null;
+                extra.durationMin = null;
+            }
+        } else if (pickedWindow) {
+            extra.time = pickedWindow.start;
+            extra.durationMin = Number.isFinite(durMin) && durMin > 0 ? durMin : pickedWindow.durationMin;
+        }
+        // Se nenhum dos dois caminhos definiu, deixa time/durationMin ausentes do
+        // extra — upsertRaidEvent preserva os valores existentes ou usa null.
+
         upsertRaidEvent(resolvedDateKey, selectedProg, quorum, description, extra);
         addScheduleNotification(resolvedDateKey, selectedProg);
         saveState();
@@ -3139,9 +3493,24 @@ function renderScheduleTable() {
     const theadRow = document.getElementById("calendar-thead-row");
     const tbody = document.getElementById("calendar-tbody");
     const label = document.getElementById("calendar-month-label");
-    
+
     if (!theadRow || !tbody) return;
-    
+
+    // Fase Q — toggle "Modo Overlap" (heatmap) visível só para officer/admin
+    const overlapWrap = document.getElementById("overlap-toggle-wrap");
+    const overlapInput = document.getElementById("inp-overlap-mode");
+    if (overlapWrap) overlapWrap.style.display = isOfficer() ? "inline-flex" : "none";
+    if (overlapInput && !overlapInput._wired) {
+        overlapInput._wired = true;
+        overlapInput.addEventListener("change", () => {
+            window._overlapView = overlapInput.checked;
+            renderScheduleTable();
+        });
+        // Sincroniza estado salvo (memória em window, não persiste)
+        overlapInput.checked = !!window._overlapView;
+    }
+    const overlapMode = !!window._overlapView && isOfficer();
+
     if (!state.currentMonth) {
         state.currentMonth = new Date().toISOString().slice(0, 7);
     }
@@ -3198,9 +3567,27 @@ function renderScheduleTable() {
         const detailsIndicator = hasDescription
             ? `<button class="cell-details-indicator" data-date="${dateKey}" title="Ver detalhes do evento" aria-label="Detalhes" style="position:absolute;top:2px;right:2px;background:transparent;border:none;color:var(--gold-bright);cursor:pointer;padding:0 2px;font-size:0.7rem;line-height:1;">●</button>`
             : "";
-        const noTimeBadge = (raidEvt && raidEvt.time === null)
-            ? `<div class="cell-no-time-badge" title="Horário a definir pelo officer">?h</div>`
+        const noTimeBadge = raidEvt
+            ? (raidEvt.time
+                ? `<div class="cell-no-time-badge" style="color:var(--gold-bright);" title="Início ${raidEvt.time}${raidEvt.durationMin ? ` · ${raidEvt.durationMin}min` : ""}">${raidEvt.time}</div>`
+                : `<div class="cell-no-time-badge" title="Horário a definir pelo officer">?h</div>`)
             : "";
+
+        // Fase Q — heatmap por janela viável (modo Overlap, só officer/admin)
+        if (overlapMode) {
+            const windows = computeViableWindows(dateKey, 60, null, 8);
+            const best = windows[0];
+            if (best) {
+                const intensity = Math.min(1, best.widthSlots / 8);
+                const alpha = 0.15 + intensity * 0.45;
+                th.style.background = `rgba(212, 175, 55, ${alpha})`;
+                th.title = `Maior janela viável (≥8): ${formatWindowLabel(best)} — ${best.guaranteed ? "garantida" : "potencial"}`;
+                th.classList.add("day-overlap-heat");
+            } else {
+                th.style.background = "rgba(120, 120, 120, 0.06)";
+                th.title = `Nenhuma janela de ≥1h com 8 jogadores`;
+            }
+        }
         th.style.position = "relative";
         th.innerHTML = `
             ${detailsIndicator}
@@ -3273,13 +3660,23 @@ function renderScheduleTable() {
             // menor que a do conteúdo, ou level do Limited job abaixo do
             // mínimo). Mantém o ✔️ mas adiciona cadeado + tooltip + desatura.
             let incompatReason = "";
-            if (statusVal === "avail") {
+            if (statusVal === "avail" || statusVal === "maybe") {
                 const evtOfDay = getRaidEventForDate(dateKey);
                 if (evtOfDay) {
                     const check = isPlayerCompatibleWithTarget(player, evtOfDay);
                     if (!check.compatible) {
                         statusClass += " cell-incompat";
                         incompatReason = check.reason || "Não atende aos requisitos do evento.";
+                    } else if (evtOfDay.time && statusVal === "avail") {
+                        // Fase Q — avisa se ranges não cobrem a janela do evento
+                        const conf = getConfirmationStatusForEvent(player, evtOfDay);
+                        if (conf === "partial") {
+                            statusClass += " cell-partial";
+                            incompatReason = `Range não cobre toda a janela do evento (${evtOfDay.time} · ${evtOfDay.durationMin || 120}min).`;
+                        } else if (conf === "unavail") {
+                            statusClass += " cell-incompat";
+                            incompatReason = `Range não tem overlap com a janela do evento (${evtOfDay.time}).`;
+                        }
                     }
                 }
             }
@@ -3482,9 +3879,20 @@ function renderQuickSchedule() {
             let tIncompat = [];
             let rIncompat = [];
 
+            // Fase Q — quando o raidEvt tem time, usa confirmação derivada do range.
+            // Sem time, mantém o comportamento legado (status do dia).
+            const useDerived = !!(compatTarget && compatTarget.time && compatTarget.progId);
+
             progTitulares.forEach(p => {
-                const sVal = getSchedEntry(p, dateKey).status;
                 const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
+                if (useDerived) {
+                    const conf = getConfirmationStatusForEvent(p, compatTarget);
+                    if (conf === "confirmed")      tAvail.push(displayName);
+                    else if (conf === "maybe" || conf === "partial") tLate.push(displayName);
+                    else if (conf === "incompatible") tIncompat.push(displayName);
+                    return;
+                }
+                const sVal = getSchedEntry(p, dateKey).status;
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) tAvail.push(displayName);
                     else tIncompat.push(displayName);
@@ -3494,8 +3902,15 @@ function renderQuickSchedule() {
             });
 
             progReservas.forEach(p => {
-                const sVal = getSchedEntry(p, dateKey).status;
                 const displayName = getSlotIdentity(p).name || p.name || "Sem Nick";
+                if (useDerived) {
+                    const conf = getConfirmationStatusForEvent(p, compatTarget);
+                    if (conf === "confirmed")      rAvail.push(displayName);
+                    else if (conf === "maybe" || conf === "partial") rLate.push(displayName);
+                    else if (conf === "incompatible") rIncompat.push(displayName);
+                    return;
+                }
+                const sVal = getSchedEntry(p, dateKey).status;
                 if (sVal === "avail") {
                     if (isPlayerCompatibleWithTarget(p, compatTarget).compatible) rAvail.push(displayName);
                     else rIncompat.push(displayName);

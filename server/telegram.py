@@ -103,37 +103,56 @@ def _format_details_line(description):
     return f"\n\n<b>Detalhes:</b> {_html.escape(desc)}"
 
 
-def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
+def _format_time_suffix(time_str, duration_min=None):
+    """Fase Q — retorna ' às HH:MM' ou ' às HH:MM (Xh)' quando time presente,
+    ou ' (horário a definir)' quando time é None.
+    """
+    if not time_str:
+        return " (horário a definir)"
+    if duration_min:
+        hrs = duration_min // 60
+        rem = duration_min % 60
+        dur = f"{hrs}h" if rem == 0 else f"{hrs}h{rem}"
+        return f" às {time_str} ({dur})"
+    return f" às {time_str}"
+
+
+def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
+    time_suffix = _format_time_suffix(time_str, duration_min)
     if dynamic:
-        body = f"📅 <b>Evento Planejado</b>\n{prog_name} — {pretty_date}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
+        body = f"📅 <b>Evento Planejado</b>\n{prog_name} — {pretty_date}{time_suffix}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
     else:
         body = (
             f"📅 <b>Evento Planejado</b>\n"
-            f"{prog_name} — {pretty_date}.{details}\n\n"
+            f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
             f"Confirmados: {confirmed}/{quorum}.\n"
             f"Acesse {SITE_URL} e marque se vai ou não."
         )
     return body
 
 
-def format_event_postponed(prog_name, old_date_str, new_date_str, description=None):
+def format_event_postponed(prog_name, old_date_str, new_date_str, description=None, old_time=None, new_time=None):
     old_pretty = _format_date(old_date_str)
     new_pretty = _format_date(new_date_str)
     details = _format_details_line(description)
+    # Fase Q — inclui horário quando presente em pelo menos um dos lados
+    old_suffix = f" {old_time}" if old_time else ""
+    new_suffix = f" {new_time}" if new_time else ""
     return (
         f"📅 <b>Evento Adiado</b>\n"
-        f"{prog_name} foi adiado de {old_pretty} para {new_pretty}.{details}\n\n"
+        f"{prog_name} foi adiado de {old_pretty}{old_suffix} para {new_pretty}{new_suffix}.{details}\n\n"
         f"Confirme sua presença em {SITE_URL}."
     )
 
 
-def format_event_cancelled(prog_name, date_str):
+def format_event_cancelled(prog_name, date_str, time_str=None):
     pretty_date = _format_date(date_str)
+    time_suffix = f" {time_str}" if time_str else ""
     return (
         f"❌ <b>Evento Cancelado</b>\n"
-        f"{prog_name} — {pretty_date}."
+        f"{prog_name} — {pretty_date}{time_suffix}."
     )
 
 
@@ -144,7 +163,8 @@ def format_event_cancelled_bulk(count):
     )
 
 
-def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full"):
+def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full", window_start=None, window_end=None):
+    """Fase Q — quando window_start/end são informados, sugere a janela específica."""
     pretty = _format_date(date_str)
     if party_mode == "light":
         suggestion = f"Possível agendar uma Light Party ({party_size}p)."
@@ -152,6 +172,13 @@ def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full"):
         suggestion = f"Possível agendar um evento Dynamic (quórum {party_size})."
     else:
         suggestion = f"Possível agendar uma Full Party ({party_size}p)."
+    if window_start and window_end:
+        return (
+            f"✨ <b>Oportunidade de evento</b>\n"
+            f"{pretty} {window_start}–{window_end}: {count} pessoa(s) disponíveis na janela.\n"
+            f"{suggestion}\n\n"
+            f"Agende em {SITE_URL}."
+        )
     return (
         f"✨ <b>Oportunidade de evento</b>\n"
         f"{pretty}: {count} pessoa(s) disponíveis.\n"
@@ -160,35 +187,37 @@ def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full"):
     )
 
 
-def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
+def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
+    time_suffix = _format_time_suffix(time_str, duration_min)
     if dynamic:
         return (
             f"⏰ <b>Lembrete</b>\n"
-            f"{prog_name} é amanhã ({pretty_date}).{details}\n\n"
+            f"{prog_name} é amanhã ({pretty_date}{time_suffix}).{details}\n\n"
             f"Confirmados: {confirmed}.\n"
             f"Ainda não marcou? {SITE_URL}"
         )
     return (
         f"⏰ <b>Lembrete</b>\n"
-        f"{prog_name} é amanhã ({pretty_date}).{details}\n\n"
+        f"{prog_name} é amanhã ({pretty_date}{time_suffix}).{details}\n\n"
         f"Confirmados: {confirmed}/{quorum}.\n"
         f"Ainda não marcou? {SITE_URL}"
     )
 
 
-def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False, description=None):
+def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
+    time_suffix = _format_time_suffix(time_str, duration_min)
     if dynamic:
         return (
             f"⚔️ <b>É hoje!</b>\n"
-            f"{prog_name} — {pretty_date}.{details}\n\n"
+            f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
             f"Confirmados: {confirmed}.\nBoa raid!"
         )
     return (
         f"⚔️ <b>É hoje!</b>\n"
-        f"{prog_name} — {pretty_date}.{details}\n\n"
+        f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
         f"Confirmados: {confirmed}/{quorum}.\nBoa raid!"
     )

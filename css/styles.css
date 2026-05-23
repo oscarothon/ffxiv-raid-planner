@@ -2074,6 +2074,30 @@ label {
     vertical-align: super;
 }
 
+/* Fase Q — célula com avail mas range não cobre toda a janela do evento */
+.cell-status.cell-partial {
+    background: rgba(245, 158, 11, 0.18) !important;
+    position: relative;
+}
+.cell-status.cell-partial::after {
+    content: "~";
+    position: absolute;
+    top: 0;
+    right: 3px;
+    font-size: 0.7rem;
+    color: var(--color-late);
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Fase Q — janelas viáveis no modal (hover state) */
+.sched-window-item:hover {
+    background: rgba(255,255,255,0.08) !important;
+}
+.sched-manual-toggle:hover {
+    color: var(--text-primary) !important;
+}
+
 /* Fase Q — badge "?h" no header do calendário quando evento sem horário */
 .cell-no-time-badge {
     position: absolute;
