@@ -948,8 +948,11 @@ function isContentMarkableForCharacter(target, character) {
         return { markable: false, reason: "Limited só pode ser marcado por evento específico." };
     }
 
-    // Normal: compara order da expansão atual com a do conteúdo
-    const contentExpId = resolveContentExpansionId(target);
+    // Normal: compara order da expansão atual com a do conteúdo.
+    // target pode ser um raidEvent (tem progId mas não expansionId); nesse
+    // caso busca o conteúdo real via getProgObj para ter o expansionId correto.
+    const contentObj = target.progId ? getProgObj(target.progId) : target;
+    const contentExpId = resolveContentExpansionId(contentObj);
     if (!contentExpId) return { markable: true };
     // Fase P — fallback permissivo: char sem currentExpansionId (legado /
     // produção pré-Fase O) NÃO é bloqueado. O PLANNING_V2 define
