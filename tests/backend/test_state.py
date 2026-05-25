@@ -277,6 +277,93 @@ class TestPutStateHappyPath:
 
 
 # ===========================================================================
+# Fase L/M fix — _preserve_server_managed_fields
+# ===========================================================================
+
+class TestPreserveServerManagedFields:
+    """Bug do bot do Telegram spammando quorum suggestions:
+    PUT do cliente clobava quorumSuggestionsSent e reminder flags.
+    """
+
+    def test_quorum_suggestions_sent_is_preserved(self, api, admin_user, app_module):
+        # Seta o flag direto no banco simulando o que _evaluate_quorum_opportunities faz
+        from server.db import db_conn
+        import json as _json
+        me = api.me().get_json()
+        static_id = me["active_static_id"]
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE statics SET data_json = ? WHERE id = ?",
+                (_json.dumps({"quorumSuggestionsSent": {"2026-05-28": True}, "roster": []}), static_id),
+            )
+
+        # Cliente faz PUT sem o campo (situação normal — front nunca tem esse campo)
+        res = api.put_state({"roster": [], "someOtherField": "x"})
+        assert res.status_code == 200
+
+        # Servidor preservou o flag
+        new_data = api.get_state().get_json()["data"]
+        assert new_data.get("quorumSuggestionsSent") == {"2026-05-28": True}
+
+    def test_quorum_suggestions_sent_absent_on_first_put(self, api, admin_user):
+        """Se old_data não tem o campo, payload sem ele continua sem ele (não cria None)."""
+        res = api.put_state({"roster": []})
+        assert res.status_code == 200
+        data = api.get_state().get_json()["data"]
+        assert "quorumSuggestionsSent" not in data or data.get("quorumSuggestionsSent") is None
+
+    def test_reminder_flags_per_event_preserved(self, api, admin_user, app_module):
+        """reminder24hSent / reminderTodaySent são preservados por evento (match por id)."""
+        from server.db import db_conn
+        import json as _json
+        me = api.me().get_json()
+        static_id = me["active_static_id"]
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE statics SET data_json = ? WHERE id = ?",
+                (_json.dumps({
+                    "roster": [],
+                    "raidEvents": [
+                        {"id": "evt_a", "progId": "p1", "date": "2026-05-28",
+                         "reminder24hSent": True, "reminderTodaySent": False},
+                        {"id": "evt_b", "progId": "p2", "date": "2026-05-29",
+                         "reminder24hSent": False, "reminderTodaySent": True},
+                    ],
+                }), static_id),
+            )
+
+        # Cliente faz PUT só com evt_a, sem os flags (simulando frontend stale)
+        res = api.put_state({
+            "roster": [],
+            "raidEvents": [
+                {"id": "evt_a", "progId": "p1", "date": "2026-05-28", "quorum": 8},
+                {"id": "evt_b", "progId": "p2", "date": "2026-05-29", "quorum": 8},
+            ],
+        })
+        assert res.status_code == 200
+
+        events = api.get_state().get_json()["data"]["raidEvents"]
+        evts_by_id = {e["id"]: e for e in events}
+        assert evts_by_id["evt_a"]["reminder24hSent"] is True
+        assert evts_by_id["evt_a"]["reminderTodaySent"] is False
+        assert evts_by_id["evt_b"]["reminder24hSent"] is False
+        assert evts_by_id["evt_b"]["reminderTodaySent"] is True
+
+    def test_new_event_without_flags_keeps_client_values(self, api, admin_user):
+        """Evento NOVO (não em old) usa o valor que o cliente mandou."""
+        res = api.put_state({
+            "roster": [],
+            "raidEvents": [
+                {"id": "evt_new", "progId": "p1", "date": "2026-05-30",
+                 "reminder24hSent": False, "reminderTodaySent": False},
+            ],
+        })
+        assert res.status_code == 200
+        events = api.get_state().get_json()["data"]["raidEvents"]
+        assert events[0]["reminder24hSent"] is False
+
+
+# ===========================================================================
 # _validate_state_diff — unit tests (no DB needed)
 # ===========================================================================
 
