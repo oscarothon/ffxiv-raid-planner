@@ -2583,6 +2583,62 @@ function closeSchedulePopover() {
     _popoverPlayerRef = null;
 }
 
+// Clipboard de sessão para Copiar/Colar de disponibilidade entre dias.
+// Map chaveado por jogador (user_id → id → name): officer copiando do João
+// não vê o clipboard ao abrir popover da Maria. Não persiste em localStorage
+// (intencional — reload limpa para evitar clipboard "fantasma" entre sessões).
+const _schedClipboard = new Map();
+
+function getSchedClipboardKey(player) {
+    if (!player) return null;
+    if (player.user_id != null) return `u:${player.user_id}`;
+    if (player.id != null) return `s:${player.id}`;
+    return `n:${player.name || ""}`;
+}
+
+function getSchedClipboard(player) {
+    const key = getSchedClipboardKey(player);
+    return key ? (_schedClipboard.get(key) || null) : null;
+}
+
+function setSchedClipboard(player, status, ranges) {
+    const key = getSchedClipboardKey(player);
+    if (!key) return;
+    _schedClipboard.set(key, {
+        status,
+        ranges: Array.isArray(ranges) ? ranges.map(r => ({ start: r.start, end: r.end })) : [],
+    });
+}
+
+// Nomes em português dos dias da semana (plural, para botão "Aplicar para
+// <todas as>/<todos os> <weekday>"). 0 = Domingo, 6 = Sábado (compatível com
+// Date.getDay). Domingo e sábado são masculinos; demais são femininos.
+const WEEKDAY_LABELS_PLURAL = ["domingos", "segundas", "terças", "quartas", "quintas", "sextas", "sábados"];
+const WEEKDAY_IS_MASCULINE = [true, false, false, false, false, false, true]; // dom, sáb
+
+function weekdayApplyPhrase(weekdayIdx) {
+    const article = WEEKDAY_IS_MASCULINE[weekdayIdx] ? "todos os" : "todas as";
+    return `${article} ${WEEKDAY_LABELS_PLURAL[weekdayIdx]}`;
+}
+
+// Coleta dateKeys do mesmo dia da semana dentro do mês de `sourceDateKey`,
+// filtrados por dateKey >= todayKey (escopo: "mês inteiro, só dias futuros").
+// Inclui a própria sourceDateKey se for >= hoje.
+function collectSameWeekdaysInMonth(sourceDateKey, todayKey) {
+    const [ys, ms, ds] = sourceDateKey.split("-").map(Number);
+    const refDate = new Date(ys, ms - 1, ds);
+    const targetWeekday = refDate.getDay();
+    const numDays = new Date(ys, ms, 0).getDate();
+    const out = [];
+    for (let d = 1; d <= numDays; d++) {
+        const dk = `${ys}-${String(ms).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        if (dk < todayKey) continue;
+        const wd = new Date(ys, ms - 1, d).getDay();
+        if (wd === targetWeekday) out.push(dk);
+    }
+    return out;
+}
+
 function openSchedulePopover(player, dateKey, anchorEl) {
     // Fecha outro popover aberto (sempre via closeSchedulePopover para limpar listeners)
     const existing = document.getElementById("sched-popover");
@@ -2649,6 +2705,16 @@ function openSchedulePopover(player, dateKey, anchorEl) {
             { key: "unavail", label: "Indisponível",  cls: "active-unavail" },
         ];
 
+        // Atalhos: Copiar/Colar/Aplicar-semana. Aplicar-semana só faz sentido
+        // se a data clicada é >= hoje (caso contrário, "futuras" estaria vazio).
+        const todayKey = todayLocalKey();
+        const [ys, ms, ds] = dateKey.split("-").map(Number);
+        const weekdayIdx = new Date(ys, ms - 1, ds).getDay();
+        const applyPhrase = weekdayApplyPhrase(weekdayIdx);
+        const canApplyWeekday = dateKey >= todayKey;
+        const clip = getSchedClipboard(player);
+        const hasClipboard = !!clip;
+
         popover.innerHTML = `
             <div class="sched-popover-status-btns">
                 ${statuses.map(s => `
@@ -2657,6 +2723,18 @@ function openSchedulePopover(player, dateKey, anchorEl) {
                 `).join("")}
             </div>
             ${slotsHtml}
+            <div class="sched-popover-shortcuts">
+                <button class="sched-btn-shortcut" id="sp-copy" title="Copiar marcação deste dia">📋 Copiar</button>
+                <button class="sched-btn-shortcut" id="sp-paste"
+                        ${hasClipboard ? "" : "disabled"}
+                        title="${hasClipboard ? "Colar marcação copiada" : "Nada para colar — use Copiar primeiro"}">📥 Colar</button>
+                ${canApplyWeekday ? `
+                    <button class="sched-btn-shortcut sched-btn-shortcut-wide" id="sp-apply-weekday"
+                            title="Aplica esta marcação em ${applyPhrase} deste mês a partir de hoje (inclusive). Sobrescreve o que já estiver marcado.">
+                        ↻ Aplicar a ${applyPhrase}
+                    </button>
+                ` : ""}
+            </div>
             <div class="sched-popover-footer">
                 <button class="sched-btn-confirm" id="sp-confirm">Confirmar</button>
                 <button class="sched-btn-cancel" id="sp-cancel">Cancelar</button>
@@ -2725,6 +2803,90 @@ function openSchedulePopover(player, dateKey, anchorEl) {
             selectedIdx.clear();
             renderPopover();
             bindGridListeners();
+        });
+
+        // Copiar — salva status+ranges atuais no clipboard de sessão (sem
+        // persistir no monthlySchedule). Feedback visual no próprio botão.
+        const copyBtn = popover.querySelector("#sp-copy");
+        if (copyBtn) copyBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isDayAll = selectedIdx.size === SCHED_SLOTS.length;
+            const ranges = (curStatus === "unavail" || isDayAll)
+                ? []
+                : slotsToRanges([...selectedIdx]);
+            setSchedClipboard(player, curStatus, ranges);
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = "✓ Copiado";
+            copyBtn.disabled = true;
+            setTimeout(() => {
+                if (copyBtn.isConnected) {
+                    copyBtn.textContent = orig;
+                    copyBtn.disabled = false;
+                }
+            }, 900);
+            const pasteBtn = popover.querySelector("#sp-paste");
+            if (pasteBtn) {
+                pasteBtn.disabled = false;
+                pasteBtn.title = "Colar marcação copiada";
+            }
+        });
+
+        // Colar — preenche controles do popover (não salva direto; user
+        // ainda precisa clicar Confirmar). Consistente com fluxo atual.
+        const pasteBtn = popover.querySelector("#sp-paste");
+        if (pasteBtn) pasteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const clip = getSchedClipboard(player);
+            if (!clip) return;
+            curStatus = clip.status;
+            if (curStatus === "unavail") {
+                selectedIdx.clear();
+            } else if (!clip.ranges || clip.ranges.length === 0) {
+                selectedIdx.clear();
+                SCHED_SLOTS.forEach((_, i) => selectedIdx.add(i));
+            } else {
+                selectedIdx = rangesToSlotIdxs(clip.ranges);
+            }
+            renderPopover();
+            bindGridListeners();
+        });
+
+        // Aplicar a todas as <weekday> deste mês (data >= hoje).
+        // Salva direto + toast — gesto explícito.
+        const applyWeekdayBtn = popover.querySelector("#sp-apply-weekday");
+        if (applyWeekdayBtn) applyWeekdayBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isDayAll = selectedIdx.size === SCHED_SLOTS.length;
+            const ranges = (curStatus === "unavail" || isDayAll)
+                ? []
+                : slotsToRanges([...selectedIdx]);
+            const targets = collectSameWeekdaysInMonth(dateKey, todayLocalKey());
+            if (targets.length === 0) return;
+            if (!player.monthlySchedule) player.monthlySchedule = {};
+            targets.forEach(dk => {
+                player.monthlySchedule[dk] = {
+                    status: curStatus,
+                    ranges: ranges.map(r => ({ start: r.start, end: r.end })),
+                };
+            });
+            // Limpa pendingNotifications equivalentes ao Confirmar normal
+            if (curStatus === "avail" || curStatus === "maybe") {
+                (state.pendingNotifications || [])
+                    .filter(n => targets.includes(n.date))
+                    .forEach(n => markNotificationSeen(n.id));
+                renderNotificationBanner();
+            }
+            const [ay, am, ad] = dateKey.split("-").map(Number);
+            const wdIdx = new Date(ay, am - 1, ad).getDay();
+            const wdLabel = WEEKDAY_LABELS_PLURAL[wdIdx];
+            closeSchedulePopover();
+            saveState();
+            renderScheduleTable();
+            showToast(`Marcação aplicada em ${targets.length} ${wdLabel} deste mês.`, {
+                type: "info",
+                duration: 3000,
+                title: "Atalho aplicado",
+            });
         });
     }
 

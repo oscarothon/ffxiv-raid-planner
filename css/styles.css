@@ -2019,6 +2019,42 @@ label {
     background: rgba(4, 16, 34, 0.95);
 }
 
+/* Desktop wide: o mês inteiro cabe sem scroll lateral.
+   Em 1440px: 1440 - 130 (col Jogador) ≈ 1310 / 31 dias ≈ 42px por dia. */
+@media (min-width: 1280px) {
+    .calendar-table-wrapper {
+        overflow-x: hidden;
+    }
+    .calendar-table {
+        width: 100%;
+        min-width: 0;
+        table-layout: fixed;
+    }
+    .calendar-table th:not(.col-fixed),
+    .calendar-table td:not(.col-fixed) {
+        min-width: 0;
+        width: auto;
+        padding: 3px 2px;
+        overflow: hidden;
+    }
+    .calendar-table .cell-day-num {
+        font-size: 0.95rem;
+    }
+    .calendar-table .cell-day-wk {
+        font-size: 0.55rem;
+    }
+    .calendar-table .cell-status {
+        font-size: 0.95rem;
+    }
+    .calendar-table .cell-no-time-badge {
+        font-size: 0.5rem;
+        bottom: 1px;
+    }
+    .calendar-table .cell-details-indicator {
+        font-size: 0.6rem !important;
+    }
+}
+
 .calendar-header-bar,
 .calendar-nav-header {
     display: flex;
@@ -2205,6 +2241,38 @@ label {
     font-family: var(--font-ui);
 }
 .sched-btn-all-day:hover, .sched-btn-clear:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+.sched-popover-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(255,255,255,0.08);
+}
+.sched-btn-shortcut {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sched-btn-shortcut:hover:not(:disabled) {
+    background: rgba(255,255,255,0.12);
+    color: var(--text-primary);
+    border-color: rgba(255,255,255,0.2);
+}
+.sched-btn-shortcut:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.sched-btn-shortcut-wide {
+    flex: 1 1 100%;
+    text-align: center;
+}
 .sched-popover-footer {
     display: flex;
     gap: 6px;
