@@ -1523,7 +1523,7 @@ function buildProgCard(progId, canManage) {
 
             // Detecta agendamentos futuros desse prog — se houver, confirma com aviso
             // de que serão cancelados (e o grupo notificado no Telegram via Fase M).
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const todayStr = todayLocalKey();
             const futureEvents = (state.raidEvents || []).filter(ev =>
                 ev.progId === progId && (ev.postponedTo || ev.date) >= todayStr
             );
@@ -2283,8 +2283,18 @@ function getRaidEventForDate(dateKey) {
     return (state.raidEvents || []).find(e => (e.postponedTo || e.date) === dateKey);
 }
 
+// Retorna a data de hoje em YYYY-MM-DD na timezone LOCAL do browser.
+// new Date().toISOString() retorna UTC, o que causa bug para usuários em
+// timezones negativas (Brasil GMT-3/-4): a partir das 20-21h local, o
+// "today" UTC já vira o dia seguinte e eventos do dia atual "desaparecem"
+// prematuramente. Usa métodos locais para evitar isso.
+function todayLocalKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function getRaidEventForProg(progId) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocalKey();
     return (state.raidEvents || []).find(e =>
         e.progId === progId && (e.postponedTo || e.date) >= today
     );
@@ -3349,7 +3359,7 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
             const newDate = (parts.length === 3 && parts[2].length === 4)
                 ? `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
                 : null;
-            const todayIso = new Date().toISOString().slice(0, 10);
+            const todayIso = todayLocalKey();
             if (!newDate || newDate < todayIso || newDate === dateKey) return;
             postponeRaidEvent(dateKey, newDate);
             saveState();
@@ -3837,7 +3847,7 @@ function renderQuickSchedule() {
 
     const today = new Date();
     today.setHours(0,0,0,0);
-    const todayKey = today.toISOString().slice(0, 10);
+    const todayKey = todayLocalKey();
 
     const shortWkNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
