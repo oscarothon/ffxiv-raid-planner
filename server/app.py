@@ -574,6 +574,40 @@ def _validate_state_diff(old, new, role, user_id):
     return violations
 
 
+# Campos gerenciados exclusivamente pelo servidor — clientes não podem alterar.
+# Sem essa preservação, qualquer PUT do front clobava esses campos com valores
+# stale ou ausentes, fazendo o bot do Telegram re-disparar sugestões/lembretes.
+_SERVER_MANAGED_TOP_LEVEL = ("quorumSuggestionsSent",)
+_SERVER_MANAGED_EVENT_FIELDS = ("reminder24hSent", "reminderTodaySent")
+
+
+def _preserve_server_managed_fields(old_data, payload):
+    """Copia campos server-side de old_data para payload (mutates payload)."""
+    if not isinstance(payload, dict) or not isinstance(old_data, dict):
+        return
+
+    # Top-level
+    for key in _SERVER_MANAGED_TOP_LEVEL:
+        if key in old_data:
+            payload[key] = old_data[key]
+
+    # Per-event flags — match por id
+    old_events = old_data.get("raidEvents") or []
+    new_events = payload.get("raidEvents") or []
+    if not isinstance(old_events, list) or not isinstance(new_events, list):
+        return
+    old_by_id = {e.get("id"): e for e in old_events if isinstance(e, dict) and e.get("id")}
+    for evt in new_events:
+        if not isinstance(evt, dict):
+            continue
+        old_evt = old_by_id.get(evt.get("id"))
+        if not isinstance(old_evt, dict):
+            continue
+        for field in _SERVER_MANAGED_EVENT_FIELDS:
+            if field in old_evt:
+                evt[field] = old_evt[field]
+
+
 @app.put("/api/state")
 @login_required
 def put_state():
@@ -610,6 +644,13 @@ def put_state():
             "your_role": role,
             "violations": violations,
         }), 403
+
+    # Bugfix Fase L/M — preserva campos gerenciados pelo servidor.
+    # Sem isso, qualquer PUT do cliente clobava `quorumSuggestionsSent` e os
+    # flags `reminder24hSent`/`reminderTodaySent` por evento (porque o front
+    # nunca recebe ou esses campos saem desincronizados entre clientes), e o
+    # bot do Telegram re-disparava sugestão de quórum e lembretes a cada save.
+    _preserve_server_managed_fields(old_data, payload)
 
     with db_conn() as conn:
         conn.execute(
