@@ -1209,3 +1209,122 @@ describe("Fase Q2 — getAvailCountForDate usa derived quando event tem time", (
     expect(window.getAvailCountForDate("2025-06-01", evt)).toBe(4);
   });
 });
+
+// ============================================================================
+// Atalhos do popover (Copiar/Colar/Aplicar-semana)
+// ============================================================================
+
+describe("getSchedClipboardKey", () => {
+  it("usa user_id quando disponível", () => {
+    expect(window.getSchedClipboardKey({ user_id: 42, id: "s1", name: "X" })).toBe("u:42");
+  });
+  it("usa id quando user_id é null", () => {
+    expect(window.getSchedClipboardKey({ user_id: null, id: "s7", name: "X" })).toBe("s:s7");
+  });
+  it("cai pra name como último recurso", () => {
+    expect(window.getSchedClipboardKey({ name: "Tank" })).toBe("n:Tank");
+  });
+  it("retorna null para player ausente", () => {
+    expect(window.getSchedClipboardKey(null)).toBeNull();
+  });
+});
+
+describe("setSchedClipboard / getSchedClipboard", () => {
+  it("salva e lê de volta o status + ranges", () => {
+    const p = { user_id: 1 };
+    window.setSchedClipboard(p, "avail", [{ start: "20:00", end: "22:00" }]);
+    expect(window.getSchedClipboard(p)).toEqual({
+      status: "avail",
+      ranges: [{ start: "20:00", end: "22:00" }],
+    });
+  });
+  it("clona ranges (mutar o original não afeta o clipboard)", () => {
+    const p = { user_id: 2 };
+    const original = [{ start: "20:00", end: "22:00" }];
+    window.setSchedClipboard(p, "maybe", original);
+    original[0].end = "23:59"; // mutação
+    expect(window.getSchedClipboard(p).ranges).toEqual([{ start: "20:00", end: "22:00" }]);
+  });
+  it("isolado por jogador (oficial copiando do João não vê na Maria)", () => {
+    const joao  = { user_id: 100 };
+    const maria = { user_id: 200 };
+    window.setSchedClipboard(joao, "avail", []);
+    expect(window.getSchedClipboard(joao)).not.toBeNull();
+    expect(window.getSchedClipboard(maria)).toBeNull();
+  });
+  it("aceita unavail com ranges vazios", () => {
+    const p = { user_id: 3 };
+    window.setSchedClipboard(p, "unavail", []);
+    expect(window.getSchedClipboard(p)).toEqual({ status: "unavail", ranges: [] });
+  });
+});
+
+describe("collectSameWeekdaysInMonth", () => {
+  it("retorna todas as terças do mês a partir de hoje (inclusive)", () => {
+    // 2026-05-25 (segunda). Terças de maio/2026: 5, 12, 19, 26.
+    // Hoje = 2026-05-25 → só inclui a partir do dia 26.
+    const result = window.collectSameWeekdaysInMonth("2026-05-26", "2026-05-25");
+    expect(result).toEqual(["2026-05-26"]);
+  });
+
+  it("retorna todas as sextas do mês quando hoje é início do mês", () => {
+    // Sextas de maio/2026: 1, 8, 15, 22, 29. Hoje = 2026-05-01.
+    const result = window.collectSameWeekdaysInMonth("2026-05-01", "2026-05-01");
+    expect(result).toEqual([
+      "2026-05-01", "2026-05-08", "2026-05-15", "2026-05-22", "2026-05-29",
+    ]);
+  });
+
+  it("inclui a própria data clicada quando dateKey === todayKey", () => {
+    // 2026-05-15 é sexta-feira.
+    const result = window.collectSameWeekdaysInMonth("2026-05-15", "2026-05-15");
+    expect(result).toContain("2026-05-15");
+    expect(result).toContain("2026-05-22");
+    expect(result).toContain("2026-05-29");
+    expect(result).not.toContain("2026-05-08"); // < hoje
+  });
+
+  it("retorna vazio quando todayKey > último weekday do mês", () => {
+    // 2026-05-30 (sábado), última sexta do mês foi 29 → resultado vazio
+    const result = window.collectSameWeekdaysInMonth("2026-05-01", "2026-05-30");
+    expect(result).toEqual([]);
+  });
+
+  it("escopo é só o mês da sourceDateKey (não vaza pro mês seguinte)", () => {
+    // Domingos de maio/2026: 3, 10, 17, 24, 31. Não inclui 2026-06-07.
+    const result = window.collectSameWeekdaysInMonth("2026-05-03", "2026-05-01");
+    expect(result).toEqual([
+      "2026-05-03", "2026-05-10", "2026-05-17", "2026-05-24", "2026-05-31",
+    ]);
+  });
+
+  it("trata fevereiro de ano bissexto (29 dias em 2024)", () => {
+    // 2024-02-29 é quinta-feira. Quintas de fev/2024: 1, 8, 15, 22, 29.
+    const result = window.collectSameWeekdaysInMonth("2024-02-29", "2024-02-01");
+    expect(result).toEqual([
+      "2024-02-01", "2024-02-08", "2024-02-15", "2024-02-22", "2024-02-29",
+    ]);
+  });
+});
+
+describe("WEEKDAY_LABELS_PLURAL", () => {
+  it("usa formas plural em pt-BR (0=Domingo, 6=Sábado)", () => {
+    expect(window.WEEKDAY_LABELS_PLURAL).toEqual([
+      "domingos", "segundas", "terças", "quartas", "quintas", "sextas", "sábados",
+    ]);
+  });
+});
+
+describe("weekdayApplyPhrase", () => {
+  it("usa 'todos os' para domingo e sábado (masculinos)", () => {
+    expect(window.weekdayApplyPhrase(0)).toBe("todos os domingos");
+    expect(window.weekdayApplyPhrase(6)).toBe("todos os sábados");
+  });
+  it("usa 'todas as' para segunda a sexta (femininos)", () => {
+    expect(window.weekdayApplyPhrase(1)).toBe("todas as segundas");
+    expect(window.weekdayApplyPhrase(2)).toBe("todas as terças");
+    expect(window.weekdayApplyPhrase(3)).toBe("todas as quartas");
+    expect(window.weekdayApplyPhrase(4)).toBe("todas as quintas");
+    expect(window.weekdayApplyPhrase(5)).toBe("todas as sextas");
+  });
+});
