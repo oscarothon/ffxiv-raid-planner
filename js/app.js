@@ -3128,7 +3128,39 @@ function openScheduleModal(dateKey = null, defaultProgId = null) {
         const windows = computeViableWindows(evalDateKey, dur, target, required);
 
         if (windows.length === 0) {
-            list.innerHTML = `<div style="color:var(--color-late);font-size:0.8rem;padding:6px;">Nenhuma janela com ${required} jogadores disponíveis. Ative "Modo manual" para definir horário arbitrário.</div>`;
+            // Fallback Fase Q — janela existe mas é mais curta que a duração pedida.
+            // Recomputa com duração mínima (30 min) pra descobrir a maior janela viável
+            // com `required` jogadores. Mostra como sugestão com botão de ajuste rápido.
+            const shorterWindows = computeViableWindows(evalDateKey, 30, target, required);
+            if (shorterWindows.length === 0) {
+                list.innerHTML = `<div style="color:var(--color-late);font-size:0.8rem;padding:6px;">Nenhuma janela com ${required} jogadores disponíveis no dia. Ative "Modo manual" para definir horário arbitrário.</div>`;
+                return;
+            }
+            const best = shorterWindows[0];
+            const counts = best.guaranteed
+                ? `${best.countAvail} confirm.`
+                : `${best.countAvail} confirm. + ${best.countMaybe} talvez`;
+            const dh = Math.floor(best.durationMin / 60);
+            const dm = best.durationMin % 60;
+            const durLabel = dm === 0 ? `${dh}h` : `${dh}h${dm}`;
+            list.innerHTML = `
+                <div style="color:var(--color-late);font-size:0.8rem;padding:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;">
+                    <div style="margin-bottom:6px;">
+                        <strong>Nenhuma janela de ${dur} min com ${required} jogadores.</strong><br>
+                        A maior janela com ${required} pessoas é <strong style="color:var(--gold-bright);">${formatWindowLabel(best)}</strong> (${counts}).
+                    </div>
+                    <button class="ff-btn-small" id="btn-fit-duration" style="font-size:0.72rem;padding:3px 10px;margin-right:6px;">
+                        Reduzir duração para ${durLabel}
+                    </button>
+                    <span style="font-size:0.72rem;color:var(--text-muted);">ou ative Modo manual</span>
+                </div>`;
+            const fitBtn = list.querySelector("#btn-fit-duration");
+            if (fitBtn) fitBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (durInput) durInput.value = best.durationMin;
+                pickedWindow = null;
+                refreshWindows();
+            });
             return;
         }
 
