@@ -814,3 +814,67 @@ class TestFaseQTimeFormatting:
         assert "20:00–22:00" not in msg
         assert "8 pessoa(s) disponíveis" in msg
 
+
+# ---------------------------------------------------------------------------
+# Sufixo "— N Talvez" em mensagens com presença incerta
+# ---------------------------------------------------------------------------
+
+@pytest.mark.telegram
+class TestMaybeCountSuffix:
+    """Quando há jogadores com status Talvez no dia do evento, as mensagens
+    do Telegram passam a anexar '— N Talvez' à linha de Confirmados."""
+
+    def test_format_maybe_suffix_zero_returns_empty(self, tg):
+        assert tg._format_maybe_suffix(0) == ""
+        assert tg._format_maybe_suffix(None) == ""
+
+    def test_format_maybe_suffix_one(self, tg):
+        assert tg._format_maybe_suffix(1) == " — 1 Talvez"
+
+    def test_format_maybe_suffix_many(self, tg):
+        # "Talvez" é invariável em pt-BR — não pluraliza
+        assert tg._format_maybe_suffix(4) == " — 4 Talvez"
+
+    def test_event_created_non_dynamic_with_maybe(self, tg):
+        msg = tg.format_event_created("Omega", "2024-01-01", 7, 8, maybe_count=1)
+        assert "Confirmados: 7/8 — 1 Talvez." in msg
+
+    def test_event_created_non_dynamic_without_maybe_unchanged(self, tg):
+        """maybe_count default = 0 mantém formato original (retrocompat)."""
+        msg = tg.format_event_created("Omega", "2024-01-01", 7, 8)
+        assert "Confirmados: 7/8." in msg
+        assert "Talvez" not in msg
+
+    def test_event_created_dynamic_ignores_maybe(self, tg):
+        """Dynamic não tem linha de Confirmados na criação — maybe não muda nada."""
+        msg = tg.format_event_created("Omega", "2024-01-01", 7, 8, dynamic=True, maybe_count=3)
+        assert "Confirmados" not in msg
+        assert "Talvez" not in msg
+
+    def test_reminder_24h_non_dynamic_with_maybe(self, tg):
+        msg = tg.format_reminder_24h("Omega", "2024-01-01", 6, 8, maybe_count=2)
+        assert "Confirmados: 6/8 — 2 Talvez." in msg
+
+    def test_reminder_24h_non_dynamic_without_maybe_unchanged(self, tg):
+        msg = tg.format_reminder_24h("Omega", "2024-01-01", 6, 8)
+        assert "Confirmados: 6/8." in msg
+        assert "Talvez" not in msg
+
+    def test_reminder_24h_dynamic_with_maybe(self, tg):
+        msg = tg.format_reminder_24h("Omega", "2024-01-01", 5, 8, dynamic=True, maybe_count=2)
+        assert "Confirmados: 5 — 2 Talvez." in msg
+
+    def test_reminder_today_non_dynamic_with_maybe(self, tg):
+        msg = tg.format_reminder_today("Omega", "2024-01-01", 7, 8, maybe_count=1)
+        assert "Confirmados: 7/8 — 1 Talvez." in msg
+        assert "Boa raid!" in msg
+
+    def test_reminder_today_dynamic_with_maybe(self, tg):
+        msg = tg.format_reminder_today("Omega", "2024-01-01", 4, 8, dynamic=True, maybe_count=3)
+        assert "Confirmados: 4 — 3 Talvez." in msg
+
+    def test_negative_maybe_count_treated_as_zero(self, tg):
+        """Defensive: maybe_count < 0 não deve quebrar nem inserir sufixo."""
+        msg = tg.format_event_created("Omega", "2024-01-01", 5, 8, maybe_count=-1)
+        assert "Talvez" not in msg
+

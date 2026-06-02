@@ -475,6 +475,62 @@ class TestCountConfirmedForDate:
 
 
 # ---------------------------------------------------------------------------
+# _count_maybe_for_date — usado para enriquecer mensagens do Telegram
+# ---------------------------------------------------------------------------
+
+class TestCountMaybeForDate:
+    def test_empty_roster_returns_zero(self, app_module):
+        assert app_module._count_maybe_for_date(_state(), "2025-06-01") == 0
+
+    def test_counts_only_maybe_status(self, app_module):
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": "avail"}},
+            {"user_id": 2, "monthlySchedule": {"2025-06-01": "maybe"}},
+            {"user_id": 3, "monthlySchedule": {"2025-06-01": "maybe"}},
+            {"user_id": 4, "monthlySchedule": {"2025-06-01": "unavail"}},
+        ])
+        assert app_module._count_maybe_for_date(state, "2025-06-01") == 2
+
+    def test_does_not_count_other_dates(self, app_module):
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-02": "maybe"}},
+        ])
+        assert app_module._count_maybe_for_date(state, "2025-06-01") == 0
+
+    def test_with_event_filters_incompatible_chars(self, app_module):
+        """Mesma regra de compatibilidade do _count_confirmed_for_date:
+        Talvez de jogador incompatível com o evento não conta."""
+        date_str = "2025-06-01"
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {date_str: "maybe"}},
+            {"user_id": 2, "monthlySchedule": {date_str: "maybe"}},
+            {"user_id": 3, "monthlySchedule": {date_str: "maybe"}},
+        ])
+        event = {"progId": "FRU"}  # dt content
+        chars = {
+            1: {"currentExpansionId": "dt"},
+            2: {"currentExpansionId": "arr"},  # incompatível
+            3: {"currentExpansionId": "dt"},
+        }
+        assert app_module._count_maybe_for_date(state, date_str, event=event, characters=chars) == 2
+
+    def test_accepts_dict_schema(self, app_module):
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": {"status": "maybe", "ranges": []}}},
+            {"user_id": 2, "monthlySchedule": {"2025-06-01": {"status": "avail", "ranges": []}}},
+        ])
+        assert app_module._count_maybe_for_date(state, "2025-06-01") == 1
+
+    def test_legacy_late_string_does_not_count_as_maybe(self, app_module):
+        """Fase Q migra 'late' → 'maybe' em hydrateState (front). Backend só
+        vê o estado já migrado; 'late' literal não bate."""
+        state = _state(roster=[
+            {"user_id": 1, "monthlySchedule": {"2025-06-01": "late"}},
+        ])
+        assert app_module._count_maybe_for_date(state, "2025-06-01") == 0
+
+
+# ---------------------------------------------------------------------------
 # _is_dynamic_prog
 # ---------------------------------------------------------------------------
 
