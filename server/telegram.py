@@ -117,17 +117,28 @@ def _format_time_suffix(time_str, duration_min=None):
     return f" às {time_str}"
 
 
-def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
+def _format_maybe_suffix(maybe_count):
+    """Sufixo '— N Talvez' anexado à linha de Confirmados quando há jogadores
+    com status incerto. 'Talvez' é invariável em pt-BR — não pluraliza.
+    Retorna string vazia quando maybe_count <= 0.
+    """
+    if not maybe_count or maybe_count <= 0:
+        return ""
+    return f" — {maybe_count} Talvez"
+
+
+def format_event_created(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None, maybe_count=0):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
     time_suffix = _format_time_suffix(time_str, duration_min)
+    maybe_suffix = _format_maybe_suffix(maybe_count)
     if dynamic:
         body = f"📅 <b>Evento Planejado</b>\n{prog_name} — {pretty_date}{time_suffix}.{details}\n\nAcesse {SITE_URL} e marque se vai ou não."
     else:
         body = (
             f"📅 <b>Evento Planejado</b>\n"
             f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
-            f"Confirmados: {confirmed}/{quorum}.\n"
+            f"Confirmados: {confirmed}/{quorum}{maybe_suffix}.\n"
             f"Acesse {SITE_URL} e marque se vai ou não."
         )
     return body
@@ -187,37 +198,39 @@ def format_quorum_suggestion(date_str, count, party_size=8, party_mode="full", w
     )
 
 
-def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
+def format_reminder_24h(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None, maybe_count=0):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
     time_suffix = _format_time_suffix(time_str, duration_min)
+    maybe_suffix = _format_maybe_suffix(maybe_count)
     if dynamic:
         return (
             f"⏰ <b>Lembrete</b>\n"
             f"{prog_name} é amanhã ({pretty_date}{time_suffix}).{details}\n\n"
-            f"Confirmados: {confirmed}.\n"
+            f"Confirmados: {confirmed}{maybe_suffix}.\n"
             f"Ainda não marcou? {SITE_URL}"
         )
     return (
         f"⏰ <b>Lembrete</b>\n"
         f"{prog_name} é amanhã ({pretty_date}{time_suffix}).{details}\n\n"
-        f"Confirmados: {confirmed}/{quorum}.\n"
+        f"Confirmados: {confirmed}/{quorum}{maybe_suffix}.\n"
         f"Ainda não marcou? {SITE_URL}"
     )
 
 
-def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None):
+def format_reminder_today(prog_name, date_str, confirmed, quorum, dynamic=False, description=None, time_str=None, duration_min=None, maybe_count=0):
     pretty_date = _format_date(date_str)
     details = _format_details_line(description)
     time_suffix = _format_time_suffix(time_str, duration_min)
+    maybe_suffix = _format_maybe_suffix(maybe_count)
     if dynamic:
         return (
             f"⚔️ <b>É hoje!</b>\n"
             f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
-            f"Confirmados: {confirmed}.\nBoa raid!"
+            f"Confirmados: {confirmed}{maybe_suffix}.\nBoa raid!"
         )
     return (
         f"⚔️ <b>É hoje!</b>\n"
         f"{prog_name} — {pretty_date}{time_suffix}.{details}\n\n"
-        f"Confirmados: {confirmed}/{quorum}.\nBoa raid!"
+        f"Confirmados: {confirmed}/{quorum}{maybe_suffix}.\nBoa raid!"
     )

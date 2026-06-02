@@ -1328,3 +1328,25 @@ describe("weekdayApplyPhrase", () => {
     expect(window.weekdayApplyPhrase(5)).toBe("todas as sextas");
   });
 });
+
+// ============================================================================
+// currentMonthLocalKey — usado pela Agenda Semanal pra abrir no mês corrente
+// ============================================================================
+
+describe("currentMonthLocalKey", () => {
+  it("retorna YYYY-MM no formato de duas casas com zero à esquerda", () => {
+    const key = window.currentMonthLocalKey();
+    expect(key).toMatch(/^\d{4}-\d{2}$/);
+  });
+
+  it("retorna o mês corrente em timezone local (não UTC)", () => {
+    const now = new Date();
+    const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    expect(window.currentMonthLocalKey()).toBe(expected);
+  });
+
+  it("primeiros 7 chars batem com todayLocalKey() (mesma timezone)", () => {
+    // currentMonthLocalKey é o prefixo de todayLocalKey
+    expect(window.todayLocalKey().slice(0, 7)).toBe(window.currentMonthLocalKey());
+  });
+});

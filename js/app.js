@@ -2293,6 +2293,14 @@ function todayLocalKey() {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// Retorna o mês atual em YYYY-MM na timezone LOCAL do browser. Usado pela
+// Agenda Semanal pra abrir sempre no mês corrente, mesmo que o state
+// persistido tenha currentMonth defasado de uma sessão anterior.
+function currentMonthLocalKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
 function getRaidEventForProg(progId) {
     const today = todayLocalKey();
     return (state.raidEvents || []).find(e =>
@@ -5576,6 +5584,18 @@ document.addEventListener("DOMContentLoaded", async () => {
             // mudado, ex: novos progs ativos para a seção de subscrição).
             if (targetTab === "character") {
                 renderCharacterTab();
+            }
+
+            // Agenda Semanal sempre abre no mês corrente. state.currentMonth
+            // é persistido (botões Mês Anterior/Seguinte salvam), então sem
+            // este reset uma sessão anterior em Maio ficaria fixa em Maio.
+            // Não chama saveState() pra não sincronizar reset entre clients.
+            if (targetTab === "schedule") {
+                const now = currentMonthLocalKey();
+                if (state.currentMonth !== now) {
+                    state.currentMonth = now;
+                }
+                if (typeof renderScheduleTable === "function") renderScheduleTable();
             }
         });
     });

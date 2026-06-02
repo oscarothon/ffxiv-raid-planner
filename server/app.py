@@ -1167,15 +1167,13 @@ def _is_event_compatible(state_data, event, character):
     return char_order >= content_order
 
 
-def _count_confirmed_for_date(state_data, date_str, event=None, characters=None):
-    """Conta jogadores com 'avail' no monthlySchedule da data.
-
-    'maybe' (Talvez) é status incerto e não conta como confirmação.
+def _count_by_status_for_date(state_data, date_str, target_status, event=None, characters=None):
+    """Conta jogadores com `target_status` (avail | maybe) na data.
 
     Fase P — quando `event` e `characters` (map {user_id: character_json}) são
     fornecidos, filtra por compatibilidade: jogadores incompatíveis (expansão
     abaixo ou level Limited insuficiente) não são contados. Sem esses
-    argumentos, comportamento legado (conta todos os avail).
+    argumentos, comportamento legado (conta todos do status).
     """
     roster = state_data.get("roster") or []
     count = 0
@@ -1186,7 +1184,7 @@ def _count_confirmed_for_date(state_data, date_str, event=None, characters=None)
         entry = sched.get(date_str)
         # Fase Q: entry pode ser string legada ou {status, ranges}
         status = entry if isinstance(entry, str) else (entry.get("status") if isinstance(entry, dict) else "")
-        if status != "avail":
+        if status != target_status:
             continue
         if event is not None and characters:
             uid = p.get("user_id")
@@ -1196,6 +1194,24 @@ def _count_confirmed_for_date(state_data, date_str, event=None, characters=None)
                 continue
         count += 1
     return count
+
+
+def _count_confirmed_for_date(state_data, date_str, event=None, characters=None):
+    """Conta jogadores com 'avail' no monthlySchedule da data.
+
+    'maybe' (Talvez) é status incerto e não conta como confirmação — é
+    reportado separadamente via `_count_maybe_for_date`.
+    """
+    return _count_by_status_for_date(state_data, date_str, "avail", event=event, characters=characters)
+
+
+def _count_maybe_for_date(state_data, date_str, event=None, characters=None):
+    """Conta jogadores com 'maybe' (Talvez) no monthlySchedule da data.
+
+    Usado para enriquecer mensagens do Telegram com presença incerta junto
+    da contagem de confirmados (ex: '7/8 confirmados — 1 Talvez').
+    """
+    return _count_by_status_for_date(state_data, date_str, "maybe", event=event, characters=characters)
 
 
 def _is_dynamic_prog(state_data, prog_id):
@@ -1236,11 +1252,13 @@ def _notify_new_raid_events(state_data, old_events, new_events, static_id):
             # Evento novo
             target_date = evt.get("postponedTo") or evt.get("date")
             confirmed = _count_confirmed_for_date(state_data, target_date, event=evt, characters=characters)
+            maybe_count = _count_maybe_for_date(state_data, target_date, event=evt, characters=characters)
             description = evt.get("description")
             msg = tg.format_event_created(
                 prog_name, target_date, confirmed, quorum,
                 dynamic=dynamic, description=description,
                 time_str=evt.get("time"), duration_min=evt.get("durationMin"),
+                maybe_count=maybe_count,
             )
             tg.send_group_message(chat_id, msg)
         else:
@@ -1406,6 +1424,7 @@ def _maybe_send_reminders(static_id):
         quorum = evt.get("quorum") or 0
         dynamic = _is_dynamic_prog(data, evt.get("progId"))
         confirmed = _count_confirmed_for_date(data, target_date, event=evt, characters=characters)
+        maybe_count = _count_maybe_for_date(data, target_date, event=evt, characters=characters)
 
         description = evt.get("description")
         time_str = evt.get("time")
@@ -1415,6 +1434,7 @@ def _maybe_send_reminders(static_id):
                 prog_name, target_date, confirmed, quorum,
                 dynamic=dynamic, description=description,
                 time_str=time_str, duration_min=duration_min,
+                maybe_count=maybe_count,
             )
             if tg.send_group_message(chat_id, msg):
                 evt["reminder24hSent"] = True
@@ -1424,6 +1444,7 @@ def _maybe_send_reminders(static_id):
                 prog_name, target_date, confirmed, quorum,
                 dynamic=dynamic, description=description,
                 time_str=time_str, duration_min=duration_min,
+                maybe_count=maybe_count,
             )
             if tg.send_group_message(chat_id, msg):
                 evt["reminderTodaySent"] = True
